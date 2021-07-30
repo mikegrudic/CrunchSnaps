@@ -5,7 +5,7 @@ import h5py
 import itertools
 import numpy as np
 
-def DoPassOnSimulation(snaps=[], tasks=[], task_params=[], N_threads=1):
+def DoTasksForSimulation(snaps=[], tasks=[], task_params=[]):
     """
     Main CrunchSnaps routine, performs a list of tasks using (possibly interpolated) time series simulation data
     snaps - list of paths of simulation snapshots
@@ -61,7 +61,7 @@ def DoPassOnSimulation(snaps=[], tasks=[], task_params=[], N_threads=1):
         # do a pass to delete anything that will no longer be needed
         print(list(snapdata_buffer.keys()))
         for k in list(snapdata_buffer.keys()):
-            if k < t1: del snapdata_buffer[k]
+            if k < t1 or k not in snaptimes: del snapdata_buffer[k] # delete if not needed for interpolation (including old interpolants)
         for t in t1, t2:
             if not t in snapdata_buffer.keys(): snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata)
 
@@ -71,16 +71,24 @@ def DoPassOnSimulation(snaps=[], tasks=[], task_params=[], N_threads=1):
         if time in snapdata_buffer.keys(): # if we have the snapshot for this exact time in the buffer, no 
             snapdata_for_thistime = snapdata_buffer[t]
         else:
+            print("interpolating to time ", time)
             snapdata_for_thistime = SnapInterpolate(time, t1, t2, snapdata_buffer)
 
-        
         ################# task execution  ####################################################
-        data = [t.DoTask(snapdata_for_thistime) for t in task_instances] # actually do the task - each method can optionally return data to be compiled in the pass through the snapshots
+        # actually do the task - each method can optionally return data to be compiled in the pass through the snapshots
+        
+        data = [t.DoTask(snapdata_for_thistime) for t in task_instances] 
 
 
 def SnapInterpolate(t,t1,t2,snapdata_buffer):    
-    stuff_to_interpolate_linearly = "PartType0/Coordinates", "PartType0/Velocities", "PartType0/MagneticField", "PartType5/Coordinates", "PartType5/Velocities"
-    stuff_to_interp_logarithmically = "PartType0/SmoothingLength", "PartType0/InternalEnergy", "PartType0/Pressure", "PartType0/SoundSpeed", "PartType0/Density"
+    stuff_to_interp_lin = "PartType0/Coordinates", "PartType0/Velocities", "PartType0/MagneticField", "PartType5/Coordinates", "PartType5/Velocities"
+    stuff_to_interp_log = "PartType0/SmoothingLength", "PartType0/InternalEnergy", "PartType0/Pressure", "PartType0/SoundSpeed", "PartType0/Density", "PartType5/Masses"
+    interpolated_data = snapdata_buffer[t1].copy()
+    for field in stuff_to_interp_lin:
+        interpolated_data[field] = snapdata_buffer[t1][field] * (t2 - t)/(t2 - t1) + snapdata_buffer[t2][field] * (t - t1)/(t2 - t1)
+    for field in stuff_to_interp_log:
+        interpolated_data[field] = np.exp(np.log(snapdata_buffer[t1][field]) * (t2 - t)/(t2 - t1) + np.log(snapdata_buffer[t2][field]) * (t - t1)/(t2 - t1))
+        
 
 def GetSnapData(snappath, required_snapdata):
     print("loading " + snappath)
@@ -96,5 +104,10 @@ from glob import glob
 tasks = [SurfaceDensityMap,]
 snaps = glob("M2e3*/output/snap*.hdf5")
 
+params = []
+for i in range(1080):
+    params.append({"Time": 0.001, "pan": float(i)/1080 * 360})
+params = [params,]
 
-DoPassOnSimulation(snaps, tasks)
+
+DoTasksForSimulation(snaps, tasks, params)
