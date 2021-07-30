@@ -9,9 +9,8 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[]):
     """
     Main CrunchSnaps routine, performs a list of tasks using (possibly interpolated) time series simulation data
     snaps - list of paths of simulation snapshots
-    times - list of times at which to perform tasks 
     tasks - list of tasks to perform at each simulation time
-    task_params - shape [N_tasks,N_params] array of dictionaries containing the parameters for each task and each time - if only (N_tasks,) list is provided this will be broadcast over the time dimension
+    task_params - shape [N_tasks,N_params] array of dictionaries containing the parameters for each task - if only (N_tasks,) list is provided this will be broadcast
     """
 
     ####################################################################################################
@@ -68,7 +67,7 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[]):
         ##########################  interpolation #############################################
         # now get the particle data we need for this time, interpolating if needed
         
-        if time in snapdata_buffer.keys(): # if we have the snapshot for this exact time in the buffer, no 
+        if time in snapdata_buffer.keys(): # if we have the snapshot for this exact time in the buffer, no interpolation needed
             snapdata_for_thistime = snapdata_buffer[t]
         else:
             print("interpolating to time ", time)
@@ -80,14 +79,49 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[]):
         data = [t.DoTask(snapdata_for_thistime) for t in task_instances] 
 
 
-def SnapInterpolate(t,t1,t2,snapdata_buffer):    
+def SnapInterpolate(t,t1,t2,snapdata_buffer):
+    wind_ids = np.array([1913298393, 1913298394])
+    
     stuff_to_interp_lin = "PartType0/Coordinates", "PartType0/Velocities", "PartType0/MagneticField", "PartType5/Coordinates", "PartType5/Velocities"
     stuff_to_interp_log = "PartType0/SmoothingLength", "PartType0/InternalEnergy", "PartType0/Pressure", "PartType0/SoundSpeed", "PartType0/Density", "PartType5/Masses"
     interpolated_data = snapdata_buffer[t1].copy()
+    idx1, idx2, id1_order, id2_order = {}, {}, {}, {}
+    for ptype in "PartType0", "PartType5":
+        id1 = snapdata_buffer[t1][ptype + "/ParticleIDs"]
+        id2 = snapdata_buffer[t2][ptype + "/ParticleIDs"]
+
+        if ptype == "PartType0": # if we have to worry about wind IDs
+            wind_idx1 = np.in1d(id1, wind_ids)
+            if np.any(wind_idx1):
+                progenitor_ids = np.int_(snapdata_buffer[t1]["PartType0/ParticleIDGenerationNumber"])[wind_idx1]
+                child_ids = np.int_(snapdata_buffer[t1]["PartType0/ParticleChildIDsNumber"])[wind_idx1]
+                wind_particle_ids = -((progenitor_ids << 16) + child_ids) # bit-shift the progenitor ID outside the plausible range for particle count, then add child ids to get a unique new id                                         
+                id1[wind_idx1] = wind_particle_ids
+
+            wind_idx2 = np.in1d(id2, wind_ids)
+            if np.any(wind_idx2):
+                progenitor_ids = np.int_(snapdata_buffer[t2]["PartType0/ParticleIDGenerationNumber"])[wind_idx2]
+                child_ids = np.int_(snapdata_buffer[t2]["PartType0/ParticleChildIDsNumber"])[wind_idx2]
+                wind_particle_ids = -((progenitor_ids << 16) + child_ids) # bit-shift the progenitor ID outside the plausible range for particle count, then add child ids to get a unique new id                                         
+                id1[wind_idx2] = wind_particle_ids        
+        
+        common_ids = np.intersect1d(id1,id2)
+        id1_order[ptype] = id1.argsort()
+        id2_order[ptype] = id2.argsort()
+        idx1[ptype] = np.in1d(np.sort(id1),common_ids)
+        idx2[ptype] = np.in1d(np.sort(id2),common_ids)
+        
     for field in stuff_to_interp_lin:
-        interpolated_data[field] = snapdata_buffer[t1][field] * (t2 - t)/(t2 - t1) + snapdata_buffer[t2][field] * (t - t1)/(t2 - t1)
-    for field in stuff_to_interp_log:
-        interpolated_data[field] = np.exp(np.log(snapdata_buffer[t1][field]) * (t2 - t)/(t2 - t1) + np.log(snapdata_buffer[t2][field]) * (t - t1)/(t2 - t1))
+        if field in interpolated_data.keys():
+            if field == "Header": continue
+            ptype = field.split("/")[0]
+            interpolated_data[field] = snapdata_buffer[t1][field][id1_order[ptype]][idx1[ptype]] * (t2 - t)/(t2 - t1) + snapdata_buffer[t2][field][id2_order[ptype]][idx2[ptype]] * (t - t1)/(t2 - t1)
+    for field in stuff_to_interp_log:        
+        if field in interpolated_data.keys():
+            if field == "Header": continue
+            ptype = field.split("/")[0]
+            interpolated_data[field] = np.exp(np.log(snapdata_buffer[t1][field][id1_order[ptype]][idx1[ptype]]) * (t2 - t)/(t2 - t1) + np.log(snapdata_buffer[t2][field][id2_order[ptype]][idx2[ptype]]) * (t - t1)/(t2 - t1))
+    return interpolated_data
         
 
 def GetSnapData(snappath, required_snapdata):
