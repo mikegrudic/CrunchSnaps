@@ -252,7 +252,7 @@ class SinkVisCoolMap(SinkVis):
         self.maps["coolmap"] = cool_data
 
     def MakeImages(self,snapdata):
-        vmin, vmax = self.params["limits"]
-        if self.params["backend"]=="PIL":
-            plt.imsave(self.params["filename"], self.maps["coolmap"]) # NOTE - we invert this to get the coordinate system right            
-        
+        plt.imsave(self.params["filename"], self.maps["coolmap"]) # NOTE - we invert this to get the coordinate system right                    
+        self.AddStarsToImage(snapdata)
+        self.AddSizeScaleToImage()
+        self.AddTimestampToImage()
