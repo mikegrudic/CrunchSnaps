@@ -43,7 +43,7 @@ class SinkVis(Task):
                           "no_size_scale": False,
                           "filename": None,
                           "sink_scale": 1,
-                          "cmap": "inferno",
+                          "cmap": "viridis",
                            "backend": "PIL",
                           "rescale_hsml": False
                           }
@@ -252,7 +252,8 @@ class SinkVisCoolMap(SinkVis):
         self.maps["coolmap"] = cool_data
 
     def MakeImages(self,snapdata):
-        plt.imsave(self.params["filename"], self.maps["coolmap"]) # NOTE - we invert this to get the coordinate system right                    
+        print("saving ", self.params["filename"])
+        plt.imsave(self.params["filename"], np.flipud(self.maps["coolmap"])) # NOTE - we invert this to get the coordinate system right                    
         self.AddStarsToImage(snapdata)
         self.AddSizeScaleToImage()
         self.AddTimestampToImage()

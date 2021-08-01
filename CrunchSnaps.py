@@ -5,6 +5,9 @@ import h5py
 import itertools
 import numpy as np
 from functools import partial
+from os.path import isfile
+from numba import vectorize
+from math import copysign
 
 
 def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc=1):
@@ -34,8 +37,9 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
     snaptimes = []
     for s in snaps:
         with h5py.File(s, 'r') as F:
+            print(s)
             snaptimes.append(F["Header"].attrs["Time"])
-    snaptimes = np.array(snaptimes)    
+    snaptimes = np.array(snaptimes)
     snapdict = dict(zip(snaptimes, snaps))
     
     if not task_params: # set up a default params with the desired interpolated times as parameters
@@ -97,18 +101,28 @@ def SnapInterpolate(t,t1,t2,snapdata_buffer):
         if ptype+"/ParticleIDs" in snapdata_buffer[t1].keys(): id1 = snapdata_buffer[t1][ptype+"/ParticleIDs"]
         else: id1 = np.array([])
         if ptype+"/ParticleIDs" in snapdata_buffer[t2].keys(): id2 = snapdata_buffer[t2][ptype+"/ParticleIDs"]
-        else: id2 = np.array([])                    
+        else: id2 = np.array([])
+#        print(t, len(np.unique(id1)), len(id1), len(np.unique(id2)), len(id2))
         common_ids = np.intersect1d(id1,id2)
         idx1[ptype] = np.in1d(np.sort(id1),common_ids)
         idx2[ptype] = np.in1d(np.sort(id2),common_ids)    
+        
     
     wt1, wt2 = (t2 - t)/(t2 - t1), (t - t1)/(t2 - t1)
     for field in snapdata_buffer[t1].keys():
         ptype = field.split("/")[0]
         if field in stuff_to_interp_lin:
-            interpolated_data[field] = snapdata_buffer[t1][field][idx1[ptype]] * wt1 + snapdata_buffer[t2][field][idx2[ptype]] * wt2
+            f1, f2 = snapdata_buffer[t1][field][idx1[ptype]], snapdata_buffer[t2][field][idx2[ptype]]
+            if "Coordinates" in field: # special behaviour to handle periodic BCs
+                dx = f2 - f1
+                dx = NearestImage(dx,snapdata_buffer[t1]["Header"]["BoxSize"])
+                interpolated_data[field] = f1 + wt2 * dx
+            else:                
+                interpolated_data[field] = f1 * wt1 + f2 * wt2
+            
         elif field in stuff_to_interp_log:        
-            interpolated_data[field] = np.exp(np.log(snapdata_buffer[t1][field][idx1[ptype]]) * wt1 + np.log(snapdata_buffer[t2][field][idx2[ptype]]) * wt2)
+            f1, f2 = snapdata_buffer[t1][field][idx1[ptype]], snapdata_buffer[t2][field][idx2[ptype]]
+            interpolated_data[field] = np.exp(np.log(f1) * wt1 + np.log(f2) * wt2)
                                        
     return interpolated_data
         
@@ -116,12 +130,13 @@ def SnapInterpolate(t,t1,t2,snapdata_buffer):
 def GetSnapData(snappath, required_snapdata):
     wind_ids = np.array([1913298393, 1913298394])
     snapdata = {}
+    print("opening ", snappath)
     with h5py.File(snappath,'r') as F:
         snapdata["Header"] = dict(F["Header"].attrs)
         for field in required_snapdata:
             if field in F.keys():
                 snapdata[field] = np.array(F[field])
-                if "ID" in field: snapdata[field] = np.int_(snapdata[field]) # cast to int for things that should be integers
+                if "ID" in field: snapdata[field] = np.int_(snapdata[field]) # cast to int for things that should be signed integers
 
 
     id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
@@ -129,13 +144,22 @@ def GetSnapData(snappath, required_snapdata):
         if not ptype+"/ParticleIDs" in snapdata.keys(): continue
         ids = snapdata[ptype + "/ParticleIDs"]
 
-        if ptype == "PartType0": # if we have to worry about wind IDs
+        if ptype == "PartType0": # if we have to worry about wind IDs and splitting
+            child_ids = snapdata["PartType0/ParticleChildIDsNumber"]
+#            print(ids[child_ids>1])
             wind_idx1 = np.in1d(ids, wind_ids)
+            ids[np.invert(wind_idx1)] = ((child_ids << 32) + ids)[np.invert(wind_idx1)]
             if np.any(wind_idx1):
                 progenitor_ids = snapdata["PartType0/ParticleIDGenerationNumber"][wind_idx1]
-                child_ids = snapdata["PartType0/ParticleChildIDsNumber"][wind_idx1]
+                child_ids = child_ids[wind_idx1]
                 wind_particle_ids = -((progenitor_ids << 16) + child_ids) # bit-shift the progenitor ID outside the plausible range for particle count, then add child ids to get a unique new id                                         
                 ids[wind_idx1] = wind_particle_ids
+            
+
+        unique, counts = np.unique(ids, return_counts=True)
+        doubles = unique[counts>1]
+#        print(snappath, len(unique[counts>1]), len(ids))
+        ids[np.in1d(ids,doubles)]=-1
 
         id_order[ptype] = ids.argsort()
 
@@ -143,10 +167,9 @@ def GetSnapData(snappath, required_snapdata):
         if field == "Header": continue
         ptype = field.split("/")[0]
         snapdata[field] = np.take(snapdata[field], id_order[ptype],axis=0)
-#        unique, counts = np.unique(id2, return_counts=True)
-#        doubles = unique[counts>1]
-#        id2[np.in1d(id2,doubles)]=-1                                                                                                                             
     return snapdata
         
-
-
+@vectorize
+def NearestImage(x,boxsize):
+    if abs(x) > boxsize/2: return -copysign(boxsize-abs(x),x)
+    else: return x
