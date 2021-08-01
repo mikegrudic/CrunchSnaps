@@ -8,7 +8,7 @@ import h5py
 import itertools
 import numpy as np
 
-tasks = [SinkVisSigmaGas,]
+tasks = [SinkVisCoolMap,]
 snaps = glob("M2e3*/output/snap*.hdf5")
 
 params = []
@@ -26,13 +26,13 @@ i0 = i
 for i in range(i0+1,i0+360):
     params.append({"Time": 5e-3+(0.00983896001630692-5e-3)*(i-i0)/360, "pan": float(i0), "rmax": 3*np.exp(np.cos((5e-3)/1e-3)**2), "filename": "sigma_gas_%s.png"%str(i).zfill(4)})    
 
-#params = [params,]
+params = [params,]
 Nchunks = cpu_count()
-params_chunks = [params[i*len(params)//Nchunks:(i+1)*len(params)//Nchunks] for i in range(Nchunks)]
+#params_chunks = [params[i*len(params)//Nchunks:(i+1)*len(params)//Nchunks] for i in range(Nchunks)]
 
 
-def DoStuff(params_chunk):
-    DoTasksForSimulation(snaps, tasks, [params_chunk,params_chunk])
+#def DoStuff(params_chunk):
+DoTasksForSimulation(snaps=snaps, tasks=tasks, task_params=params,nproc=Nchunks,interp_fac=2)
 
 #[DoStuff(chunk) for chunk in params_chunks]
-Pool(Nchunks).map(DoStuff, params_chunks)
+#Pool(Nchunks).map(DoStuff, params_chunks)

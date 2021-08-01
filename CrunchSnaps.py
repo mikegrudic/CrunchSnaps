@@ -27,7 +27,8 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
     if not task_params:
         N_params = len(snaps)*interp_fac
     else:
-        N_params = len(task_params[0])    
+        N_params = len(task_params[0])
+        
     
     # don't yet know what the snapshot times are - get the snapshot times in a prepass
     snaptimes = []
@@ -89,7 +90,7 @@ def DoParamsPass(chunk):
 def SnapInterpolate(t,t1,t2,snapdata_buffer):
     stuff_to_interp_lin = "PartType0/Coordinates", "PartType0/Velocities", "PartType0/MagneticField", "PartType5/Coordinates", "PartType5/Velocities",
     stuff_to_interp_log = "PartType0/SmoothingLength", "PartType0/InternalEnergy", "PartType0/Pressure", "PartType0/SoundSpeed", "PartType0/Density", "PartType5/Masses", "PartType5/BH_Mass", "PartType0/Masses"
-    interpolated_data = snapdata_buffer[t2].copy()
+    interpolated_data = snapdata_buffer[t1].copy()
 
     idx1, idx2 = {}, {}
     for ptype in "PartType0", "PartType5":
@@ -102,7 +103,7 @@ def SnapInterpolate(t,t1,t2,snapdata_buffer):
         idx2[ptype] = np.in1d(np.sort(id2),common_ids)    
     
     wt1, wt2 = (t2 - t)/(t2 - t1), (t - t1)/(t2 - t1)
-    for field in snapdata_buffer[t2].keys():
+    for field in snapdata_buffer[t1].keys():
         ptype = field.split("/")[0]
         if field in stuff_to_interp_lin:
             interpolated_data[field] = snapdata_buffer[t1][field][idx1[ptype]] * wt1 + snapdata_buffer[t2][field][idx2[ptype]] * wt2
