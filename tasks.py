@@ -44,7 +44,8 @@ class SinkVis(Task):
                           "filename": None,
                           "sink_scale": 1,
                           "cmap": "inferno",
-                          "backend": "PIL"
+                           "backend": "PIL",
+                          "rescale_hsml": False
                           }
 
         super().AssignDefaultParams()
@@ -58,12 +59,15 @@ class SinkVis(Task):
         costheta, sintheta = np.cos(np.pi*tilt/180), np.sin(np.pi*tilt/180)
         x[:] = np.c_[x[:,0], costheta*x[:,1] + sintheta*x[:,2], -sintheta*x[:,1] + costheta*x[:,2]]
         # then do projection if desired
+        
+        
 
     def SetupCoordsAndWeights(self, snapdata):
         res = self.params["res"]
         self.pos, self.mass, self.hsml = np.copy(snapdata["PartType0/Coordinates"]), np.copy(snapdata["PartType0/Masses"]), np.copy(snapdata["PartType0/SmoothingLength"]) # copy these because we don't want to modify them
         self.pos -= self.params["center"]
         self.CoordinateTransform(self.pos,self.mass,self.hsml)
+        if self.params["rescale_hsml"]: self.hsml *= self.params["rescale_hsml"]
         self.hsml = np.clip(self.hsml,2*self.params["rmax"]/res, 1e100)
 
     def GenerateMaps(self,snapdata):

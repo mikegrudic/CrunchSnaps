@@ -87,59 +87,65 @@ def DoParamsPass(chunk):
 
 
 def SnapInterpolate(t,t1,t2,snapdata_buffer):
-    wind_ids = np.array([1913298393, 1913298394])
-    
-    stuff_to_interp_lin = "PartType0/Coordinates", "PartType0/Velocities", "PartType0/MagneticField", "PartType5/Coordinates", "PartType5/Velocities", "PartType5/BH_Mass"
-    stuff_to_interp_log = "PartType0/SmoothingLength", "PartType0/InternalEnergy", "PartType0/Pressure", "PartType0/SoundSpeed", "PartType0/Density", "PartType5/Masses"
+    stuff_to_interp_lin = "PartType0/Coordinates", "PartType0/Velocities", "PartType0/MagneticField", "PartType5/Coordinates", "PartType5/Velocities",
+    stuff_to_interp_log = "PartType0/SmoothingLength", "PartType0/InternalEnergy", "PartType0/Pressure", "PartType0/SoundSpeed", "PartType0/Density", "PartType5/Masses", "PartType5/BH_Mass"
     interpolated_data = snapdata_buffer[t1].copy()
-#    print(interpolated_data["PartType0/Coordinates"][0])
-    idx1, idx2, id1_order, id2_order = {}, {}, {}, {}
-#    print(t,t1,t2)
+
+    idx1, idx2 = {}, {}
     for ptype in "PartType0", "PartType5":
-        if not ptype+"/ParticleIDs" in snapdata_buffer[t1].keys(): continue
-        if not ptype+"/ParticleIDs" in snapdata_buffer[t2].keys(): continue
-        id1 = snapdata_buffer[t1][ptype + "/ParticleIDs"]
-        id2 = snapdata_buffer[t2][ptype + "/ParticleIDs"]
-
-        if ptype == "PartType0": # if we have to worry about wind IDs
-            wind_idx1 = np.in1d(id1, wind_ids)
-            if np.any(wind_idx1):
-                progenitor_ids = np.int_(snapdata_buffer[t1]["PartType0/ParticleIDGenerationNumber"])[wind_idx1]
-                child_ids = np.int_(snapdata_buffer[t1]["PartType0/ParticleChildIDsNumber"])[wind_idx1]
-                wind_particle_ids = -((progenitor_ids << 16) + child_ids) # bit-shift the progenitor ID outside the plausible range for particle count, then add child ids to get a unique new id                                         
-                id1[wind_idx1] = wind_particle_ids
-
-            wind_idx2 = np.in1d(id2, wind_ids)
-            if np.any(wind_idx2):
-                progenitor_ids = np.int_(snapdata_buffer[t2]["PartType0/ParticleIDGenerationNumber"])[wind_idx2]
-                child_ids = np.int_(snapdata_buffer[t2]["PartType0/ParticleChildIDsNumber"])[wind_idx2]
-                wind_particle_ids = -((progenitor_ids << 16) + child_ids) # bit-shift the progenitor ID outside the plausible range for particle count, then add child ids to get a unique new id                                         
-                id2[wind_idx2] = wind_particle_ids        
-        
+        if ptype+"/ParticleIDs" in snapdata_buffer[t1].keys(): id1 = snapdata_buffer[t1][ptype+"/ParticleIDs"]
+        else: id1 = np.array([])
+        if ptype+"/ParticleIDs" in snapdata_buffer[t2].keys(): id2 = snapdata_buffer[t2][ptype+"/ParticleIDs"]
+        else: id2 = np.array([])                    
         common_ids = np.intersect1d(id1,id2)
-        id1_order[ptype] = id1.argsort()
-        id2_order[ptype] = id2.argsort()
         idx1[ptype] = np.in1d(np.sort(id1),common_ids)
-        idx2[ptype] = np.in1d(np.sort(id2),common_ids)
-        
+        idx2[ptype] = np.in1d(np.sort(id2),common_ids)    
+    
+    wt1, wt2 = (t2 - t)/(t2 - t1), (t - t1)/(t2 - t1)
     for field in stuff_to_interp_lin:
         if field in interpolated_data.keys():
             ptype = field.split("/")[0]
-            interpolated_data[field] = snapdata_buffer[t1][field][id1_order[ptype]][idx1[ptype]] * (t2 - t)/(t2 - t1) + snapdata_buffer[t2][field][id2_order[ptype]][idx2[ptype]] * (t - t1)/(t2 - t1)
+            interpolated_data[field] = snapdata_buffer[t1][field][idx1[ptype]] * wt1 + snapdata_buffer[t2][field][idx2[ptype]] * wt2
     for field in stuff_to_interp_log:        
         if field in interpolated_data.keys():
             ptype = field.split("/")[0]
-            interpolated_data[field] = np.exp(np.log(snapdata_buffer[t1][field][id1_order[ptype]][idx1[ptype]]) * (t2 - t)/(t2 - t1) + np.log(snapdata_buffer[t2][field][id2_order[ptype]][idx2[ptype]]) * (t - t1)/(t2 - t1))
+            interpolated_data[field] = np.exp(np.log(snapdata_buffer[t1][field][idx1[ptype]]) * wt1 + np.log(snapdata_buffer[t2][field][idx2[ptype]]) * wt2)
     return interpolated_data
         
 
 def GetSnapData(snappath, required_snapdata):
-#    print("loading " + snappath)
+    wind_ids = np.array([1913298393, 1913298394])
     snapdata = {}
     with h5py.File(snappath,'r') as F:
         snapdata["Header"] = dict(F["Header"].attrs)
         for field in required_snapdata:
-            if field in F.keys(): snapdata[field] = np.array(F[field])
+            if field in F.keys():
+                snapdata[field] = np.array(F[field])
+                if "ID" in field: snapdata[field] = np.int_(snapdata[field]) # cast to int for things that should be integers
+
+
+    id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
+    for ptype in "PartType0", "PartType5": 
+        if not ptype+"/ParticleIDs" in snapdata.keys(): continue
+        ids = snapdata[ptype + "/ParticleIDs"]
+
+        if ptype == "PartType0": # if we have to worry about wind IDs
+            wind_idx1 = np.in1d(ids, wind_ids)
+            if np.any(wind_idx1):
+                progenitor_ids = snapdata["PartType0/ParticleIDGenerationNumber"][wind_idx1]
+                child_ids = snapdata["PartType0/ParticleChildIDsNumber"][wind_idx1]
+                wind_particle_ids = -((progenitor_ids << 16) + child_ids) # bit-shift the progenitor ID outside the plausible range for particle count, then add child ids to get a unique new id                                         
+                ids[wind_idx1] = wind_particle_ids
+
+        id_order[ptype] = ids.argsort()
+
+    for field in snapdata.keys():
+        if field == "Header": continue
+        ptype = field.split("/")[0]
+        snapdata[field] = np.take(snapdata[field], id_order[ptype],axis=0)
+#        unique, counts = np.unique(id2, return_counts=True)
+#        doubles = unique[counts>1]
+#        id2[np.in1d(id2,doubles)]=-1                                                                                                                             
     return snapdata
         
 
