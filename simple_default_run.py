@@ -16,4 +16,4 @@ Nchunks = cpu_count()
 
 t = time()
 DoTasksForSimulation(snaps,interp_fac=5,tasks=tasks,nproc=Nchunks)
-print time() -t 
+print(time() - t)

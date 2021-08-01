@@ -1,5 +1,6 @@
 import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.colors import LightSource
 from Meshoid import GridSurfaceDensity
 import aggdraw
 from PIL import Image, ImageDraw, ImageFont, ImageChops
@@ -228,31 +229,20 @@ class SinkVisCoolMap(SinkVis):
         # need to apply coordinate transforms to z-velocity
         v = np.copy(snapdata["PartType0/Velocities"])
         self.CoordinateTransform(v)
-        self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"]).T
+        sigma_gas = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"]).T
         sigma_1D = GridSurfaceDensity(self.mass * v[:,2]**2, x, h,star_center*0, L, res=res).T/self.maps["sigma_gas"]
         v_avg = GridSurfaceDensity(self.mass * v[:,2], x, h,star_center*0, L, res=res).T/sigma_gas
-
-        self.maps["sigma_1D"] =
+        sigma_1D = np.sqrt(sigma_1D - v_avg**2)/1e3
+        fgas = (np.log10(sigma_gas)-np.log10(limits[0]))/np.log10(limits[1]/limits[0])
+#                fgas = np.clip(fgas,0,1)
+        ls = LightSource(azdeg=315, altdeg=45)
+        #lightness = ls.hillshade(z, vert_exag=4)
+        mapcolor = plt.get_cmap(cool_cmap)(np.log10(sigma_1D/0.1)/2)
+        cool_data = ls.blend_hsv(mapcolor[:,:,:3], fgas[:,:,None])
 
     def MakeImages(self,snapdata):
         vmin, vmax = self.params["limits"]
-                              
         f = (np.log10(self.maps["sigma_gas"])-np.log10(vmin))/(np.log10(vmax)-np.log10(vmin))
-
         if self.params["backend"]=="PIL":
-            plt.imsave(self.params["filename"], plt.get_cmap(self.params["cmap"])(np.flipud(f))) # NOTE - we invert this to get the coordinate system right
-        elif self.params["backend"]=="matplotlib":
-            self.fig, self.ax = plt.subplots(figsize=(4,4))
-            X = Y = np.linspace(-self.params["rmax"], self.params["rmax"], self.params["res"])
-            X, Y = np.meshgrid(X, Y)
-            p = self.ax.pcolormesh(X, Y, self.maps["sigma_gas"], norm=matplotlib.colors.LogNorm(vmin=1,vmax=1e3),cmap=self.params["cmap"])
-            self.ax.set_aspect('equal')
- 
-            divider = make_axes_locatable(self.ax)
-            cax = divider.append_axes("right", size="5%", pad=0.0)
-            self.fig.colorbar(p,label=r"$\Sigma_{\rm gas}$ $(\rm M_\odot\,pc^{-2})$",cax=cax)
-            self.ax.set_xlabel("X (pc)")
-            self.ax.set_ylabel("Y (pc)")
-
-        super().MakeImages(snapdata)
+            plt.imsave(self.params["filename"], plt.get_cmap(self.params["cmap"])(np.flipud(f))) # NOTE - we invert this to get the coordinate system right            
         
