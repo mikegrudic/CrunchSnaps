@@ -4,9 +4,10 @@ from natsort import natsorted
 import h5py
 import itertools
 import numpy as np
+from functools import partial
 
 
-def DoTasksForSimulation(snaps=[], tasks=[], task_params=[]):
+def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc=1):
     """
     Main CrunchSnaps routine, performs a list of tasks using (possibly interpolated) time series simulation data
     snaps - list of paths of simulation snapshots
@@ -24,7 +25,7 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[]):
     N_tasks = len(tasks)
 
     if not task_params:
-        N_params = len(snaps)
+        N_params = len(snaps)*interp_fac
     else:
         N_params = len(task_params[0])    
     
@@ -33,19 +34,26 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[]):
     for s in snaps:
         with h5py.File(s, 'r') as F:
             snaptimes.append(F["Header"].attrs["Time"])
-    snaptimes = np.array(snaptimes)
+    snaptimes = np.array(snaptimes)    
     snapdict = dict(zip(snaptimes, snaps))
     
-    # note that params must be sorted by time!
-    if not task_params:
-        task_params = [[{"Time": s} for s in snaptimes] for t in tasks]
+    if not task_params: # set up a default params with the desired interpolated times as parameters
+        if interp_fac > 1: params_times = np.interp(np.arange(N_params)/interp_fac,np.arange(N_params//interp_fac),snaptimes)
+        else: params_times = snaptimes
+        task_params = [[{"Time": params_times[i]} for i in range(N_params)] for t in tasks]
+    # note that params must be sorted by time!        
 
-    snapdata_buffer = {} # should store data from at most 2 snapshots
-    
-    for i in range(N_params): # this loop cannot be parallelized without sacrificing IO performance because it has a persistent IO buffer modified on the fly
+    index_chunks = np.array_split(np.arange(N_params), nproc)
+    chunks=[(index_chunks[i], tasks, snaps, task_params, snapdict, snaptimes) for i in range(nproc)]            
+    Pool(nproc).map(DoParamsPass, chunks) # this is where we fork into parallel tasks 
+
+def DoParamsPass(chunk):
+    task_chunk_indices, tasks, snaps, task_params, snapdict, snaptimes = chunk
+    N_tasks = len(tasks)
+    snapdata_buffer = {} # should store data from at most 2 snapshots        
+    for i in task_chunk_indices:        
         ######################### initialization  ############################################
         # initialize the task objects at figure out what data the tasks need
-        
         task_instances = [tasks[n](task_params[n][i]) for n in range(N_tasks)] # instantiate a task object for each task to be done
         time = task_params[0][i]["Time"]
         required_snapdata = set()
@@ -58,7 +66,6 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[]):
         # OK now we do file I/O if we don't find what we need in the buffer
         t1, t2 = snaptimes[snaptimes<=time][-1], snaptimes[snaptimes>=time][0]
         # do a pass to delete anything that will no longer be needed
-#        print(list(snapdata_buffer.keys()))
         for k in list(snapdata_buffer.keys()):
             if k < t1: del snapdata_buffer[k] # delete if not needed for interpolation (including old interpolants)
         for t in t1, t2:
@@ -67,18 +74,16 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[]):
         ##########################  interpolation #############################################
         # now get the particle data we need for this time, interpolating if needed
 
-#        print(time, [k for k in snapdata_buffer.keys()])
         if time in snapdata_buffer.keys(): # if we have the snapshot for this exact time in the buffer, no interpolation needed
             snapdata_for_thistime = snapdata_buffer[time]
         else:
-#            print("interpolating to time ", time)
             snapdata_for_thistime = SnapInterpolate(time, t1, t2, snapdata_buffer)
             snapdata_buffer[time] = snapdata_for_thistime
 
         ################# task execution  ####################################################
         # actually do the task - each method can optionally return data to be compiled in the pass through the snapshots
-        
-        data = [t.DoTask(snapdata_for_thistime) for t in task_instances] 
+
+        data = [t.DoTask(snapdata_for_thistime) for t in task_instances]    
 
 
 def SnapInterpolate(t,t1,t2,snapdata_buffer):
@@ -129,7 +134,7 @@ def SnapInterpolate(t,t1,t2,snapdata_buffer):
         
 
 def GetSnapData(snappath, required_snapdata):
-    print("loading " + snappath)
+#    print("loading " + snappath)
     snapdata = {}
     with h5py.File(snappath,'r') as F:
         snapdata["Header"] = dict(F["Header"].attrs)

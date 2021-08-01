@@ -32,7 +32,7 @@ class SinkVis(Task):
         
         self.RequiredSnapdata = ["PartType0/Coordinates", "PartType0/Masses", "PartType0/SmoothingLength","PartType0/ParticleIDGenerationNumber","PartType0/ParticleChildIDsNumber", "PartType0/ParticleIDs", "PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass"]
 
-        self.default_params = {"res": 256,
+        self.default_params = {"res": 512,
                           "rmax": None,
                           "limits": [1,1e3],
                           "center": None,
@@ -40,14 +40,15 @@ class SinkVis(Task):
                           "tilt": 0,
                           "no_timestamp": False,
                           "no_size_scale": False,
+                          "filename": None,
                           "sink_scale": 1,
                           "cmap": "inferno",
-                          "backend": "matplotlib"
+                          "backend": "PIL"
                           }
 
         super().AssignDefaultParams()
 
-    def CoordinateTransform(self,x,m,h):
+    def CoordinateTransform(self,x,m=None,h=None):
         tilt, pan = self.params["tilt"], self.params["pan"]
         # first pan
         cosphi, sinphi = np.cos(np.pi*pan/180), np.sin(np.pi*pan/180)
@@ -64,7 +65,7 @@ class SinkVis(Task):
         self.CoordinateTransform(self.pos,self.mass,self.hsml)
         self.hsml = np.clip(self.hsml,2*self.params["rmax"]/res, 1e100)
 
-    def GenerateMaps(self):
+    def GenerateMaps(self,snapdata):
         self.maps = {}
 
     def SaveImage(self):
@@ -143,6 +144,7 @@ class SinkVis(Task):
             d = aggdraw.Draw(F)
             pen = aggdraw.Pen('white',1) #gridres/800
             sink_relscale = 0.0025
+            X_star ,m_star = X_star[m_star.argsort()[::-1]], np.sort(m_star)[::-1]
             for j in np.arange(len(X_star))[m_star>1e-2]:
                 X = X_star[j]
                 ms = m_star[j]
@@ -173,26 +175,28 @@ class SinkVis(Task):
         colors = np.int_([np.interp(np.log10(mass_in_msun),[-1,0,1],star_colors[:,i]) for i in range(3)])
         return (colors[0],colors[1],colors[2])# if len(colors)==1 else colors)
 
-    def DoTask(self, snapdata):        
+    def AssignDefaultParamsFromSnapdata(self,snapdata):
         if self.params["center"] is None:
             self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"]*0.5,3)
             center = self.params["center"]
         else: center = self.params["center"]
         if self.params["rmax"] is None:
-            rmax = snapdata["Header"]["BoxSize"]/10
-        else: rmax = self.params["rmax"]
+            self.params["rmax"] = snapdata["Header"]["BoxSize"]/10
         if self.params["filename"] is None:
             self.params["filename"] = "sigma_gas_%s_%s.png"%(str(round(self.params["Time"]/1e-6)).zfill(4), str(round(self.params["pan"])).zfill(4))
 
-        self.SetupCoordsAndWeights(snapdata)
-        self.GenerateMaps()
+    
+    def DoTask(self, snapdata):
+        self.AssignDefaultParamsFromSnapdata(snapdata)
+        self.SetupCoordsAndWeights(snapdata)        
+        self.GenerateMaps(snapdata)
         self.MakeImages(snapdata)
         return self.maps["sigma_gas"]
 
 
 class SinkVisSigmaGas(SinkVis):
-    def GenerateMaps(self):
-        super().GenerateMaps()
+    def GenerateMaps(self,snapdata):
+        super().GenerateMaps(snapdata)
         self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"]).T
 
     def MakeImages(self,snapdata):
@@ -216,3 +220,39 @@ class SinkVisSigmaGas(SinkVis):
             self.ax.set_ylabel("Y (pc)")
 
         super().MakeImages(snapdata)
+
+
+class SinkVisCoolMap(SinkVis):
+    def GenerateMaps(self,snapdata):
+        super().GenerateMaps(snapdata)
+        # need to apply coordinate transforms to z-velocity
+        v = np.copy(snapdata["PartType0/Velocities"])
+        self.CoordinateTransform(v)
+        self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"]).T
+        sigma_1D = GridSurfaceDensity(self.mass * v[:,2]**2, x, h,star_center*0, L, res=res).T/self.maps["sigma_gas"]
+        v_avg = GridSurfaceDensity(self.mass * v[:,2], x, h,star_center*0, L, res=res).T/sigma_gas
+
+        self.maps["sigma_1D"] =
+
+    def MakeImages(self,snapdata):
+        vmin, vmax = self.params["limits"]
+                              
+        f = (np.log10(self.maps["sigma_gas"])-np.log10(vmin))/(np.log10(vmax)-np.log10(vmin))
+
+        if self.params["backend"]=="PIL":
+            plt.imsave(self.params["filename"], plt.get_cmap(self.params["cmap"])(np.flipud(f))) # NOTE - we invert this to get the coordinate system right
+        elif self.params["backend"]=="matplotlib":
+            self.fig, self.ax = plt.subplots(figsize=(4,4))
+            X = Y = np.linspace(-self.params["rmax"], self.params["rmax"], self.params["res"])
+            X, Y = np.meshgrid(X, Y)
+            p = self.ax.pcolormesh(X, Y, self.maps["sigma_gas"], norm=matplotlib.colors.LogNorm(vmin=1,vmax=1e3),cmap=self.params["cmap"])
+            self.ax.set_aspect('equal')
+ 
+            divider = make_axes_locatable(self.ax)
+            cax = divider.append_axes("right", size="5%", pad=0.0)
+            self.fig.colorbar(p,label=r"$\Sigma_{\rm gas}$ $(\rm M_\odot\,pc^{-2})$",cax=cax)
+            self.ax.set_xlabel("X (pc)")
+            self.ax.set_ylabel("Y (pc)")
+
+        super().MakeImages(snapdata)
+        
