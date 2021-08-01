@@ -35,7 +35,7 @@ class SinkVis(Task):
 
         self.default_params = {"res": 512,
                           "rmax": None,
-                          "limits": [1,1e3],
+                          "limits": [1,2e3],
                           "center": None,
                           "pan": 0,
                           "tilt": 0,
@@ -196,7 +196,7 @@ class SinkVis(Task):
         self.SetupCoordsAndWeights(snapdata)        
         self.GenerateMaps(snapdata)
         self.MakeImages(snapdata)
-        return self.maps["sigma_gas"]
+        return self.maps
 
 
 class SinkVisSigmaGas(SinkVis):
@@ -228,25 +228,31 @@ class SinkVisSigmaGas(SinkVis):
 
 
 class SinkVisCoolMap(SinkVis):
+    def __init__(self,params):
+        super().__init__(params)
+        self.RequiredSnapdata.append("PartType0/Velocities")
+        self.default_params["cool_cmap"] = 'magma'
+        super().AssignDefaultParams()
+        
     def GenerateMaps(self,snapdata):
         super().GenerateMaps(snapdata)
         # need to apply coordinate transforms to z-velocity
         v = np.copy(snapdata["PartType0/Velocities"])
         self.CoordinateTransform(v)
         sigma_gas = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"]).T
-        sigma_1D = GridSurfaceDensity(self.mass * v[:,2]**2, x, h,star_center*0, L, res=res).T/self.maps["sigma_gas"]
-        v_avg = GridSurfaceDensity(self.mass * v[:,2], x, h,star_center*0, L, res=res).T/sigma_gas
+        sigma_1D = GridSurfaceDensity(self.mass * v[:,2]**2, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"]).T/sigma_gas
+        v_avg = GridSurfaceDensity(self.mass * v[:,2], self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"]).T/sigma_gas
         sigma_1D = np.sqrt(sigma_1D - v_avg**2)/1e3
-        fgas = (np.log10(sigma_gas)-np.log10(limits[0]))/np.log10(limits[1]/limits[0])
-#                fgas = np.clip(fgas,0,1)
+        fgas = (np.log10(sigma_gas)-np.log10(self.params["limits"][0]))/np.log10(self.params["limits"][1]/self.params["limits"][0])
+        fgas = np.clip(fgas,0,1)
         ls = LightSource(azdeg=315, altdeg=45)
         #lightness = ls.hillshade(z, vert_exag=4)
-        mapcolor = plt.get_cmap(cool_cmap)(np.log10(sigma_1D/0.1)/2)
+        mapcolor = plt.get_cmap(self.params["cool_cmap"])(np.log10(sigma_1D/0.1)/2)
         cool_data = ls.blend_hsv(mapcolor[:,:,:3], fgas[:,:,None])
+        self.maps["coolmap"] = cool_data
 
     def MakeImages(self,snapdata):
         vmin, vmax = self.params["limits"]
-        f = (np.log10(self.maps["sigma_gas"])-np.log10(vmin))/(np.log10(vmax)-np.log10(vmin))
         if self.params["backend"]=="PIL":
-            plt.imsave(self.params["filename"], plt.get_cmap(self.params["cmap"])(np.flipud(f))) # NOTE - we invert this to get the coordinate system right            
+            plt.imsave(self.params["filename"], self.maps["coolmap"]) # NOTE - we invert this to get the coordinate system right            
         
