@@ -47,7 +47,9 @@ class SinkVis(Task):
                                "backend": "PIL",
                                "rescale_hsml": False,
                                "FOV": None,
-                               "focal_distance": np.inf}
+                               "focal_distance": np.inf,
+                               "center_on_star": False
+        }
 
         super().AssignDefaultParams()
 
@@ -67,23 +69,27 @@ class SinkVis(Task):
             # transform so camera is at z=0:
             x[:,2] += self.params["focal_distance"]
             
-            # now transform from 3D to angular system
-            x[:,:2] = x[:,:2] / x[:,2] # homogeneous coordinates
-            r = np.sum(x*x,axis=1)**0.5 # distance from camera
-            h[:] = h / r # kernel lengths are now angular (divide by distance)
-            m[:] *= r**2 # rescale mass weights so that integrated surface density remains the same
+            # now transform from 3D to angular system\
+            r = np.sum(x*x,axis=1)**0.5 # distance from camera                
+            x[:,:2] = x[:,:2] / x[:,2][:,None] # homogeneous coordinates
+            if h is not None:
+                h[:] = h / r # kernel lengths are now angular (divide by distance)
+                h[x[:,2]<0] = 0             # assign 0 weight/size to anything behind the camera
+            if m is not None:
+                m[:] /= r**2 # rescale mass weights so that integrated surface density remains the same
+                m[x[:,2]<0] = 0
 
-            # assign 0 weight/size to anything behind the camera
-            m[x[:,2]<0] = 0 
-            h[x[:,2]<0] = 0
+
+
+
             
 
     def SetupCoordsAndWeights(self, snapdata):
         res = self.params["res"]
         self.pos, self.mass, self.hsml = np.copy(snapdata["PartType0/Coordinates"]), np.copy(snapdata["PartType0/Masses"]), np.copy(snapdata["PartType0/SmoothingLength"]) # copy these because we don't want to modify them
         if self.params["rescale_hsml"]: self.hsml *= self.params["rescale_hsml"]
-        self.hsml = np.clip(self.hsml,2*self.params["rmax"]/res, 1e100)
         self.CoordinateTransform(self.pos,self.mass,self.hsml)
+        self.hsml = np.clip(self.hsml,2*self.params["rmax"]/res, 1e100)
 
 
     def GenerateMaps(self,snapdata):
@@ -126,6 +132,7 @@ class SinkVis(Task):
 
 
     def AddSizeScaleToImage(self):
+        if self.params["focal_distance"] < np.inf: return
         if self.params["backend"]=="matplotlib": return # matplotlib will have axis ticks for scale
         pc_to_AU = 206265.0
         if self.params["no_size_scale"]: return
@@ -169,7 +176,10 @@ class SinkVis(Task):
             for j in np.arange(len(X_star))[m_star>1e-2]:
                 X = X_star[j]
                 ms = m_star[j]
-                star_size = gridres* sink_relscale * (np.log10(ms/self.params["sink_scale"]) + 1)
+                star_size = gridres * sink_relscale * (np.log10(ms/self.params["sink_scale"]) + 1)
+                if self.params["focal_distance"] < np.inf:
+                    # make 100msun ~ 0.03pc, scale down from there
+                    star_size = gridres * 0.03 / self.params["focal_distance"] / self.params["rmax"] * (ms/100)**(1./3)
                 star_size = max(1,star_size)
                 p = aggdraw.Brush(self.GetStarColor(ms))
                 norm_coords = (X[:2]+self.params["rmax"])/(2*self.params["rmax"])*gridres
@@ -182,7 +192,6 @@ class SinkVis(Task):
             F.close()
         elif self.params["backend"]=="matplotlib":
             star_size = np.log10(m_star/self.params["sink_scale"])+2
-#            print(star_size)
             colors = np.array([self.GetStarColor(m) for m in m_star])/255
  
             self.ax.scatter(X_star[:,0], X_star[:,1],s=star_size*5,edgecolor='white',lw=0.1,facecolor=colors,marker='*')
@@ -198,7 +207,13 @@ class SinkVis(Task):
 
     def AssignDefaultParamsFromSnapdata(self,snapdata):
         if self.params["center"] is None:
-            self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"]*0.5,3)
+            if self.params["center_on_star"]:
+                if "PartType5/Coordinates" in snapdata.keys():
+                    self.params["center"] = snapdata["PartType5/Coordinates"][snapdata["PartType5/BH_Mass"].argsort()[::-1]][self.params["center_on_star"]-1] # center on the n'th most massive star
+                else: # otherwise center on the densest gas cell
+                    self.params["center"] = snapdata["PartType0/Coordinates"][snapdata["PartType0/Density"].argmax()]
+            else:
+                self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"]*0.5,3)
             center = self.params["center"]
         else: center = self.params["center"]
         if self.params["rmax"] is None:
@@ -275,6 +290,6 @@ class SinkVisCoolMap(SinkVis):
     def MakeImages(self,snapdata):
         print("saving ", self.params["filename"])
         plt.imsave(self.params["filename"], np.flipud(self.maps["coolmap"])) # NOTE - we invert this to get the coordinate system right                    
-        self.AddStarsToImage(snapdata)
+        self.AddStarsToImage(snapdata)        
         self.AddSizeScaleToImage()
         self.AddTimestampToImage()
