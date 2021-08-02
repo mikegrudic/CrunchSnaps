@@ -251,14 +251,18 @@ class SinkVisSigmaGas(SinkVis):
             self.fig, self.ax = plt.subplots(figsize=(4,4))
             X = Y = np.linspace(-self.params["rmax"], self.params["rmax"], self.params["res"])
             X, Y = np.meshgrid(X, Y)
-            p = self.ax.pcolormesh(X, Y, self.maps["sigma_gas"], norm=matplotlib.colors.LogNorm(vmin=1,vmax=1e3),cmap=self.params["cmap"])
+            p = self.ax.pcolormesh(X, Y, self.maps["sigma_gas"], norm=matplotlib.colors.LogNorm(vmin=self.params["limits"][0],vmax=self.params["limits"][1]),cmap=self.params["cmap"])
             self.ax.set_aspect('equal')
  
             divider = make_axes_locatable(self.ax)
             cax = divider.append_axes("right", size="5%", pad=0.0)
             self.fig.colorbar(p,label=r"$\Sigma_{\rm gas}$ $(\rm M_\odot\,pc^{-2})$",cax=cax)
-            self.ax.set_xlabel("X (pc)")
-            self.ax.set_ylabel("Y (pc)")
+            if self.params["focal_distance"] == np.inf:
+                self.ax.set_xlabel("X (pc)")
+                self.ax.set_ylabel("Y (pc)")
+            else:
+                self.ax.set_xlabel("X (rad)")
+                self.ax.set_ylabel("Y (rad)")
 
         super().MakeImages(snapdata)
 

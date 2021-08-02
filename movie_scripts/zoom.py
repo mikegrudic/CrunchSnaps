@@ -5,7 +5,7 @@ from natsort import natsorted
 import numpy as np
 from sys import argv
 
-tasks = [SinkVisCoolMap,] # select the tasks that you want to run
+tasks = [SinkVisSigmaGas,] # select the tasks that you want to run
 snaps = natsorted(glob(argv[1]+"/snapshot*.hdf5")) # get the list of snapshots to run on (should sort chronologically for best access pattern)
 
 # Now here we generate a list of parameters for each frame we want to make, this will be done "by hand" and all unintialized parameters will adopt default values
@@ -18,7 +18,7 @@ for i in list(range(N)):
                    "FOV": 90,
                    "filename": "zoom_%s.png"%str(i).zfill(4),
                    "center_on_star": 1,
-                   "res": 512}
+                   "res": 512, "backend": "matplotlib"}
     )
 for th in range(360):
     i += 1
@@ -29,7 +29,7 @@ for th in range(360):
                    "tilt": 20*np.sin(1.5*th/180*np.pi),
                    "filename": "zoom_%s.png"%str(i).zfill(4),
                    "center_on_star": 1,
-                   "res": 512}
+                   "res": 512, "backend": "matplotlib"}
     )
 
 params = [params] # format as a list of lists with one entry per task
