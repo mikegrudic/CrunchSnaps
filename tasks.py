@@ -55,7 +55,7 @@ class SinkVis(Task):
         tilt, pan = self.params["tilt"], self.params["pan"]
 
         # center on the designated center coordinate
-        x -= self.params["center"]
+        x[:] -= self.params["center"]
         # first pan
         cosphi, sinphi = np.cos(np.pi*pan/180), np.sin(np.pi*pan/180)
         x[:] = np.c_[cosphi*x[:,0] + sinphi*x[:,2],x[:,1], -sinphi*x[:,0] + cosphi*x[:,2]]
@@ -154,7 +154,7 @@ class SinkVis(Task):
             
     def AddStarsToImage(self,snapdata):
         if not "PartType5/Coordinates" in snapdata.keys(): return
-        X_star = snapdata["PartType5/Coordinates"] - self.params["center"]
+        X_star = np.copy(snapdata["PartType5/Coordinates"]) # - self.params["center"]
         m_star = snapdata["PartType5/BH_Mass"]
         self.CoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))        
         if self.params["backend"]=="PIL":
