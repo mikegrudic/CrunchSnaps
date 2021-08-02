@@ -46,7 +46,7 @@ class SinkVis(Task):
                                "cmap": "viridis",
                                "backend": "PIL",
                                "rescale_hsml": False,
-                               "FOV": None,
+                               "FOV": 90,
                                "focal_distance": np.inf,
                                "center_on_star": False
         }
@@ -217,12 +217,12 @@ class SinkVis(Task):
             center = self.params["center"]
         else: center = self.params["center"]
         if self.params["rmax"] is None:
-            if self.params["focal_distance"] < np.inf and self.params["FOV"] is not None:
+            if self.params["focal_distance"] < np.inf:
                 self.params["rmax"] = self.params["FOV"]/90 # angular width
             else:
                 self.params["rmax"] = snapdata["Header"]["BoxSize"]/10
-            if self.params["focal_distance"] < np.inf and self.params["FOV"] is None:
-                self.params["rmax"] /= self.params["focal_distance"] # convert to angular assuming rmax is real-space half-width at the focal distance
+#            if self.params["focal_distance"] < np.inf and self.params["FOV"] is None:
+#                self.params["rmax"] /= self.params["focal_distance"] # convert to angular assuming rmax is real-space half-width at the focal distance
         if self.params["filename"] is None:
             self.params["filename"] = "sigma_gas_%s_%s.png"%(str(round(self.params["Time"]/1e-6)).zfill(4), str(round(self.params["pan"])).zfill(4))
 
