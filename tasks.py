@@ -18,8 +18,8 @@ class Task:
         return self.RequiredSnapdata
 
     def AssignDefaultParams(self):
-        for p in self.default_params.keys():
-            if not p in self.params.keys(): self.params[p] = self.default_params[p]
+        for k in self.default_params.keys():
+            if not k in self.params.keys(): self.params[k] = self.default_params[k]
 
     def AssignDefaultParamsFromSnapdata(self,snapdata):
         return
@@ -34,24 +34,28 @@ class SinkVis(Task):
         self.RequiredSnapdata = ["PartType0/Coordinates", "PartType0/Masses", "PartType0/SmoothingLength","PartType0/ParticleIDGenerationNumber","PartType0/ParticleChildIDsNumber", "PartType0/ParticleIDs", "PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass"]
 
         self.default_params = {"res": 512,
-                          "rmax": None,
-                          "limits": [1,2e3],
-                          "center": None,
-                          "pan": 0,
-                          "tilt": 0,
-                          "no_timestamp": False,
-                          "no_size_scale": False,
-                          "filename": None,
-                          "sink_scale": 1,
-                          "cmap": "viridis",
-                           "backend": "PIL",
-                          "rescale_hsml": False
-                          }
+                               "rmax": None,
+                               "limits": [1,2e3],
+                               "center": None,
+                               "pan": 0,
+                               "tilt": 0,
+                               "no_timestamp": False,
+                               "no_size_scale": False,
+                               "filename": None,
+                               "sink_scale": 1,
+                               "cmap": "viridis",
+                               "backend": "PIL",
+                               "rescale_hsml": False,
+                               "FOV": None,
+                               "focal_distance": np.inf}
 
         super().AssignDefaultParams()
 
     def CoordinateTransform(self,x,m=None,h=None):
         tilt, pan = self.params["tilt"], self.params["pan"]
+
+        # center on the designated center coordinate
+        x -= self.params["center"]
         # first pan
         cosphi, sinphi = np.cos(np.pi*pan/180), np.sin(np.pi*pan/180)
         x[:] = np.c_[cosphi*x[:,0] + sinphi*x[:,2],x[:,1], -sinphi*x[:,0] + cosphi*x[:,2]]
@@ -59,16 +63,28 @@ class SinkVis(Task):
         costheta, sintheta = np.cos(np.pi*tilt/180), np.sin(np.pi*tilt/180)
         x[:] = np.c_[x[:,0], costheta*x[:,1] + sintheta*x[:,2], -sintheta*x[:,1] + costheta*x[:,2]]
         # then do projection if desired
-        
-        
+        if self.params["focal_distance"] != np.inf:
+            # transform so camera is at z=0:
+            x[:,2] += self.params["focal_distance"]
+            
+            # now transform from 3D to angular system
+            x[:,:2] = x[:,:2] / x[:,2] # homogeneous coordinates
+            r = np.sum(x*x,axis=1)**0.5 # distance from camera
+            h[:] = h / r # kernel lengths are now angular (divide by distance)
+            m[:] *= r**2 # rescale mass weights so that integrated surface density remains the same
+
+            # assign 0 weight/size to anything behind the camera
+            m[x[:,2]<0] = 0 
+            h[x[:,2]<0] = 0
+            
 
     def SetupCoordsAndWeights(self, snapdata):
         res = self.params["res"]
         self.pos, self.mass, self.hsml = np.copy(snapdata["PartType0/Coordinates"]), np.copy(snapdata["PartType0/Masses"]), np.copy(snapdata["PartType0/SmoothingLength"]) # copy these because we don't want to modify them
-        self.pos -= self.params["center"]
-        self.CoordinateTransform(self.pos,self.mass,self.hsml)
         if self.params["rescale_hsml"]: self.hsml *= self.params["rescale_hsml"]
         self.hsml = np.clip(self.hsml,2*self.params["rmax"]/res, 1e100)
+        self.CoordinateTransform(self.pos,self.mass,self.hsml)
+
 
     def GenerateMaps(self,snapdata):
         self.maps = {}
@@ -186,7 +202,12 @@ class SinkVis(Task):
             center = self.params["center"]
         else: center = self.params["center"]
         if self.params["rmax"] is None:
-            self.params["rmax"] = snapdata["Header"]["BoxSize"]/10
+            if self.params["focal_distance"] < np.inf and self.params["FOV"] is not None:
+                self.params["rmax"] = self.params["FOV"]/90 # angular width
+            else:
+                self.params["rmax"] = snapdata["Header"]["BoxSize"]/10
+            if self.params["focal_distance"] < np.inf and self.params["FOV"] is None:
+                self.params["rmax"] /= self.params["focal_distance"] # convert to angular assuming rmax is real-space half-width at the focal distance
         if self.params["filename"] is None:
             self.params["filename"] = "sigma_gas_%s_%s.png"%(str(round(self.params["Time"]/1e-6)).zfill(4), str(round(self.params["pan"])).zfill(4))
 

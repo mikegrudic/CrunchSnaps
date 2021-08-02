@@ -28,6 +28,6 @@ i0 = i
 for i in range(i0+1,i0+1080):
     params.append({"Time": 7e-3, "pan": float(i0) + (i-i0)*0.3, "rmax": 10 + (i-i0)*10/1080, "filename": "cool__%s.png"%str(i).zfill(4), "res": 1024})    
 
-params = [params,] # format as a list of lists with one entry per task
+params = [params] # format as a list of lists with one entry per task
 Nchunks = 16 
 DoTasksForSimulation(snaps=snaps, tasks=tasks, task_params=params,nproc=16)
