@@ -7,6 +7,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageChops
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
+import amuse_fresco
 
 class Task:
     """Class containing generic routines common to all tasks, and assigns default (null/empty) attributes that any task should have"""
@@ -48,7 +49,11 @@ class SinkVis(Task):
                                "rescale_hsml": False,
                                "FOV": 90,
                                "focal_distance": np.inf,
-                               "center_on_star": False
+                               "center_on_star": False,
+                               "fresco_stars": True,
+                               "fresco_param": 0.002,
+                               "fresco_mass_limits": [0,0],
+                               "fresco_mass_rescale": 0.3
         }
 
         super().AssignDefaultParams()
@@ -163,33 +168,40 @@ class SinkVis(Task):
         if not "PartType5/Coordinates" in snapdata.keys(): return
         X_star = np.copy(snapdata["PartType5/Coordinates"]) # - self.params["center"]
         m_star = snapdata["PartType5/BH_Mass"]
-        self.CoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))        
-        if self.params["backend"]=="PIL":
+        self.CoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))
+        
+        if self.params["backend"]=="PIL":            
             fname = self.params["filename"]
-            F = Image.open(fname)
-            gridres = F.size[0]
-            draw = ImageDraw.Draw(F)
-            d = aggdraw.Draw(F)
-            pen = aggdraw.Pen('white',1) #gridres/800
-            sink_relscale = 0.0025
-            X_star ,m_star = X_star[m_star.argsort()[::-1]], np.sort(m_star)[::-1]
-            for j in np.arange(len(X_star))[m_star>1e-2]:
-                X = X_star[j]
-                ms = m_star[j]
-                star_size = gridres * sink_relscale * (np.log10(ms/self.params["sink_scale"]) + 1)
-                if self.params["focal_distance"] < np.inf:
-                    # make 100msun ~ 0.03pc, scale down from there
-                    star_size = gridres * 0.03 / self.params["focal_distance"] / self.params["rmax"] * (ms/100)**(1./3)
-                star_size = max(1,star_size)
-                p = aggdraw.Brush(self.GetStarColor(ms))
-                norm_coords = (X[:2]+self.params["rmax"])/(2*self.params["rmax"])*gridres
-                #Pillow puts the origin in th top left corner, so we need to flip the y axis
-                norm_coords[1] = gridres - norm_coords[1]
-                coords = np.concatenate([norm_coords-star_size, norm_coords+star_size])
-                d.ellipse(coords, pen, p)#, fill=(155, 176, 255))
-                d.flush()
-            F.save(fname)
-            F.close()
+            if self.params["fresco_stars"]: # use fresco for stellar images
+                data_stars_fresco = SinkVis_amuse_fresco.make_amuse_fresco_stars_only(X_star,m_star,np.zeros_like(m_star),2*self.params["rmax"],res=self.params["res"],vmax=self.params["fresco_param"],mass_rescale=self.params["fresco_mass_rescale"],mass_limits=self.params["fresco_mass_limits"])
+                img = plt.imread(fname)
+                plt.imsave(fname,np.clip(img[:,:,:3]+data_stars_fresco,0,1))
+            else: # use derpy PIL circles
+                F = Image.open(fname)
+                gridres = F.size[0]
+
+                draw = ImageDraw.Draw(F)
+                d = aggdraw.Draw(F)
+                pen = aggdraw.Pen('white',1) #gridres/800
+                sink_relscale = 0.0025
+                X_star ,m_star = X_star[m_star.argsort()[::-1]], np.sort(m_star)[::-1]
+                for j in np.arange(len(X_star))[m_star>1e-2]:
+                    X = X_star[j]
+                    ms = m_star[j]
+                    star_size = gridres * sink_relscale * (np.log10(ms/self.params["sink_scale"]) + 1)
+                    if self.params["focal_distance"] < np.inf:
+                        # make 100msun ~ 0.03pc, scale down from there
+                        star_size = gridres * 0.03 / self.params["focal_distance"] / self.params["rmax"] * (ms/100)**(1./3)
+                    star_size = max(1,star_size)
+                    p = aggdraw.Brush(self.GetStarColor(ms))
+                    norm_coords = (X[:2]+self.params["rmax"])/(2*self.params["rmax"])*gridres
+                    #Pillow puts the origin in th top left corner, so we need to flip the y axis
+                    norm_coords[1] = gridres - norm_coords[1]
+                    coords = np.concatenate([norm_coords-star_size, norm_coords+star_size])
+                    d.ellipse(coords, pen, p)#, fill=(155, 176, 255))
+                    d.flush()
+                F.save(fname)
+                F.close()
         elif self.params["backend"]=="matplotlib":
             star_size = np.log10(m_star/self.params["sink_scale"])+2
             colors = np.array([self.GetStarColor(m) for m in m_star])/255
