@@ -191,7 +191,8 @@ class SinkVis(Task):
                     star_size = gridres * sink_relscale * (np.log10(ms/self.params["sink_scale"]) + 1)
                     if self.params["focal_distance"] < np.inf:
                         # make 100msun ~ 0.03pc, scale down from there
-                        star_size = gridres * 0.03 / self.params["focal_distance"] / self.params["rmax"] * (ms/100)**(1./3)
+                        if X[2] < 0: continue
+                        star_size = gridres * 0.03 / self.params["focal_distance"] / self.params["rmax"] * (ms/100)**(1./3)                        
                     star_size = max(1,star_size)
                     p = aggdraw.Brush(self.GetStarColor(ms))
                     norm_coords = (X[:2]+self.params["rmax"])/(2*self.params["rmax"])*gridres
