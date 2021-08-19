@@ -50,7 +50,7 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
 
     index_chunks = np.array_split(np.arange(N_params), nproc)
     chunks=[(index_chunks[i], tasks, snaps, task_params, snapdict, snaptimes) for i in range(nproc)]            
-    Pool(nproc).map(DoParamsPass, chunks) # this is where we fork into parallel tasks 
+    Pool(nproc).map(DoParamsPass, chunks,chunksize=1) # this is where we fork into parallel tasks 
 
 def DoParamsPass(chunk):
     task_chunk_indices, tasks, snaps, task_params, snapdict, snaptimes = chunk
@@ -69,7 +69,8 @@ def DoParamsPass(chunk):
 
         ############################ IO ######################################################
         # OK now we do file I/O if we don't find what we need in the buffer
-        t1, t2 = snaptimes[snaptimes<=time][-1], snaptimes[snaptimes>=time][0]
+        if time < snaptimes.max(): t1, t2 = snaptimes[snaptimes<=time][-1], snaptimes[snaptimes>=time][0]
+        else: t1, t2 = snaptimes[-2:]
         # do a pass to delete anything that will no longer be needed
         for k in list(snapdata_buffer.keys()):
             if k < t1: del snapdata_buffer[k] # delete if not needed for interpolation (including old interpolants)
