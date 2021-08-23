@@ -1,6 +1,6 @@
 from glob import glob
 from CrunchSnaps import *
-from tasks import *
+from snapshot_tasks import *
 from natsort import natsorted
 import numpy as np
 from sys import argv

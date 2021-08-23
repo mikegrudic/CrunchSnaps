@@ -1,5 +1,5 @@
 from multiprocessing import Pool, cpu_count
-from tasks import *
+from snapshot_tasks import *
 from natsort import natsorted
 import h5py
 import itertools
