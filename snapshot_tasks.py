@@ -164,6 +164,8 @@ class SinkVis(Task):
         F.save(fname)
         F.close()
             
+            
+            
     def AddStarsToImage(self,snapdata):
         if not "PartType5/Coordinates" in snapdata.keys(): return
         X_star = np.copy(snapdata["PartType5/Coordinates"]) # - self.params["center"]
@@ -182,10 +184,9 @@ class SinkVis(Task):
             else: # use derpy PIL circles
                 F = Image.open(fname)
                 gridres = F.size[0]
-
                 draw = ImageDraw.Draw(F)
                 d = aggdraw.Draw(F)
-                pen = aggdraw.Pen('white',1) #gridres/800
+                pen = aggdraw.Pen(self.Star_Edge_Color(),1) #gridres/800
                 sink_relscale = 0.0025
                 X_star ,m_star = X_star[m_star.argsort()[::-1]], np.sort(m_star)[::-1]
                 for j in np.arange(len(X_star))[m_star>1e-2]:
@@ -210,9 +211,14 @@ class SinkVis(Task):
             star_size = np.log10(m_star/self.params["sink_scale"])+2
             colors = np.array([self.GetStarColor(m) for m in m_star])/255
  
-            self.ax.scatter(X_star[:,0], X_star[:,1],s=star_size*5,edgecolor='white',lw=0.1,facecolor=colors,marker='*')
+            self.ax.scatter(X_star[:,0], X_star[:,1],s=star_size*5,edgecolor=self.Star_Edge_Color(),lw=0.1,facecolor=colors,marker='*')
             
-
+    def Star_Edge_Color(self):
+        if self.params["cmap"] in ('afmhot', 'inferno', "Blues"):
+            return 'black'
+        else:
+            return 'white'
+        
     def GetStarColor(self, mass_in_msun):
         if self.params["cmap"] in ('afmhot', 'inferno', "Blues"):
             star_colors = np.array([[255, 100, 60],[120, 200, 150],[75, 80, 255]]) #alternate colors, red-green-blue, easier to see on a bright color map
