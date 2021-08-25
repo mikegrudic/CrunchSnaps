@@ -197,7 +197,7 @@ class SinkVis(Task):
                         # make 100msun ~ 0.03pc, scale down from there
                         if X[2] < 0: continue
                         star_size = gridres * 0.03 / self.params["focal_distance"] / self.params["rmax"] * (ms/100)**(1./3)                        
-                    star_size = max(1,star_size)
+                    star_size = max(3,star_size)
                     p = aggdraw.Brush(self.GetStarColor(ms))
                     norm_coords = (X[:2]+self.params["rmax"])/(2*self.params["rmax"])*gridres
                     #Pillow puts the origin in th top left corner, so we need to flip the y axis
