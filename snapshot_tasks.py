@@ -1,7 +1,7 @@
 import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import LightSource
-from Meshoid import GridSurfaceDensity as GridSurfaceDensity
+from meshoid import GridSurfaceDensity as GridSurfaceDensity
 import aggdraw
 from PIL import Image, ImageDraw, ImageFont, ImageChops
 import matplotlib
