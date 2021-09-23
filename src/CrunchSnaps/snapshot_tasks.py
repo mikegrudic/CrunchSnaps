@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageChops
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
-import amuse_fresco
+from .amuse_fresco import *
 
 class Task:
     """Class containing generic routines common to all tasks, and assigns default (null/empty) attributes that any task should have"""
@@ -53,7 +53,8 @@ class SinkVis(Task):
                                "fresco_stars": True,
                                "fresco_param": 0.001,
                                "fresco_mass_limits": [0,0],
-                               "fresco_mass_rescale": 0.3
+                               "fresco_mass_rescale": 0.3,
+                               "parallel": False
         }
 
         super().AssignDefaultParams()
@@ -178,7 +179,7 @@ class SinkVis(Task):
                 if self.params["focal_distance"] < np.inf:
                     X_star, m_star = X_star[X_star[:,2]>0], m_star[X_star[:,2]>0]
 #                    m_star /= X_star[:,2]**2
-                    data_stars_fresco = amuse_fresco.make_amuse_fresco_stars_only(X_star,m_star, np.zeros_like(m_star),2*self.params["rmax"],res=self.params["res"],vmax=self.params["fresco_param"],mass_rescale=self.params["fresco_mass_rescale"],mass_limits=self.params["fresco_mass_limits"])
+                data_stars_fresco = make_amuse_fresco_stars_only(X_star,m_star, np.zeros_like(m_star),2*self.params["rmax"],res=self.params["res"],vmax=self.params["fresco_param"],mass_rescale=self.params["fresco_mass_rescale"],mass_limits=self.params["fresco_mass_limits"])
                 img = plt.imread(fname)
                 plt.imsave(fname,np.clip(img[:,:,:3]+data_stars_fresco,0,1))
             else: # use derpy PIL circles
@@ -260,7 +261,7 @@ class SinkVis(Task):
 class SinkVisSigmaGas(SinkVis):
     def GenerateMaps(self,snapdata):
         super().GenerateMaps(snapdata)
-        self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"]).T
+        self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.params["parallel"]).T
 
     def MakeImages(self,snapdata):
         vmin, vmax = self.params["limits"]

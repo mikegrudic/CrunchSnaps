@@ -1,5 +1,5 @@
 from multiprocessing import Pool, cpu_count
-from snapshot_tasks import *
+from .snapshot_tasks import *
 from natsort import natsorted
 import h5py
 import itertools
@@ -136,7 +136,7 @@ def GetSnapData(snappath, required_snapdata):
         snapdata["Header"] = dict(F["Header"].attrs)
         for field in required_snapdata:
             if field in F.keys():
-                snapdata[field] = np.array(F[field])
+                snapdata[field] = F[field][:]
                 if "ID" in field: snapdata[field] = np.int_(snapdata[field]) # cast to int for things that should be signed integers
 
 
@@ -147,7 +147,6 @@ def GetSnapData(snappath, required_snapdata):
 
         if ptype == "PartType0": # if we have to worry about wind IDs and splitting
             child_ids = snapdata["PartType0/ParticleChildIDsNumber"]
-#            print(ids[child_ids>1])
             wind_idx1 = np.in1d(ids, wind_ids)
             ids[np.invert(wind_idx1)] = ((child_ids << 32) + ids)[np.invert(wind_idx1)]
             if np.any(wind_idx1):

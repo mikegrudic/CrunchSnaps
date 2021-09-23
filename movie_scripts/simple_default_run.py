@@ -1,8 +1,6 @@
 from glob import glob
 from CrunchSnaps import *
-from snapshot_tasks import *
 from multiprocessing import Pool, cpu_count
-from snapshot_tasks import *
 from natsort import natsorted
 import h5py
 import itertools
@@ -11,7 +9,7 @@ from sys import argv
 from time import time
 
 tasks = [SinkVisSigmaGas,]
-snaps = natsorted(glob(argv[1]+"/snap*.hdf5"))[:250]
+snaps = natsorted(glob(argv[1]+"/snap*.hdf5"))
 Nchunks = cpu_count()
 
 t = time()
