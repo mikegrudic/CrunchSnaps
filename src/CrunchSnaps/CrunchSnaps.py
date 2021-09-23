@@ -15,7 +15,7 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
     Main CrunchSnaps routine, performs a list of tasks using (possibly interpolated) time series simulation data
     snaps - list of paths of simulation snapshots
     tasks - list of tasks to perform at each simulation time
-    task_params - shape [N_tasks,N_params] array of dictionaries containing the parameters for each task - if only (N_tasks,) list is provided this will be broadcast
+    task_params - shape [N_tasks,N_params] list of dictionaries containing the parameters for each task - if only (N_tasks,) list is provided this will be broadcast
     """
 
     ####################################################################################################
@@ -28,17 +28,26 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
     N_tasks = len(tasks)
 
     if not task_params:
-        N_params = len(snaps)*interp_fac
+        N_params = len(snaps)*interp_fac # default to just doing a pass on snapshots with optional interpolation and default parameters
     else:
         N_params = len(task_params[0])
         
-    
+    # broadcast task params across the different tasks if necessary
+    if len(tasks) > 1 and task_params:
+        for i in range(len(task_params)):
+            if type(tasks[i]) == dict:
+                tasks[i] = [tasks[i], tasks[i]]
+            elif type(tasks[i]) == list:
+                if len(tasks[i]) < N_tasks:
+                    tasks[i] = [tasks[0], tasks[0]]            
+        
     # don't yet know what the snapshot times are - get the snapshot times in a prepass
-    snaptimes = []
+    snaptimes, snapnums = [], []
     for s in snaps:
         with h5py.File(s, 'r') as F:
             print(s)
             snaptimes.append(F["Header"].attrs["Time"])
+            snapnums.append(int(s.split("snapshot_")[1].split(".hdf5")[0]))
     snaptimes = np.array(snaptimes)
     snapdict = dict(zip(snaptimes, snaps))
     
@@ -49,16 +58,16 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
     # note that params must be sorted by time!        
 
     index_chunks = np.array_split(np.arange(N_params), nproc)
-    chunks=[(index_chunks[i], tasks, snaps, task_params, snapdict, snaptimes) for i in range(nproc)]            
+    chunks=[(index_chunks[i], tasks, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]            
     Pool(nproc).map(DoParamsPass, chunks,chunksize=1) # this is where we fork into parallel tasks 
 
 def DoParamsPass(chunk):
-    task_chunk_indices, tasks, snaps, task_params, snapdict, snaptimes = chunk
+    task_chunk_indices, tasks, snaps, task_params, snapdict, snaptimes, snapnums = chunk # unpack chunk data
     N_tasks = len(tasks)
-    snapdata_buffer = {} # should store data from at most 2 snapshots        
+    snapdata_buffer = {} # should store data from at most 2 snapshots
     for i in task_chunk_indices:        
         ######################### initialization  ############################################
-        # initialize the task objects at figure out what data the tasks need
+        # initialize the task objects and figure out what data the tasks need
         task_instances = [tasks[n](task_params[n][i]) for n in range(N_tasks)] # instantiate a task object for each task to be done
         time = task_params[0][i]["Time"]
         required_snapdata = set()
