@@ -10,7 +10,7 @@ from numba import vectorize
 from math import copysign
 
 
-def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc=1):
+def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc=1, nthreads=1):
     """
     Main CrunchSnaps routine, performs a list of tasks using (possibly interpolated) time series simulation data
     snaps - list of paths of simulation snapshots
@@ -26,11 +26,6 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
     snaps = natsorted(snaps)
         
     N_tasks = len(tasks)
-
-    if not task_params:
-        N_params = len(snaps)*interp_fac # default to just doing a pass on snapshots with optional interpolation and default parameters
-    else:
-        N_params = len(task_params[0])
         
     # broadcast task params across the different tasks if necessary
     if len(tasks) > 1 and task_params:
@@ -50,11 +45,19 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
             snapnums.append(int(s.split("snapshot_")[1].split(".hdf5")[0]))
     snaptimes = np.array(snaptimes)
     snapdict = dict(zip(snaptimes, snaps))
-    
-    if not task_params: # set up a default params with the desired interpolated times as parameters
+
+    if (not task_params) or (type(task_params) == dict): # if task_params is empty or a single dict that we must broadcast
+        N_params = len(snaps)*interp_fac # default to just doing a pass on snapshots with optional interpolation and default parameters
         if interp_fac > 1: params_times = np.interp(np.arange(N_params)/interp_fac,np.arange(N_params//interp_fac),snaptimes)
         else: params_times = snaptimes
-        task_params = [[{"Time": params_times[i]} for i in range(N_params)] for t in tasks]
+        if not task_params: task_params = [[{"Time": params_times[i], "index": i, "threads": nthreads} for i in range(N_params)] for t in tasks] # need to generate params from scratch
+        else: # already have the dict of defaults; need to broadcast
+            task_params_orig = task_params.copy()
+            task_params = [[task_params_orig.copy() for i in range(N_params)] for t in tasks]
+            [[task_params[j][i].update({"Time": params_times[i], "index": i, "threads": nthreads}) for i in range(N_params)] for j in range(N_tasks)] # add the other defaults
+    else:
+        N_params = len(task_params[0])    
+
     # note that params must be sorted by time!        
 
     index_chunks = np.array_split(np.arange(N_params), nproc)
@@ -182,3 +185,14 @@ def GetSnapData(snappath, required_snapdata):
 def NearestImage(x,boxsize):
     if abs(x) > boxsize/2: return -copysign(boxsize-abs(x),x)
     else: return x
+
+
+cubemap_directions = "forward", "left", "right", "up", "down", "backward"
+    
+def cubemapify(params):
+    new_params = []
+    for dir in cubemap_directions:
+        d = params.copy()
+        d.update({"cubemap_dir": dir})
+        new_params.append(d)
+    return new_params

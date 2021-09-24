@@ -8,10 +8,12 @@ import numpy as np
 from sys import argv
 from time import time
 
-tasks = [SinkVisSigmaGas,]
+tasks = [SinkVisSigmaGas, SinkVisCoolMap]
 snaps = natsorted(glob(argv[1]+"/snap*.hdf5"))
 Nchunks = cpu_count()
 
+params = {"res": 512}
+
 t = time()
-DoTasksForSimulation(snaps,interp_fac=5,tasks=tasks,nproc=Nchunks)
+DoTasksForSimulation(snaps, task_params=params, interp_fac=1,tasks=tasks,nproc=4, nthreads=4)
 print(time() - t)

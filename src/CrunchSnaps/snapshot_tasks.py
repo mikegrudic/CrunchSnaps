@@ -8,6 +8,7 @@ import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from .amuse_fresco import *
+from numba import get_num_threads, set_num_threads
 
 class Task:
     """Class containing generic routines common to all tasks, and assigns default (null/empty) attributes that any task should have"""
@@ -48,47 +49,76 @@ class SinkVis(Task):
                                "backend": "PIL",
                                "rescale_hsml": False,
                                "FOV": 90,
-                               "focal_distance": np.inf,
+                               "camera_distance": np.inf,
                                "center_on_star": False,
-                               "fresco_stars": True,
+                               "fresco_stars": False,
                                "fresco_param": 0.001,
                                "fresco_mass_limits": [0,0],
                                "fresco_mass_rescale": 0.3,
-                               "parallel": False
+                               "threads": 1,
+                               "cubemap_dir": "forward",
+                               "camera_pos": None,
+                               "camera_frame": None,
+                               "index": None,
         }
 
+        self.AssignDefaultParams()
+        
+        if self.params["threads"] != 1:
+            self.parallel = True
+            if self.params["threads"] > 0: # if negative, just use all available threads, otherwise set to desired value
+                set_num_threads(self.params["threads"])
+        else: self.parallel = False
+
+    def AssignDefaultParams(self):
         super().AssignDefaultParams()
+        if self.params["index"] is None:
+            self.params["index"] = round(self.params["Time"]/1e-6)            
+        self.params["filename_suffix"] = "%s_%s_%s.png"%(str(self.params["index"]).zfill(4), str(round(self.params["pan"])).zfill(4), self.params["cubemap_dir"]) 
 
-    def CoordinateTransform(self,x,m=None,h=None):
-        tilt, pan = self.params["tilt"], self.params["pan"]
-
+    def CoordinateTransform(self,x,m=None,h=None,rotate_only=False):
         # center on the designated center coordinate
-        x[:] -= self.params["center"]
+        if not rotate_only: x[:] -= self.params["center"]
+
+        tilt, pan = self.params["tilt"], self.params["pan"]    
         # first pan
         cosphi, sinphi = np.cos(np.pi*pan/180), np.sin(np.pi*pan/180)
         x[:] = np.c_[cosphi*x[:,0] + sinphi*x[:,2],x[:,1], -sinphi*x[:,0] + cosphi*x[:,2]]
         # then tilt
         costheta, sintheta = np.cos(np.pi*tilt/180), np.sin(np.pi*tilt/180)
         x[:] = np.c_[x[:,0], costheta*x[:,1] + sintheta*x[:,2], -sintheta*x[:,1] + costheta*x[:,2]]
-        # then do projection if desired
-        if self.params["focal_distance"] != np.inf:
+        #else: # we have a camera position and coordinate basis
+
+        if self.params["camera_distance"] != np.inf and not rotate_only:
             # transform so camera is at z=0:
-            x[:,2] += self.params["focal_distance"]
+            x[:,2] += self.params["camera_distance"]
+        
+        # shuffle the axes to get the desired cubemap direction
+        cubedir = self.params["cubemap_dir"]
+        if cubedir != "forward":
+            if cubedir == "right": x[:] = np.c_[-x[:,2],x[:,1],x[:,0]]
+            elif cubedir == "left": x[:] = np.c_[x[:,2],x[:,1],-x[:,0]]
+            elif cubedir == "up": x[:] = np.c_[x[:,0],-x[:,2],x[:,1]]
+            elif cubedir == "down": x[:] = np.c_[x[:,0],x[:,2],-x[:,1]]
+            elif cubedir == "backward": x[:] = np.c_[-x[:,0],x[:,1],-x[:,2]]
+                
+        if rotate_only: return
+        
+        # then do projection if desired
+        if self.params["camera_distance"] != np.inf:
+            # transform so camera is at z=0:
+#            x[:,2] += self.params["camera_distance"]
             
-            # now transform from 3D to angular system\
-            r = np.sum(x*x,axis=1)**0.5 # distance from camera                
+            # now transform from 3D to angular system
+            r = np.sum(x*x,axis=1)**0.5 # distance from camera 
             x[:,:2] = x[:,:2] / x[:,2][:,None] # homogeneous coordinates
+            r = np.abs(x[:,2])
             if h is not None:
                 h[:] = h / r # kernel lengths are now angular (divide by distance)
                 h[x[:,2]<0] = 0             # assign 0 weight/size to anything behind the camera
             if m is not None:
                 m[:] /= r**2 # rescale mass weights so that integrated surface density remains the same
                 m[x[:,2]<0] = 0
-
-
-
-
-            
 
     def SetupCoordsAndWeights(self, snapdata):
         res = self.params["res"]
@@ -138,7 +168,7 @@ class SinkVis(Task):
 
 
     def AddSizeScaleToImage(self):
-        if self.params["focal_distance"] < np.inf: return
+        if self.params["camera_distance"] < np.inf: return
         if self.params["backend"]=="matplotlib": return # matplotlib will have axis ticks for scale
         pc_to_AU = 206265.0
         if self.params["no_size_scale"]: return
@@ -163,20 +193,19 @@ class SinkVis(Task):
         draw.line(((gridres/16, 7*gridres/8), (size_scale_ending, 7*gridres/8)), fill="#FFFFFF", width=6)
         draw.text((gridres/16, 7*gridres/8 + 5), size_scale_text, font=font)
         F.save(fname)
-        F.close()
-            
-            
+        F.close()                       
             
     def AddStarsToImage(self,snapdata):
         if not "PartType5/Coordinates" in snapdata.keys(): return
         X_star = np.copy(snapdata["PartType5/Coordinates"]) # - self.params["center"]
         m_star = snapdata["PartType5/BH_Mass"]
+
         self.CoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))
         
         if self.params["backend"]=="PIL":            
             fname = self.params["filename"]
             if self.params["fresco_stars"]: # use fresco for stellar images
-                if self.params["focal_distance"] < np.inf:
+                if self.params["camera_distance"] < np.inf:
                     X_star, m_star = X_star[X_star[:,2]>0], m_star[X_star[:,2]>0]
 #                    m_star /= X_star[:,2]**2
                 data_stars_fresco = make_amuse_fresco_stars_only(X_star,m_star, np.zeros_like(m_star),2*self.params["rmax"],res=self.params["res"],vmax=self.params["fresco_param"],mass_rescale=self.params["fresco_mass_rescale"],mass_limits=self.params["fresco_mass_limits"])
@@ -190,14 +219,15 @@ class SinkVis(Task):
                 pen = aggdraw.Pen(self.Star_Edge_Color(),1) #gridres/800
                 sink_relscale = 0.0025
                 X_star ,m_star = X_star[m_star.argsort()[::-1]], np.sort(m_star)[::-1]
+                X_star, m_star = X_star[X_star[:,2]>0], m_star[X_star[:,2]>0]                
                 for j in np.arange(len(X_star))[m_star>1e-2]:
                     X = X_star[j]
                     ms = m_star[j]
                     star_size = gridres * sink_relscale * (np.log10(ms/self.params["sink_scale"]) + 1)
-                    if self.params["focal_distance"] < np.inf:
+#                    if self.params["camera_distance"] < np.inf:
                         # make 100msun ~ 0.03pc, scale down from there
-                        if X[2] < 0: continue
-                        star_size = gridres * 0.03 / self.params["focal_distance"] / self.params["rmax"] * (ms/100)**(1./3)                        
+#                        if X[2] < 0: continue
+#                        star_size = gridres * 0.03 / dist_to_camera / self.params["rmax"] * (ms/100)**(1./3)                        
                     star_size = max(3,star_size)
                     p = aggdraw.Brush(self.GetStarColor(ms))
                     norm_coords = (X[:2]+self.params["rmax"])/(2*self.params["rmax"])*gridres
@@ -240,14 +270,12 @@ class SinkVis(Task):
             center = self.params["center"]
         else: center = self.params["center"]
         if self.params["rmax"] is None:
-            if self.params["focal_distance"] < np.inf:
+            if self.params["camera_distance"] < np.inf:
                 self.params["rmax"] = self.params["FOV"]/90 # angular width
             else:
                 self.params["rmax"] = snapdata["Header"]["BoxSize"]/10
-#            if self.params["focal_distance"] < np.inf and self.params["FOV"] is None:
-#                self.params["rmax"] /= self.params["focal_distance"] # convert to angular assuming rmax is real-space half-width at the focal distance
-        if self.params["filename"] is None:
-            self.params["filename"] = "sigma_gas_%s_%s.png"%(str(round(self.params["Time"]/1e-6)).zfill(4), str(round(self.params["pan"])).zfill(4))
+#            if self.params["camera_distance"] < np.inf and self.params["FOV"] is None:
+#                self.params["rmax"] /= self.params["camera_distance"] # convert to angular assuming rmax is real-space half-width at the focal distance
 
     
     def DoTask(self, snapdata):
@@ -259,9 +287,19 @@ class SinkVis(Task):
 
 
 class SinkVisSigmaGas(SinkVis):
+    def __init__(self,params):
+        super().__init__(params)
+        self.AssignDefaultParams()
+
+    def AssignDefaultParams(self):
+        super().AssignDefaultParams()
+#         self.params["filename"] = "SurfaceDensity_%s_%s.png"%(str(self.params["index"]).zfill(4), str(round(self.params["pan"])).zfill(4))
+#        else:
+        if self.params["filename"] is None: self.params["filename"] = "SurfaceDensity_" + self.params["filename_suffix"]
+        
     def GenerateMaps(self,snapdata):
         super().GenerateMaps(snapdata)
-        self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.params["parallel"]).T
+        self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T
 
     def MakeImages(self,snapdata):
         vmin, vmax = self.params["limits"]
@@ -280,7 +318,7 @@ class SinkVisSigmaGas(SinkVis):
             divider = make_axes_locatable(self.ax)
             cax = divider.append_axes("right", size="5%", pad=0.0)
             self.fig.colorbar(p,label=r"$\Sigma_{\rm gas}$ $(\rm M_\odot\,pc^{-2})$",cax=cax)
-            if self.params["focal_distance"] == np.inf:
+            if self.params["camera_distance"] == np.inf:
                 self.ax.set_xlabel("X (pc)")
                 self.ax.set_ylabel("Y (pc)")
             else:
@@ -295,16 +333,22 @@ class SinkVisCoolMap(SinkVis):
         super().__init__(params)
         self.RequiredSnapdata.append("PartType0/Velocities")
         self.default_params["cool_cmap"] = 'magma'
+        self.AssignDefaultParams()
+
+    def AssignDefaultParams(self):
         super().AssignDefaultParams()
+#        if self.params["filename"] is None: self.params["filename"] = "CoolMap_%s_%s.png"%(str(self.params["Index"]).zfill(4), str(round(self.params["pan"])).zfill(4))
+#        else:
+        if self.params["filename"] is None: self.params["filename"] = "CoolMap_" + self.params["filename_suffix"]
         
     def GenerateMaps(self,snapdata):
         super().GenerateMaps(snapdata)
         # need to apply coordinate transforms to z-velocity
         v = np.copy(snapdata["PartType0/Velocities"])
-        self.CoordinateTransform(v)
-        sigma_gas = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"]).T
-        sigma_1D = GridSurfaceDensity(self.mass * v[:,2]**2, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"]).T/sigma_gas
-        v_avg = GridSurfaceDensity(self.mass * v[:,2], self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"]).T/sigma_gas
+        self.CoordinateTransform(v,rotate_only=True)
+        sigma_gas = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T
+        sigma_1D = GridSurfaceDensity(self.mass * v[:,2]**2, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/sigma_gas
+        v_avg = GridSurfaceDensity(self.mass * v[:,2], self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/sigma_gas
         sigma_1D = np.sqrt(sigma_1D - v_avg**2)/1e3
         fgas = (np.log10(sigma_gas)-np.log10(self.params["limits"][0]))/np.log10(self.params["limits"][1]/self.params["limits"][0])
         fgas = np.clip(fgas,0,1)
@@ -319,4 +363,4 @@ class SinkVisCoolMap(SinkVis):
         plt.imsave(self.params["filename"], np.flipud(self.maps["coolmap"])) # NOTE - we invert this to get the coordinate system right                    
         self.AddStarsToImage(snapdata)        
         self.AddSizeScaleToImage()
-        self.AddTimestampToImage()
+        self.AddTimestampToImage()        

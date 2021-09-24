@@ -1,6 +1,5 @@
 from glob import glob
 from CrunchSnaps import *
-from snapshot_tasks import *
 from natsort import natsorted
 import numpy as np
 from sys import argv
@@ -16,7 +15,7 @@ pan = 0
 pan_seconds_per_rotation = 30
 fps = 24
 pan_deg_per_frame = 360 / (fps * pan_seconds_per_rotation)
-res = 1920 #3840
+res = 512 #1920 #3840
 frame = 0
 Tmax = 7.65e-3
 center = np.float64([50,50,50])
@@ -29,31 +28,31 @@ for i in list(range(Nangle)):
     params.append({"Time": 5e-3 * i/Nangle,
                    "pan": pan,
                    "tilt": tilt,                   
-                   "focal_distance": 8*(1+4*np.exp(-5*i/Nangle)),
+                   "camera_distance": 8*(1+4*np.exp(-5*i/Nangle)),
                    "filename": "cool__%s.png"%str(frame).zfill(4),
                    "res": res,
                    "fresco_stars": True,
-                   "center": centers[frame],
+#                   "center": centers[frame],
                    "no_timestamp": True
                }
     )
     frame += 1
     if i > fps * 5: pan += pan_deg_per_frame
 for i in range(10 * fps):
-    params.append({"Time": 5e-3, "pan": pan, "tilt": tilt,  "focal_distance": 8 * np.exp(0.5*(-1+np.cos(2*np.pi*i/(10*fps)))), "filename": "cool__%s.png"%str(frame).zfill(4),"res": res, "fresco_stars": True,  "center": centers[frame],"no_timestamp": True})
+    params.append({"Time": 5e-3, "pan": pan, "tilt": tilt,  "camera_distance": 8 * np.exp(0.5*(-1+np.cos(2*np.pi*i/(10*fps)))), "filename": "cool__%s.png"%str(frame).zfill(4),"res": res, "fresco_stars": True,"no_timestamp": True})
     frame += 1
     pan += pan_deg_per_frame
 
 i0 = i
 for i in range(i0+1,i0+360):
-    params.append({"Time": 5e-3+(Tmax-5e-3)*(i-i0)/360, "pan": pan, "focal_distance": 8 + (i-i0)*10/360, "filename": "cool__%s.png"%str(frame).zfill(4), "res": res, "fresco_stars": True,   "center": centers[frame],"no_timestamp": True})    
+    params.append({"Time": 5e-3+(Tmax-5e-3)*(i-i0)/360, "pan": pan, "camera_distance": 8 + (i-i0)*10/360, "filename": "cool__%s.png"%str(frame).zfill(4), "res": res, "fresco_stars": True,"no_timestamp": True})    
     frame += 1
 
 for i in range(pan_seconds_per_rotation * fps):
     pan += pan_deg_per_frame
     tilt = np.sin(3*np.pi*i/(pan_seconds_per_rotation*fps))
-    params.append({"Time": Tmax, "pan": pan, "focal_distance": 18 * np.exp(np.sin(1.5*np.pi*i/(pan_seconds_per_rotation*fps))), "filename": "cool__%s.png"%str(frame).zfill(4), "res": res, "tilt": tilt, "fresco_stars": True,   "center": centers[frame],"no_timestamp": True})    
+    params.append({"Time": Tmax, "pan": pan, "camera_distance": 18 * np.exp(np.sin(1.5*np.pi*i/(pan_seconds_per_rotation*fps))), "filename": "cool__%s.png"%str(frame).zfill(4), "res": res, "tilt": tilt, "fresco_stars": True,   "no_timestamp": True})    
     frame += 1
 print(len(params))
 params = [params,] # format as a list of lists with one entry per task
-DoTasksForSimulation(snaps=snaps, tasks=tasks, task_params=params,nproc=16)
+DoTasksForSimulation(snaps=snaps, tasks=tasks, task_params=params,nproc=16,nthreads=1)
