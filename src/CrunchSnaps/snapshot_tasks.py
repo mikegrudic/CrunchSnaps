@@ -78,7 +78,7 @@ class SinkVis(Task):
 
     def CoordinateTransform(self,x,m=None,h=None, contravariant=False):
         # center on the designated center coordinate
-        if not rotate_only: x[:] -= self.params["center"]
+        if not contravariant: x[:] -= self.params["center"]
 
         tilt, pan = self.params["tilt"], self.params["pan"]
         if contravariant: tilt, pan = -tilt, -pan
@@ -90,7 +90,7 @@ class SinkVis(Task):
         x[:] = np.c_[x[:,0], costheta*x[:,1] + sintheta*x[:,2], -sintheta*x[:,1] + costheta*x[:,2]]
         #else: # we have a camera position and coordinate basis
 
-        if self.params["camera_distance"] != np.inf and not rotate_only:
+        if self.params["camera_distance"] != np.inf and not contravariant:
             # transform so camera is at z=0:
             x[:,2] += self.params["camera_distance"]
         
@@ -101,26 +101,30 @@ class SinkVis(Task):
             elif cubedir == "left": x[:] = np.c_[x[:,2],x[:,1],-x[:,0]]
             elif cubedir == "up": x[:] = np.c_[x[:,0],-x[:,2],x[:,1]]
             elif cubedir == "down": x[:] = np.c_[x[:,0],x[:,2],-x[:,1]]
-            elif cubedir == "backward": x[:] = np.c_[-x[:,0],x[:,1],-x[:,2]]
-                
-        if contravariant: return
+            elif cubedir == "backward": x[:] = np.c_[-x[:,0],x[:,1],-x[:,2]]                
         
         # then do projection if desired
         if self.params["camera_distance"] != np.inf:
-            # transform so camera is at z=0:
-#            x[:,2] += self.params["camera_distance"]
-            
-            # now transform from 3D to angular system
-            r = np.sum(x*x,axis=1)**0.5 # distance from camera 
-            x[:,:2] = x[:,:2] / x[:,2][:,None] # homogeneous coordinates
-            r = np.abs(x[:,2])
-            if h is not None:
-                h[:] = h / r # kernel lengths are now angular (divide by distance)
-                h[x[:,2]<0] = 0             # assign 0 weight/size to anything behind the camera
-            if m is not None:
-                m[:] /= r**2 # rescale mass weights so that integrated surface density remains the same
-                m[x[:,2]<0] = 0
+            if not contravariant:
+                # now transform from 3D to angular system
+                r = np.sum(x*x,axis=1)**0.5 # distance from camera 
+                x[:,:2] = x[:,:2] / x[:,2][:,None] # homogeneous coordinates
+                r = np.abs(x[:,2])
+                if h is not None:
+                    h[:] = h / r # kernel lengths are now angular (divide by distance)
+                    h[x[:,2]<0] = 0             # assign 0 weight/size to anything behind the camera
+                if m is not None:
+                    m[:] /= r**2 # rescale mass weights so that integrated surface density remains the same
+                    m[x[:,2]<0] = 0
+
+            # would like to find a good way to transform contravariant vector into this system - requires saving original coordinates
+            else:
+                global_coords = np.copy(self.pos) # this would have been converted to angular by now - let's convery back to real space
+                global_coords[:,:2] *= global_coords[:,2][:,None] # multiply by z, now we're in the rotated real space frame
+                x[:,2] = np.sum(x*global_coords,axis=1)/np.sum(global_coords**2,axis=1)**0.5 # get the radial component
                 
+            
+            
 
     def SetupCoordsAndWeights(self, snapdata):
         res = self.params["res"]
@@ -348,7 +352,7 @@ class SinkVisCoolMap(SinkVis):
         # need to apply coordinate transforms to z-velocity
         v = np.copy(snapdata["PartType0/Velocities"])
         self.CoordinateTransform(v,contravariant=True)
-        sigma_gas = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T
+        sigma_gas = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T        
         sigma_1D = GridSurfaceDensity(self.mass * v[:,2]**2, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/sigma_gas
         v_avg = GridSurfaceDensity(self.mass * v[:,2], self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/sigma_gas
         sigma_1D = np.sqrt(sigma_1D - v_avg**2)/1e3
