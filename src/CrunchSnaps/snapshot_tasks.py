@@ -57,9 +57,9 @@ class SinkVis(Task):
                                "fresco_mass_rescale": 0.3,
                                "threads": 1,
                                "cubemap_dir": "forward",
-                               "camera_pos": None,
                                "camera_frame": None,
                                "index": None,
+                               "no_stars": False,
         }
 
         self.AssignDefaultParams()
@@ -76,11 +76,12 @@ class SinkVis(Task):
             self.params["index"] = round(self.params["Time"]/1e-6)            
         self.params["filename_suffix"] = "%s_%s_%s.png"%(str(self.params["index"]).zfill(4), str(round(self.params["pan"])).zfill(4), self.params["cubemap_dir"]) 
 
-    def CoordinateTransform(self,x,m=None,h=None,rotate_only=False):
+    def CoordinateTransform(self,x,m=None,h=None, contravariant=False):
         # center on the designated center coordinate
         if not rotate_only: x[:] -= self.params["center"]
 
-        tilt, pan = self.params["tilt"], self.params["pan"]    
+        tilt, pan = self.params["tilt"], self.params["pan"]
+        if contravariant: tilt, pan = -tilt, -pan
         # first pan
         cosphi, sinphi = np.cos(np.pi*pan/180), np.sin(np.pi*pan/180)
         x[:] = np.c_[cosphi*x[:,0] + sinphi*x[:,2],x[:,1], -sinphi*x[:,0] + cosphi*x[:,2]]
@@ -102,7 +103,7 @@ class SinkVis(Task):
             elif cubedir == "down": x[:] = np.c_[x[:,0],x[:,2],-x[:,1]]
             elif cubedir == "backward": x[:] = np.c_[-x[:,0],x[:,1],-x[:,2]]
                 
-        if rotate_only: return
+        if contravariant: return
         
         # then do projection if desired
         if self.params["camera_distance"] != np.inf:
@@ -119,6 +120,7 @@ class SinkVis(Task):
             if m is not None:
                 m[:] /= r**2 # rescale mass weights so that integrated surface density remains the same
                 m[x[:,2]<0] = 0
+                
 
     def SetupCoordsAndWeights(self, snapdata):
         res = self.params["res"]
@@ -139,7 +141,7 @@ class SinkVis(Task):
             plt.close()
 
     def MakeImages(self,snapdata):
-        self.AddStarsToImage(snapdata)
+        if not self.params["no_stars"]: self.AddStarsToImage(snapdata)
         self.AddSizeScaleToImage()
         self.AddTimestampToImage()
         self.SaveImage()
@@ -345,7 +347,7 @@ class SinkVisCoolMap(SinkVis):
         super().GenerateMaps(snapdata)
         # need to apply coordinate transforms to z-velocity
         v = np.copy(snapdata["PartType0/Velocities"])
-        self.CoordinateTransform(v,rotate_only=True)
+        self.CoordinateTransform(v,contravariant=True)
         sigma_gas = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T
         sigma_1D = GridSurfaceDensity(self.mass * v[:,2]**2, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/sigma_gas
         v_avg = GridSurfaceDensity(self.mass * v[:,2], self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/sigma_gas
