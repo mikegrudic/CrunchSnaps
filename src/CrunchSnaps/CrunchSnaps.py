@@ -1,14 +1,14 @@
 from multiprocessing import Pool, cpu_count
 from .snapshot_tasks import *
+from .misc_functions import *
 from natsort import natsorted
 import h5py
 import itertools
 import numpy as np
 from functools import partial
 from os.path import isfile
-from numba import vectorize
+from numba import vectorize, njit
 from math import copysign
-
 
 def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc=1, nthreads=1):
     """
@@ -59,10 +59,12 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
         N_params = len(task_params[0])    
 
     # note that params must be sorted by time!        
-
     index_chunks = np.array_split(np.arange(N_params), nproc)
-    chunks=[(index_chunks[i], tasks, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]            
-    Pool(nproc).map(DoParamsPass, chunks,chunksize=1) # this is where we fork into parallel tasks 
+    chunks=[(index_chunks[i], tasks, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
+    if nproc > 1:
+        Pool(nproc).map(DoParamsPass, chunks,chunksize=1) # this is where we fork into parallel tasks
+    else:
+        [DoParamsPass(c) for c in chunks]
 
 def DoParamsPass(chunk):
     task_chunk_indices, tasks, snaps, task_params, snapdict, snaptimes, snapnums = chunk # unpack chunk data
@@ -181,18 +183,3 @@ def GetSnapData(snappath, required_snapdata):
         snapdata[field] = np.take(snapdata[field], id_order[ptype],axis=0)
     return snapdata
         
-@vectorize
-def NearestImage(x,boxsize):
-    if abs(x) > boxsize/2: return -copysign(boxsize-abs(x),x)
-    else: return x
-
-
-cubemap_directions = "forward", "left", "right", "up", "down", "backward"
-    
-def cubemapify(params):
-    new_params = []
-    for dir in cubemap_directions:
-        d = params.copy()
-        d.update({"cubemap_dir": dir})
-        new_params.append(d)
-    return new_params

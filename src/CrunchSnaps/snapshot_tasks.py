@@ -9,6 +9,7 @@ matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from .amuse_fresco import *
 from numba import get_num_threads, set_num_threads
+from .misc_functions import *
 
 class Task:
     """Class containing generic routines common to all tasks, and assigns default (null/empty) attributes that any task should have"""
@@ -57,7 +58,9 @@ class SinkVis(Task):
                                "fresco_mass_rescale": 0.3,
                                "threads": 1,
                                "cubemap_dir": "forward",
-                               "camera_frame": None,
+                               "camera_dir": None,
+                               "camera_right": None,
+                               "camera_up": None,
                                "index": None,
                                "no_stars": False,
         }
@@ -80,15 +83,18 @@ class SinkVis(Task):
         # center on the designated center coordinate
         if not contravariant: x[:] -= self.params["center"]
 
-        tilt, pan = self.params["tilt"], self.params["pan"]
-        if contravariant: tilt, pan = -tilt, -pan
-        # first pan
-        cosphi, sinphi = np.cos(np.pi*pan/180), np.sin(np.pi*pan/180)
-        x[:] = np.c_[cosphi*x[:,0] + sinphi*x[:,2],x[:,1], -sinphi*x[:,0] + cosphi*x[:,2]]
-        # then tilt
-        costheta, sintheta = np.cos(np.pi*tilt/180), np.sin(np.pi*tilt/180)
-        x[:] = np.c_[x[:,0], costheta*x[:,1] + sintheta*x[:,2], -sintheta*x[:,1] + costheta*x[:,2]]
-        #else: # we have a camera position and coordinate basis
+        if self.params["camera_dir"] is None: # without a specified camera direction, we just use a simple tilt/pan scheme
+            tilt, pan = self.params["tilt"], self.params["pan"]
+            if contravariant: tilt, pan = -tilt, -pan
+            # first pan
+            cosphi, sinphi = np.cos(np.pi*pan/180), np.sin(np.pi*pan/180)
+            x[:] = np.c_[cosphi*x[:,0] + sinphi*x[:,2],x[:,1], -sinphi*x[:,0] + cosphi*x[:,2]]
+            # then tilt
+            costheta, sintheta = np.cos(np.pi*tilt/180), np.sin(np.pi*tilt/180)
+            x[:] = np.c_[x[:,0], costheta*x[:,1] + sintheta*x[:,2], -sintheta*x[:,1] + costheta*x[:,2]]
+        else: # we have a camera position and coordinate basis
+            if contravariant: x[:] = (self.camera_matrix_vectors @ x.T).T # note that @ performs matrix multiplication
+            else: x[:] = (self.camera_matrix @ x.T).T
 
         if self.params["camera_distance"] != np.inf and not contravariant:
             # transform so camera is at z=0:
@@ -117,8 +123,7 @@ class SinkVis(Task):
                     m[:] /= r**2 # rescale mass weights so that integrated surface density remains the same
                     m[x[:,2]<0] = 0
 
-            # would like to find a good way to transform contravariant vector into this system - requires saving original coordinates
-            else:
+            else: # dealing with a contravariant vector such as velocity - want the [:,2] component to correspond to line-of-sight value
                 global_coords = np.copy(self.pos) # this would have been converted to angular by now - let's convery back to real space
                 global_coords[:,:2] *= global_coords[:,2][:,None] # multiply by z, now we're in the rotated real space frame
                 x[:,2] = np.sum(x*global_coords,axis=1)/np.sum(global_coords**2,axis=1)**0.5 # get the radial component
@@ -130,6 +135,23 @@ class SinkVis(Task):
         res = self.params["res"]
         self.pos, self.mass, self.hsml = np.copy(snapdata["PartType0/Coordinates"]), np.copy(snapdata["PartType0/Masses"]), np.copy(snapdata["PartType0/SmoothingLength"]) # copy these because we don't want to modify them
         if self.params["rescale_hsml"]: self.hsml *= self.params["rescale_hsml"]
+
+        # Setting up coordinate basis
+        if self.params["camera_dir"] is not None:
+            self.camera_dir = self.params["camera_dir"]
+            NormalizeVector(self.params["camera_dir"])
+            if not self.params["camera_up"]: self.camera_up = np.array([0,1.,0]) # default "up" direction is +y, we will project it out if the camera is tilted
+            else: self.camera_up = self.params["camera_up"]
+            
+            # if we've specified an up direction, project out the component parallel to the forward direction and normalize
+            self.camera_up -= sum(self.camera_dir * self.camera_up).sum() * self.camera_dir
+            NormalizeVector(self.camera_up)
+            # now get the "right" vector as the cross product of forward x up. this will be normalized to machine precision
+            self.camera_right = np.cross(self.camera_up, self.camera_dir)
+
+            self.camera_matrix = np.c_[self.camera_right, self.camera_up, self.camera_dir].T # matrix of coordinate vectors - operate this on coordinates to apply transformation - operates on COORDINATES not vectors
+            self.camera_matrix_vectors = self.camera_matrix.T # since vector fields are contravariant, this is the operator for transforming v and B (note that this is an orthogonal matrix so the transpose is the inverse)
+            
         self.CoordinateTransform(self.pos,self.mass,self.hsml)
         self.hsml = np.clip(self.hsml,2*self.params["rmax"]/res, 1e100)
 
@@ -370,3 +392,6 @@ class SinkVisCoolMap(SinkVis):
         self.AddStarsToImage(snapdata)        
         self.AddSizeScaleToImage()
         self.AddTimestampToImage()        
+
+
+        
