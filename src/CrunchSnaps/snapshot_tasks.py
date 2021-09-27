@@ -236,6 +236,7 @@ class SinkVis(Task):
                 if self.params["camera_distance"] < np.inf:
                     X_star, m_star = X_star[X_star[:,2]>0], m_star[X_star[:,2]>0]
 #                    m_star /= X_star[:,2]**2
+                if len(X_star) == 0: return
                 data_stars_fresco = make_amuse_fresco_stars_only(X_star,m_star, np.zeros_like(m_star),2*self.params["rmax"],res=self.params["res"],vmax=self.params["fresco_param"],mass_rescale=self.params["fresco_mass_rescale"],mass_limits=self.params["fresco_mass_limits"])
                 img = plt.imread(fname)
                 plt.imsave(fname,np.clip(img[:,:,:3]+data_stars_fresco,0,1))

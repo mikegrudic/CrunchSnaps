@@ -38,6 +38,7 @@ def inspectvar(var):
     return
 
 def make_amuse_fresco_stars_only(x,mstar,age_yr,L,res=512,p=5e-4,mass_limits=[0,0],mass_rescale=1.,filename=None,vmax=None):
+#    print(x,mstar)
     number_of_stars = len(mstar)
 
     if (mass_limits[0]!=0.0) or (mass_limits[1]!=0.0):

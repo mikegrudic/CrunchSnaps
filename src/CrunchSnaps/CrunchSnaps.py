@@ -37,14 +37,18 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
                     tasks[i] = [tasks[0], tasks[0]]            
         
     # don't yet know what the snapshot times are - get the snapshot times in a prepass
+#    if not isfile(snaps[0].split("snapshot_")[0] + "snapshot_times.txt"):
     snaptimes, snapnums = [], []
     for s in snaps:
         with h5py.File(s, 'r') as F:
             print(s)
             snaptimes.append(F["Header"].attrs["Time"])
             snapnums.append(int(s.split("snapshot_")[1].split(".hdf5")[0]))
+#    else: 
+#        snapnums, snaptimes = 
     snaptimes = np.array(snaptimes)
     snapdict = dict(zip(snaptimes, snaps))
+
 
     if (not task_params) or (type(task_params) == dict): # if task_params is empty or a single dict that we must broadcast
         N_params = len(snaps)*interp_fac # default to just doing a pass on snapshots with optional interpolation and default parameters
@@ -117,7 +121,6 @@ def SnapInterpolate(t,t1,t2,snapdata_buffer):
         else: id1 = np.array([])
         if ptype+"/ParticleIDs" in snapdata_buffer[t2].keys(): id2 = snapdata_buffer[t2][ptype+"/ParticleIDs"]
         else: id2 = np.array([])
-#        print(t, len(np.unique(id1)), len(id1), len(np.unique(id2)), len(id2))
         common_ids = np.intersect1d(id1,id2)
         idx1[ptype] = np.in1d(np.sort(id1),common_ids)
         idx2[ptype] = np.in1d(np.sort(id2),common_ids)    
@@ -172,7 +175,6 @@ def GetSnapData(snappath, required_snapdata):
 
         unique, counts = np.unique(ids, return_counts=True)
         doubles = unique[counts>1]
-#        print(snappath, len(unique[counts>1]), len(ids))
         ids[np.in1d(ids,doubles)]=-1
 
         id_order[ptype] = ids.argsort()
