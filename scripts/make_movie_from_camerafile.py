@@ -5,12 +5,13 @@ SinkVis.py <camerafile> <simdir> ... [options]
 
 Options:
     -h --help              Show this screen.
-    --fresco               Render stars with Fresco
+    --fresco_stars         Render stars with Fresco
     --limits=<min,max>     Surface density limits  [default: 1,3e3]
     --res=<N>              Resolution [default: 256]
     --np=<N>               Number of renders to do in parallel [default: 1]
-    --np_render            Number of cores per process to run rundering calls on [default: 1]
+    --np_render=<N>        Number of cores per process to run rundering calls on [default: 1]
     --cubemap              Render 6 faces of a cubemap surrounding the camera
+    --no_timestamp
 """
 
 from docopt import docopt
@@ -29,7 +30,7 @@ np_render = int(options["--np_render"])
 
 limits = np.array([float(c) for c in options["--limits"].split(',')])
 
-common_params = {"fresco_stars": options["--fresco"], "res": res, "limits": limits}
+common_params = {"fresco_stars": options["--fresco_stars"], "res": res, "limits": limits, "no_timestamp": options["--no_timestamp"], "threads": np_render}
 
 camera_data = np.loadtxt(options["<camerafile>"])
 sim_dir = options["<simdir>"][0] 
@@ -68,7 +69,7 @@ elif camera_data.shape[1] == 11:# full camera data: time, camera position, camer
     camera_pos = camera_data[:,1:4]
     camera_dir = camera_data[:,4:7]
     camera_up = camera_data[:,7:10]
-    camera_dist = camera_data[:,10]    
+    camera_dist = camera_data[:,10]
 else: 
     raise("camera file format not implemented :( do you have the right number of columns?")
 

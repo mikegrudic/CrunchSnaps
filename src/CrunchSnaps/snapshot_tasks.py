@@ -77,7 +77,7 @@ class SinkVis(Task):
         super().AssignDefaultParams()
         if self.params["index"] is None:
             self.params["index"] = round(self.params["Time"]/1e-6)            
-        self.params["filename_suffix"] = "%s_%s_%s.png"%(str(self.params["index"]).zfill(4), str(round(self.params["pan"])).zfill(4), self.params["cubemap_dir"]) 
+        self.params["filename_suffix"] = "%s_%s_%s.png"%(str(self.params["index"]).zfill(5), str(round(self.params["pan"]*10)).zfill(4), self.params["cubemap_dir"]) 
 
     def CoordinateTransform(self,x,m=None,h=None, contravariant=False):
         # center on the designated center coordinate
