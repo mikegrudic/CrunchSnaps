@@ -10,6 +10,7 @@ from matplotlib import pyplot as plt
 from .amuse_fresco import *
 from numba import get_num_threads, set_num_threads
 from .misc_functions import *
+from os.path import isfile
 
 class Task:
     """Class containing generic routines common to all tasks, and assigns default (null/empty) attributes that any task should have"""
@@ -63,6 +64,7 @@ class SinkVis(Task):
                                "camera_up": None,
                                "index": None,
                                "no_stars": False,
+                               "overwrite": False
         }
 
         self.AssignDefaultParams()
@@ -72,6 +74,12 @@ class SinkVis(Task):
             if self.params["threads"] > 0: # if negative, just use all available threads, otherwise set to desired value
                 set_num_threads(self.params["threads"])
         else: self.parallel = False
+
+        if isfile(self.params["filename"]):
+            self.RequiredSnapdata = []
+            self.TaskDone = True
+        else:
+            self.TaskDone = False
 
     def AssignDefaultParams(self):
         super().AssignDefaultParams()
@@ -308,6 +316,7 @@ class SinkVis(Task):
 
     
     def DoTask(self, snapdata):
+        if self.TaskDone: return 
         self.AssignDefaultParamsFromSnapdata(snapdata)
         self.SetupCoordsAndWeights(snapdata)        
         self.GenerateMaps(snapdata)
@@ -318,6 +327,7 @@ class SinkVis(Task):
 class SinkVisSigmaGas(SinkVis):
     def __init__(self,params):
         super().__init__(params)
+        if self.TaskDone: return
         self.AssignDefaultParams()
 
     def AssignDefaultParams(self):
@@ -360,6 +370,7 @@ class SinkVisSigmaGas(SinkVis):
 class SinkVisCoolMap(SinkVis):
     def __init__(self,params):
         super().__init__(params)
+        if self.TaskDone: return
         self.RequiredSnapdata.append("PartType0/Velocities")
         self.default_params["cool_cmap"] = 'magma'
         self.AssignDefaultParams()

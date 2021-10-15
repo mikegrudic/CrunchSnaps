@@ -37,18 +37,15 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
                     tasks[i] = [tasks[0], tasks[0]]            
         
     # don't yet know what the snapshot times are - get the snapshot times in a prepass
-#    if not isfile(snaps[0].split("snapshot_")[0] + "snapshot_times.txt"):
     snaptimes, snapnums = [], []
     for s in snaps:
         with h5py.File(s, 'r') as F:
             print(s)
             snaptimes.append(F["Header"].attrs["Time"])
             snapnums.append(int(s.split("snapshot_")[1].split(".hdf5")[0]))
-#    else: 
-#        snapnums, snaptimes = 
+
     snaptimes = np.array(snaptimes)
     snapdict = dict(zip(snaptimes, snaps))
-
 
     if (not task_params) or (type(task_params) == dict): # if task_params is empty or a single dict that we must broadcast
         N_params = len(snaps)*interp_fac # default to just doing a pass on snapshots with optional interpolation and default parameters
@@ -61,8 +58,8 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
             [[task_params[j][i].update({"Time": params_times[i], "index": i, "threads": nthreads}) for i in range(N_params)] for j in range(N_tasks)] # add the other defaults
     else:
         N_params = len(task_params[0])    
-
-    # note that params must be sorted by time!        
+    # note that params must be sorted by time!
+    
     index_chunks = np.array_split(np.arange(N_params), nproc)
     chunks=[(index_chunks[i], tasks, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
@@ -78,6 +75,7 @@ def DoParamsPass(chunk):
         ######################### initialization  ############################################
         # initialize the task objects and figure out what data the tasks need
         task_instances = [tasks[n](task_params[n][i]) for n in range(N_tasks)] # instantiate a task object for each task to be done
+        if np.all([t.TaskDone for t in task_instances]): continue
         time = task_params[0][i]["Time"]
         required_snapdata = set()
         for t in task_instances:
