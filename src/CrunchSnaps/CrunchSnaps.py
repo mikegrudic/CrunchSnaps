@@ -38,11 +38,12 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
         
     # don't yet know what the snapshot times are - get the snapshot times in a prepass
     snaptimes, snapnums = [], []
+    print("getting snapshot timeline...")
     for s in snaps:
         with h5py.File(s, 'r') as F:
-            print(s)
             snaptimes.append(F["Header"].attrs["Time"])
             snapnums.append(int(s.split("snapshot_")[1].split(".hdf5")[0]))
+    print("done!")
 
     snaptimes = np.array(snaptimes)
     snapdict = dict(zip(snaptimes, snaps))
@@ -81,7 +82,9 @@ def DoParamsPass(chunk):
         for t in task_instances:
             fields = t.GetRequiredSnapdata() # get the set of required fields, e.g. PartType0/Coordinates
             for f in fields: required_snapdata.add(f)            
-            for ptype in "PartType0","PartType5": required_snapdata.add(ptype + "/ParticleIDs")
+            for ptype in "PartType0","PartType5":
+                for f in fields:
+                    if ptype in f: required_snapdata.add(ptype + "/ParticleIDs")
 
         ############################ IO ######################################################
         # OK now we do file I/O if we don't find what we need in the buffer
@@ -114,7 +117,7 @@ def SnapInterpolate(t,t1,t2,snapdata_buffer):
     interpolated_data = snapdata_buffer[t1].copy()
 
     idx1, idx2 = {}, {}
-    for ptype in "PartType0", "PartType5":
+    for ptype in "PartType0","PartType5":
         if ptype+"/ParticleIDs" in snapdata_buffer[t1].keys(): id1 = snapdata_buffer[t1][ptype+"/ParticleIDs"]
         else: id1 = np.array([])
         if ptype+"/ParticleIDs" in snapdata_buffer[t2].keys(): id2 = snapdata_buffer[t2][ptype+"/ParticleIDs"]
@@ -144,6 +147,11 @@ def SnapInterpolate(t,t1,t2,snapdata_buffer):
         
 
 def GetSnapData(snappath, required_snapdata):
+    ptypes_toread = set()
+    for s in required_snapdata:
+        for i in range(6):
+            if "PartType%d"%i in s: ptypes_toread.add("PartType%d"%i)
+        
     wind_ids = np.array([1913298393, 1913298394])
     snapdata = {}
     print("opening ", snappath)
@@ -156,7 +164,7 @@ def GetSnapData(snappath, required_snapdata):
 
 
     id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
-    for ptype in "PartType0", "PartType5": 
+    for ptype in ptypes_toread:
         if not ptype+"/ParticleIDs" in snapdata.keys(): continue
         ids = snapdata[ptype + "/ParticleIDs"]
 

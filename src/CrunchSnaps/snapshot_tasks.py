@@ -12,6 +12,12 @@ from numba import get_num_threads, set_num_threads
 from .misc_functions import *
 from os.path import isfile
 import json
+import os
+import sys
+hashseed = os.getenv('PYTHONHASHSEED')
+if not hashseed:
+    os.environ['PYTHONHASHSEED'] = '0'
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 class Task:
     """Class containing generic routines common to all tasks, and assigns default (null/empty) attributes that any task should have"""
@@ -72,8 +78,9 @@ class SinkVis(Task):
         self.AssignDefaultParams()
 
         self.params_that_affect_maps = ["Time", "res", "rmax", "center", "pan", "tilt", "FOV", "camera_distance", "center_on_star", "cubemap_dir", "camera_dir", "camera_right", "camera_up", "rescale_hsml"]
-        self.params_hash = str(hash(json.dump(dict[(k, self.params[k]) for k in self.params_that_affect_maps]) ,sort_keys=True)))
-        self.map_files = dict([(m, m + "_" + self.params_hash + ".map") for m in self.maplist]) # filename for the saved maps will by MAPNAME_(hash # of input params)
+        self.params_hash = str(hash(json.dumps(dict([(k, self.params[k]) for k in self.params_that_affect_maps]) ,sort_keys=True)))
+        if not os.path.isdir(".maps"): os.mkdir(".maps")
+        self.map_files = dict([(m, ".maps/" + m + "_" + self.params_hash) for m in self.required_maps]) # filename for the saved maps will by MAPNAME_(hash # of input params)
         self.maps = {}
 
         self.DetermineRequiredSnapdata()
@@ -154,8 +161,9 @@ class SinkVis(Task):
 
     def SetupCoordsAndWeights(self, snapdata):
         res = self.params["res"]
-        self.pos, self.mass, self.hsml = np.copy(snapdata["PartType0/Coordinates"]), np.copy(snapdata["PartType0/Masses"]), np.copy(snapdata["PartType0/SmoothingLength"]) # copy these because we don't want to modify them
-        if self.params["rescale_hsml"]: self.hsml *= self.params["rescale_hsml"]
+        if "PartType0/Coordinates" in snapdata.keys():
+            self.pos, self.mass, self.hsml = np.copy(snapdata["PartType0/Coordinates"]), np.copy(snapdata["PartType0/Masses"]), np.copy(snapdata["PartType0/SmoothingLength"]) # copy these because we don't want to modify them
+            if self.params["rescale_hsml"]: self.hsml *= self.params["rescale_hsml"]
 
         # Setting up coordinate basis
         if self.params["camera_dir"] is not None:
@@ -173,29 +181,33 @@ class SinkVis(Task):
             self.camera_matrix = np.c_[self.camera_right, self.camera_up, self.camera_dir].T # matrix of coordinate vectors - operate this on coordinates to apply transformation - operates on COORDINATES not vectors
             self.camera_matrix_vectors = self.camera_matrix.T # since vector fields are contravariant, this is the operator for transforming v and B (note that this is an orthogonal matrix so the transpose is the inverse)
             
-        self.CoordinateTransform(self.pos,self.mass,self.hsml)
-        self.hsml = np.clip(self.hsml,2*self.params["rmax"]/res, 1e100)
+        if "PartType0/Coordinates" in snapdata.keys():             
+            self.CoordinateTransform(self.pos,self.mass,self.hsml)
+            self.hsml = np.clip(self.hsml,2*self.params["rmax"]/res, 1e100)
 
 
     def GenerateMaps(self,snapdata):
         return
 
     def SaveImage(self):
+        print("saving ", self.params["filename"])        
         if self.params["backend"] == "matplotlib":
             rmax = self.params["rmax"]
             self.ax.set(xlim=[-rmax,rmax],ylim=[-rmax,rmax])
-            plt.savefig(self.params["filename"],bbox_inches='tight',dpi=200)            
+            plt.savefig(self.params["filename_incomplete"],bbox_inches='tight',dpi=200)            
             plt.close()
+        os.rename(self.params["filename_incomplete"], self.params["filename"])            
 
     def MakeImages(self,snapdata):
         if not self.params["no_stars"]: self.AddStarsToImage(snapdata)
         self.AddSizeScaleToImage()
         self.AddTimestampToImage()
         self.SaveImage()
+        
 
     def AddTimestampToImage(self):
         if self.params["no_timestamp"]: return
-        fname = self.params["filename"]
+        fname = self.params["filename_incomplete"]
         time = self.params["Time"]
         if (time*979>=1e-2):
             time_text="%3.2gMyr"%(time*979)
@@ -221,7 +233,7 @@ class SinkVis(Task):
         if self.params["backend"]=="matplotlib": return # matplotlib will have axis ticks for scale
         pc_to_AU = 206265.0
         if self.params["no_size_scale"]: return
-        fname = self.params["filename"]
+        fname = self.params["filename_incomplete"]
         F = Image.open(fname)
         draw = ImageDraw.Draw(F)
         gridres = self.params["res"]
@@ -245,14 +257,15 @@ class SinkVis(Task):
         F.close()                       
             
     def AddStarsToImage(self,snapdata):
+#        print([k for k in snapdata.keys()])
         if not "PartType5/Coordinates" in snapdata.keys(): return
         X_star = np.copy(snapdata["PartType5/Coordinates"])
         m_star = snapdata["PartType5/BH_Mass"]
 
         self.CoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))
         
-        if self.params["backend"]=="PIL":            
-            fname = self.params["filename"]
+        if self.params["backend"]=="PIL":
+            fname = self.params["filename_incomplete"]
             if self.params["fresco_stars"]: # use fresco for stellar images
                 if self.params["camera_distance"] < np.inf:
                     X_star, m_star = X_star[X_star[:,2]>0], m_star[X_star[:,2]>0]
@@ -331,7 +344,8 @@ class SinkVis(Task):
     def DoTask(self, snapdata):
         if self.TaskDone: return 
         self.AssignDefaultParamsFromSnapdata(snapdata)
-        self.SetupCoordsAndWeights(snapdata)        
+        if set(self.required_maps) != set(self.maps.keys()): # if we don't already have the maps we need
+            self.SetupCoordsAndWeights(snapdata)        
         self.GenerateMaps(snapdata)
         self.MakeImages(snapdata)
         return self.maps
@@ -339,7 +353,7 @@ class SinkVis(Task):
 
 class SinkVisSigmaGas(SinkVis):
     def __init__(self,params):
-        self.maplist = ["sigma_gas"]                                 
+        self.required_maps = ["sigma_gas"]                                 
         super().__init__(params)
         if self.TaskDone: return
         self.AssignDefaultParams()
@@ -348,19 +362,22 @@ class SinkVisSigmaGas(SinkVis):
         super().AssignDefaultParams()
 #         self.params["filename"] = "SurfaceDensity_%s_%s.png"%(str(self.params["index"]).zfill(4), str(round(self.params["pan"])).zfill(4))
 #        else:
-        if self.params["filename"] is None: self.params["filename"] = "SurfaceDensity_" + self.params["filename_suffix"]
+        if self.params["filename"] is None:
+            self.params["filename"] = "SurfaceDensity_" + self.params["filename_suffix"]
+            self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
 
     def DetermineRequiredSnapdata(self):
+        super().DetermineRequiredSnapdata()
         # check if we have sigma_gas map already saved
-        if isfile(self.map_files["sigma_gas"]):
-            self.maps["sigma_gas"] = np.load(self.map_files["sigma_gas"])            
+        if isfile(self.map_files["sigma_gas"] + ".npz"):
+            self.maps["sigma_gas"] = np.load(self.map_files["sigma_gas"] + ".npz")['sigma_gas']            
         else:
-            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/BH_Mass", "PartType0/SmoothingLength"]
+            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/BH_Mass", "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
         
     def GenerateMaps(self,snapdata):
         if not "sigma_gas" in self.maps.keys():
             self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T        
-            np.savez_compressed(self.map_files["sigma_gas"], self.maps["sigma_gas"])        
+            np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])        
 
     def MakeImages(self,snapdata):
         vmin, vmax = self.params["limits"]
@@ -368,7 +385,7 @@ class SinkVisSigmaGas(SinkVis):
         f = (np.log10(self.maps["sigma_gas"])-np.log10(vmin))/(np.log10(vmax)-np.log10(vmin))
 
         if self.params["backend"]=="PIL":
-            plt.imsave(self.params["filename"], plt.get_cmap(self.params["cmap"])(np.flipud(f))) # NOTE - we invert this to get the coordinate system right
+            plt.imsave(self.params["filename_incomplete"], plt.get_cmap(self.params["cmap"])(np.flipud(f))) # NOTE - we invert this to get the coordinate system right
         elif self.params["backend"]=="matplotlib":
             self.fig, self.ax = plt.subplots(figsize=(4,4))
             X = Y = np.linspace(-self.params["rmax"], self.params["rmax"], self.params["res"])
@@ -389,39 +406,49 @@ class SinkVisSigmaGas(SinkVis):
         super().MakeImages(snapdata)
 
 
+
+
 class SinkVisCoolMap(SinkVis):
     def __init__(self,params):
-        self.maplist = ["sigma_gas", "sigma_1D"] #physical rendered quantities that can get saved and reused
+        self.required_maps = ["sigma_gas", "sigma_1D"] #physical rendered quantities that can get saved and reused
         super().__init__(params)
         if self.TaskDone: return        
         self.default_params["cool_cmap"] = 'magma'
         self.AssignDefaultParams()
 
     def DetermineRequiredSnapdata(self):
+        super().DetermineRequiredSnapdata()
         # check if we have sigma_gas map already saved
-        if isfile(self.map_files["sigma_gas"]):
-            self.maps["sigma_gas"] = np.load(self.map_files["sigma_gas"])            
+        if isfile(self.map_files["sigma_gas"] + ".npz"):
+#            print("loading " + self.map_files["sigma_gas"] + ".npz")
+            self.maps["sigma_gas"] = np.load(self.map_files["sigma_gas"]+".npz")["sigma_gas"]            
         else:
-            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/BH_Mass", "PartType0/SmoothingLength"]
+            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/BH_Mass", "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
 
-        if isfile(self.map_files["sigma_1D"]):
-            self.maps["sigma_1D"] = np.load(self.map_files["sigma_1D"])
+        if isfile(self.map_files["sigma_1D"] + ".npz"):
+#            print("loading map!")
+            self.maps["sigma_1D"] = np.load(self.map_files["sigma_1D"] + ".npz")["sigma_1D"]
         else:
-            self.RequiredSnapdata += ["PartType0/Velocities"]        
+            self.RequiredSnapdata += ["PartType0/Velocities"]
+            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/BH_Mass", "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
+#        print(self.RequiredSnapdata)
         
 
     def AssignDefaultParams(self):
         super().AssignDefaultParams()
 #        if self.params["filename"] is None: self.params["filename"] = "CoolMap_%s_%s.png"%(str(self.params["Index"]).zfill(4), str(round(self.params["pan"])).zfill(4))
 #        else:
-        if self.params["filename"] is None: self.params["filename"] = "CoolMap_" + self.params["filename_suffix"]
+        if self.params["filename"] is None:
+            self.params["filename"] = "CoolMap_" + self.params["filename_suffix"]
+            self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
+        
         
     def GenerateMaps(self,snapdata):
         super().GenerateMaps(snapdata)
                 
         if not "sigma_gas" in self.maps.keys():
             self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T        
-            np.savez_compressed(self.map_files["sigma_gas"], self.maps["sigma_gas"])
+            np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])
         if not "sigma_1D" in self.maps.keys():
             # need to apply coordinate transforms to z-velocity
             v = np.copy(snapdata["PartType0/Velocities"])
@@ -429,22 +456,20 @@ class SinkVisCoolMap(SinkVis):
             sigma_1D = GridSurfaceDensity(self.mass * v[:,2]**2, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/self.maps["sigma_gas"]
             v_avg = GridSurfaceDensity(self.mass * v[:,2], self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/self.maps["sigma_gas"]
             self.maps["sigma_1D"] = np.sqrt(sigma_1D - v_avg**2)/1e3
-            np.savez_compressed(self.map_files["sigma_1D"], self.maps["sigma_1D"])
+            np.savez_compressed(self.map_files["sigma_1D"], sigma_1D=self.maps["sigma_1D"])
 
         fgas = (np.log10(self.maps["sigma_gas"])-np.log10(self.params["limits"][0]))/np.log10(self.params["limits"][1]/self.params["limits"][0])
         fgas = np.clip(fgas,0,1)
         ls = LightSource(azdeg=315, altdeg=45)
         #lightness = ls.hillshade(z, vert_exag=4)
-        mapcolor = plt.get_cmap(self.params["cool_cmap"])(np.log10(sigma_1D/0.1)/2)
+        mapcolor = plt.get_cmap(self.params["cool_cmap"])(np.log10(self.maps["sigma_1D"]/0.1)/2)
         cool_data = ls.blend_hsv(mapcolor[:,:,:3], fgas[:,:,None])
         self.maps["coolmap"] = cool_data
 
     def MakeImages(self,snapdata):
-        print("saving ", self.params["filename"])
-        plt.imsave(self.params["filename"], np.flipud(self.maps["coolmap"])) # NOTE - we invert this to get the coordinate system right                    
-        self.AddStarsToImage(snapdata)        
-        self.AddSizeScaleToImage()
-        self.AddTimestampToImage()        
-
-
+        plt.imsave(self.params["filename_incomplete"], np.flipud(self.maps["coolmap"])) # NOTE - we invert this to get the coordinate system right
+        super().MakeImages(snapdata)
+        #self.AddStarsToImage(snapdata)        
+#        self.AddSizeScaleToImage()
+#        self.AddTimestampToImage()
         
