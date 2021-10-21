@@ -11,6 +11,7 @@ from .amuse_fresco import *
 from numba import get_num_threads, set_num_threads
 from .misc_functions import *
 from os.path import isfile
+import json
 
 class Task:
     """Class containing generic routines common to all tasks, and assigns default (null/empty) attributes that any task should have"""
@@ -33,11 +34,10 @@ class Task:
 class SinkVis(Task):
     def __init__(self, params):
         """Class containing methods for coordinate transformations, rendering, etc. for a generic SinkVis-type map plot"""
-        super().__init__(params)
-        
-        self.RequiredSnapdata = ["PartType0/Coordinates", "PartType0/Masses", "PartType0/SmoothingLength","PartType0/ParticleIDGenerationNumber","PartType0/ParticleChildIDsNumber", "PartType0/ParticleIDs", "PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass"]
+        super().__init__(params)        
 
-        self.default_params = {"res": 512,
+        self.default_params = {"Time": 0,
+                               "res": 512,
                                "rmax": None,
                                "limits": [1,3e3],
                                "center": None,
@@ -67,8 +67,17 @@ class SinkVis(Task):
                                "overwrite": False
         }
 
+
+
         self.AssignDefaultParams()
-        
+
+        self.params_that_affect_maps = ["Time", "res", "rmax", "center", "pan", "tilt", "FOV", "camera_distance", "center_on_star", "cubemap_dir", "camera_dir", "camera_right", "camera_up", "rescale_hsml"]
+        self.params_hash = str(hash(json.dump(dict[(k, self.params[k]) for k in self.params_that_affect_maps]) ,sort_keys=True)))
+        self.map_files = dict([(m, m + "_" + self.params_hash + ".map") for m in self.maplist]) # filename for the saved maps will by MAPNAME_(hash # of input params)
+        self.maps = {}
+
+        self.DetermineRequiredSnapdata()
+
         if self.params["threads"] != 1:
             self.parallel = True
             if self.params["threads"] > 0: # if negative, just use all available threads, otherwise set to desired value
@@ -81,11 +90,15 @@ class SinkVis(Task):
         else:
             self.TaskDone = False
 
+    def DetermineRequiredSnapdata(self):
+        self.RequiredSnapdata = ["PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass"]
+
     def AssignDefaultParams(self):
         super().AssignDefaultParams()
         if self.params["index"] is None:
             self.params["index"] = round(self.params["Time"]/1e-6)            
         self.params["filename_suffix"] = "%s_%s_%s.png"%(str(self.params["index"]).zfill(5), str(round(self.params["pan"]*10)).zfill(4), self.params["cubemap_dir"]) 
+
 
     def CoordinateTransform(self,x,m=None,h=None, contravariant=False):
         # center on the designated center coordinate
@@ -165,7 +178,7 @@ class SinkVis(Task):
 
 
     def GenerateMaps(self,snapdata):
-        self.maps = {}
+        return
 
     def SaveImage(self):
         if self.params["backend"] == "matplotlib":
@@ -233,7 +246,7 @@ class SinkVis(Task):
             
     def AddStarsToImage(self,snapdata):
         if not "PartType5/Coordinates" in snapdata.keys(): return
-        X_star = np.copy(snapdata["PartType5/Coordinates"]) # - self.params["center"]
+        X_star = np.copy(snapdata["PartType5/Coordinates"])
         m_star = snapdata["PartType5/BH_Mass"]
 
         self.CoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))
@@ -326,6 +339,7 @@ class SinkVis(Task):
 
 class SinkVisSigmaGas(SinkVis):
     def __init__(self,params):
+        self.maplist = ["sigma_gas"]                                 
         super().__init__(params)
         if self.TaskDone: return
         self.AssignDefaultParams()
@@ -335,10 +349,18 @@ class SinkVisSigmaGas(SinkVis):
 #         self.params["filename"] = "SurfaceDensity_%s_%s.png"%(str(self.params["index"]).zfill(4), str(round(self.params["pan"])).zfill(4))
 #        else:
         if self.params["filename"] is None: self.params["filename"] = "SurfaceDensity_" + self.params["filename_suffix"]
+
+    def DetermineRequiredSnapdata(self):
+        # check if we have sigma_gas map already saved
+        if isfile(self.map_files["sigma_gas"]):
+            self.maps["sigma_gas"] = np.load(self.map_files["sigma_gas"])            
+        else:
+            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/BH_Mass", "PartType0/SmoothingLength"]
         
     def GenerateMaps(self,snapdata):
-        super().GenerateMaps(snapdata)
-        self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T
+        if not "sigma_gas" in self.maps.keys():
+            self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T        
+            np.savez_compressed(self.map_files["sigma_gas"], self.maps["sigma_gas"])        
 
     def MakeImages(self,snapdata):
         vmin, vmax = self.params["limits"]
@@ -369,11 +391,24 @@ class SinkVisSigmaGas(SinkVis):
 
 class SinkVisCoolMap(SinkVis):
     def __init__(self,params):
+        self.maplist = ["sigma_gas", "sigma_1D"] #physical rendered quantities that can get saved and reused
         super().__init__(params)
-        if self.TaskDone: return
-        self.RequiredSnapdata.append("PartType0/Velocities")
+        if self.TaskDone: return        
         self.default_params["cool_cmap"] = 'magma'
         self.AssignDefaultParams()
+
+    def DetermineRequiredSnapdata(self):
+        # check if we have sigma_gas map already saved
+        if isfile(self.map_files["sigma_gas"]):
+            self.maps["sigma_gas"] = np.load(self.map_files["sigma_gas"])            
+        else:
+            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/BH_Mass", "PartType0/SmoothingLength"]
+
+        if isfile(self.map_files["sigma_1D"]):
+            self.maps["sigma_1D"] = np.load(self.map_files["sigma_1D"])
+        else:
+            self.RequiredSnapdata += ["PartType0/Velocities"]        
+        
 
     def AssignDefaultParams(self):
         super().AssignDefaultParams()
@@ -383,14 +418,20 @@ class SinkVisCoolMap(SinkVis):
         
     def GenerateMaps(self,snapdata):
         super().GenerateMaps(snapdata)
-        # need to apply coordinate transforms to z-velocity
-        v = np.copy(snapdata["PartType0/Velocities"])
-        self.CoordinateTransform(v,contravariant=True)
-        sigma_gas = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T        
-        sigma_1D = GridSurfaceDensity(self.mass * v[:,2]**2, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/sigma_gas
-        v_avg = GridSurfaceDensity(self.mass * v[:,2], self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/sigma_gas
-        sigma_1D = np.sqrt(sigma_1D - v_avg**2)/1e3
-        fgas = (np.log10(sigma_gas)-np.log10(self.params["limits"][0]))/np.log10(self.params["limits"][1]/self.params["limits"][0])
+                
+        if not "sigma_gas" in self.maps.keys():
+            self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T        
+            np.savez_compressed(self.map_files["sigma_gas"], self.maps["sigma_gas"])
+        if not "sigma_1D" in self.maps.keys():
+            # need to apply coordinate transforms to z-velocity
+            v = np.copy(snapdata["PartType0/Velocities"])
+            self.CoordinateTransform(v,contravariant=True)
+            sigma_1D = GridSurfaceDensity(self.mass * v[:,2]**2, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/self.maps["sigma_gas"]
+            v_avg = GridSurfaceDensity(self.mass * v[:,2], self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/self.maps["sigma_gas"]
+            self.maps["sigma_1D"] = np.sqrt(sigma_1D - v_avg**2)/1e3
+            np.savez_compressed(self.map_files["sigma_1D"], self.maps["sigma_1D"])
+
+        fgas = (np.log10(self.maps["sigma_gas"])-np.log10(self.params["limits"][0]))/np.log10(self.params["limits"][1]/self.params["limits"][0])
         fgas = np.clip(fgas,0,1)
         ls = LightSource(azdeg=315, altdeg=45)
         #lightness = ls.hillshade(z, vert_exag=4)
