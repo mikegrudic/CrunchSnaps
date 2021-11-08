@@ -32,7 +32,7 @@ limits = np.array([float(c) for c in options["--limits"].split(',')])
 
 common_params = {"fresco_stars": options["--fresco_stars"], "res": res, "limits": limits, "no_timestamp": options["--no_timestamp"], "threads": np_render}
 
-camera_data = np.loadtxt(options["<camerafile>"])
+camera_data = np.atleast_2d(np.loadtxt(options["<camerafile>"]))
 sim_dir = options["<simdir>"][0] 
 
 
@@ -46,8 +46,12 @@ sim_dir = options["<simdir>"][0]
 
 
 params = []
-tasks = [SinkVisCoolMap,]
+tasks = [SinkVisCoolMap]
 
+if camera_data.shape[1] == 1: # just times
+    time = camera_data[:,0]
+    for i in range(len(time)):
+        params.append({"Time": time[i]})
 if camera_data.shape[1] == 4: # columns will be time, distance, pan, tilt
     time, camera_dist, pan, tilt = camera_data.T
     for i in range(len(time)):

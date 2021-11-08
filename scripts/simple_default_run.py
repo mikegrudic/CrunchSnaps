@@ -15,5 +15,5 @@ np = cpu_count()
 params = {"res": 512, "fresco_stars": True}
 
 t = time()
-DoTasksForSimulation(snaps, task_params=params, interp_fac=1,tasks=tasks,nproc=np, nthreads=1)
+DoTasksForSimulation(snaps, task_params=params, interp_fac=4,tasks=tasks,nproc=np, nthreads=1)
 print(time() - t)
