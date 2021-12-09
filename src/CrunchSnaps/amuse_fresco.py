@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from amuse.datamodel import Particles
 from amuse.units import units, nbody_system
-from amuse.community.sse.interface import SSE
+#from amuse.community.sse.interface import SSE
 #from amuse.ext.masc import make_a_star_cluster
 from amuse.ext import masc
 from amuse.ext.fresco import make_fresco_image
