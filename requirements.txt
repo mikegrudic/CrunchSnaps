@@ -2,3 +2,4 @@ meshoid>=1.33
 amuse-framework
 amuse-sse
 amuse-masc
+amuse-fresco
