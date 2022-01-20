@@ -1,8 +1,9 @@
 import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import LightSource
-from meshoid import GridSurfaceDensity as GridSurfaceDensity
+from meshoid import GridSurfaceDensity as GridSurfaceDensity, GridRadTransfer
 import aggdraw
+from skimage.color import rgb2hsv, hsv2rgb
 from PIL import Image, ImageDraw, ImageFont, ImageChops
 import matplotlib
 matplotlib.use('Agg')
@@ -77,7 +78,7 @@ class SinkVis(Task):
 
         self.AssignDefaultParams()
 
-        self.params_that_affect_maps = ["Time", "res", "rmax", "center", "pan", "tilt", "FOV", "camera_distance", "center_on_star", "cubemap_dir", "camera_dir", "camera_right", "camera_up", "rescale_hsml"]
+        self.params_that_affect_maps = ["Time", "res", "rmax", "center", "pan", "tilt", "FOV", "camera_distance", "center_on_star", "cubemap_dir", "camera_dir", "camera_right", "camera_up", "rescale_hsml", "res"]
         self.params_hash = str(hash(json.dumps(dict([(k, self.params[k]) for k in self.params_that_affect_maps]) ,sort_keys=True)))
         if not os.path.isdir(".maps"): os.mkdir(".maps")
         self.map_files = dict([(m, ".maps/" + m + "_" + self.params_hash) for m in self.required_maps]) # filename for the saved maps will by MAPNAME_(hash # of input params)
@@ -141,9 +142,10 @@ class SinkVis(Task):
         if self.params["camera_distance"] != np.inf:
             if not contravariant:
                 # now transform from 3D to angular system
-                r = np.sum(x*x,axis=1)**0.5 # distance from camera 
+                r = np.sum(x*x,axis=1)**0.5 # distance from camera
                 x[:,:2] = x[:,:2] / x[:,2][:,None] # homogeneous coordinates
                 r = np.abs(x[:,2])
+                self.r = r
                 if h is not None:
                     h[:] = h / r # kernel lengths are now angular (divide by distance)
                     h[x[:,2]<0] = 0             # assign 0 weight/size to anything behind the camera
@@ -364,7 +366,7 @@ class SinkVisSigmaGas(SinkVis):
 #        else:
         if self.params["filename"] is None:
             self.params["filename"] = "SurfaceDensity_" + self.params["filename_suffix"]
-            self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
+        self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
 
     def DetermineRequiredSnapdata(self):
         super().DetermineRequiredSnapdata()
@@ -468,6 +470,99 @@ class SinkVisCoolMap(SinkVis):
 
     def MakeImages(self,snapdata):
         plt.imsave(self.params["filename_incomplete"], np.flipud(self.maps["coolmap"])) # NOTE - we invert this to get the coordinate system right
+        super().MakeImages(snapdata)
+
+
+class SinkVisNarrowbandComposite(SinkVis):
+    def __init__(self,params):
+        self.required_maps = ["SHO_RGB"] #RGB map of SII, Halpha, and OIII
+        super().__init__(params)
+        if self.TaskDone: return
+        self.AssignDefaultParams()
+
+    def DetermineRequiredSnapdata(self):
+        super().DetermineRequiredSnapdata()
+        # check if we have maps already saved
+        render_maps = False
+        for mapname in self.required_maps:
+            if not isfile(self.map_files[mapname]): render_maps = True
+
+        if render_maps:
+            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/Temperature", "PartType0/ElectronAbundance", "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber", "PartType0/Density", "PartType0/HII"]
+        else: # load pre-existing
+            for mapname in self.required_maps:
+                self.maps[mapname] = np.load(self.map_files[mapname]+".npz")[mapname]            
+                
+
+    def AssignDefaultParams(self):
+        super().AssignDefaultParams()
+        if self.params["filename"] is None:
+            self.params["filename"] = "NarrowbandComposite_" + self.params["filename_suffix"]
+            self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
+        
+        
+    def GenerateMaps(self,snapdata):
+        super().GenerateMaps(snapdata)
+             
+        if not "SHO_RGB" in self.maps.keys():
+            rho = snapdata["PartType0/Density"]
+            T = snapdata["PartType0/Temperature"]
+            fe = snapdata["PartType0/ElectronAbundance"]
+            hii = snapdata["PartType0/HII"]
+            nH = rho * 30
+            ne = nH * fe
+
+            T4 = T/1e4
+            j_B_Ha = 1.24e-25 * (T4)**(-0.942-0.031 * np.log(T4)) * 2.86 * nH*hii * ne
+
+            wavelength = 5007
+            ncrit = 1e3
+            j_OIII = nH*hii*ne * np.exp(-1.5/T4) / (1 + (ne/ncrit) * T4**-0.5) * np.exp(-14388 / wavelength / T4) * T4**-0.5 * np.exp(-14388 / wavelength / T4)
+
+            wavelength = 6584
+            ncrit = 1e3
+            j_NII = nH*hii*ne / (1 + (ne/ncrit) * T4**-0.5) * np.exp(-14388 / wavelength/T4) * T4**-0.5
+            
+            wavelength = 6716
+            ncrit = 1e3
+            j_SII = nH*hii*ne  * np.exp(-1/T4)/ (1 + (ne/ncrit) * T4**-0.5) * np.exp(-14388 / wavelength/T4) * T4**-0.5
+
+            pc_to_cm = 3.08e18
+            msun_to_g = 2e33
+
+            lum = np.c_[j_B_Ha,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None]
+            lum[:,1] *= lum[:,0].sum() / lum[:,1].sum()
+            lum[:,2] *= lum[:,0].sum()/ lum[:,2].sum()
+
+            def get_color_matrix(rot):
+                a = np.eye(3)
+                a = rgb2hsv(a)
+                a[:,0] += rot
+                a[:,0] = a[:,0]%1
+                a = hsv2rgb(a)
+                return a
+
+            color_matrix = get_color_matrix(-0.3)
+            lum = lum @ color_matrix
+            kappa = np.array([200,300,400]) * np.ones_like(self.mass)[:,None] / (pc_to_cm**2 / msun_to_g)
+            if self.params["camera_distance"] < np.inf:
+                lum[:] /= self.r[:,None]**2 # have to convert here because smoothing lengths are now in angular units
+                lum[self.pos[:,2]<0] = 0  # ignore stuff behind the camera 
+                kappa[self.pos[:,2]<0] = 0
+                
+            cut = self.pos[:,2]>0
+            self.maps["SHO_RGB"] = GridRadTransfer(np.copy(lum)[cut], np.copy(self.mass)[cut], np.copy(kappa)[cut],  np.copy(self.pos)[cut], np.copy(self.hsml)[cut], self.params["res"], 2*self.params["rmax"]).swapaxes(0,1)
+            
+            sigmoid = lambda x: x/np.sqrt(1+x*x) # tapering function to soften the saturation
+            ha_map = np.copy(self.maps["SHO_RGB"])
+            self.maps["SHO_RGB"][:,:,0] = sigmoid(ha_map[:,:,2]/np.percentile(ha_map[:,:,2],99))
+            self.maps["SHO_RGB"][:,:,1] = sigmoid(ha_map[:,:,0]/np.percentile(ha_map[:,:,0],99))
+            self.maps["SHO_RGB"][:,:,2] = sigmoid(ha_map[:,:,1]/np.percentile(ha_map[:,:,1],99))
+
+            np.savez_compressed(self.map_files["SHO_RGB"], SHO_RGB=self.maps["SHO_RGB"])
+
+    def MakeImages(self,snapdata):
+        plt.imsave(self.params["filename_incomplete"], self.maps["SHO_RGB"][::-1]) # NOTE - we invert this to get the coordinate system right
         super().MakeImages(snapdata)
         #self.AddStarsToImage(snapdata)        
 #        self.AddSizeScaleToImage()
