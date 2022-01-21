@@ -77,7 +77,7 @@ class SinkVis(Task):
 
 
         self.AssignDefaultParams()
-
+        self.params["filename_incomplete"] = self.params["filename"].replace(".","_incomplete.")
         self.params_that_affect_maps = ["Time", "res", "rmax", "center", "pan", "tilt", "FOV", "camera_distance", "center_on_star", "cubemap_dir", "camera_dir", "camera_right", "camera_up", "rescale_hsml", "res"]
         self.params_hash = str(hash(json.dumps(dict([(k, self.params[k]) for k in self.params_that_affect_maps]) ,sort_keys=True)))
         if not os.path.isdir(".maps"): os.mkdir(".maps")
@@ -366,7 +366,6 @@ class SinkVisSigmaGas(SinkVis):
 #        else:
         if self.params["filename"] is None:
             self.params["filename"] = "SurfaceDensity_" + self.params["filename_suffix"]
-        self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
 
     def DetermineRequiredSnapdata(self):
         super().DetermineRequiredSnapdata()
@@ -442,7 +441,7 @@ class SinkVisCoolMap(SinkVis):
 #        else:
         if self.params["filename"] is None:
             self.params["filename"] = "CoolMap_" + self.params["filename_suffix"]
-            self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
+#            self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
         
         
     def GenerateMaps(self,snapdata):
@@ -498,7 +497,7 @@ class SinkVisNarrowbandComposite(SinkVis):
         super().AssignDefaultParams()
         if self.params["filename"] is None:
             self.params["filename"] = "NarrowbandComposite_" + self.params["filename_suffix"]
-            self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
+#            self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
         
         
     def GenerateMaps(self,snapdata):
@@ -550,8 +549,7 @@ class SinkVisNarrowbandComposite(SinkVis):
                 lum[self.pos[:,2]<0] = 0  # ignore stuff behind the camera 
                 kappa[self.pos[:,2]<0] = 0
                 
-            cut = self.pos[:,2]>0
-            self.maps["SHO_RGB"] = GridRadTransfer(np.copy(lum)[cut], np.copy(self.mass)[cut], np.copy(kappa)[cut],  np.copy(self.pos)[cut], np.copy(self.hsml)[cut], self.params["res"], 2*self.params["rmax"]).swapaxes(0,1)
+            self.maps["SHO_RGB"] = GridRadTransfer(np.copy(lum), np.copy(self.mass), np.copy(kappa),  np.copy(self.pos), np.copy(self.hsml), self.params["res"], 2*self.params["rmax"]).swapaxes(0,1)
             
             sigmoid = lambda x: x/np.sqrt(1+x*x) # tapering function to soften the saturation
             ha_map = np.copy(self.maps["SHO_RGB"])
