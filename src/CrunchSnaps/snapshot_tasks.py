@@ -79,7 +79,14 @@ class SinkVis(Task):
         self.AssignDefaultParams()
         self.params["filename_incomplete"] = self.params["filename"].replace(".","_incomplete.")
         self.params_that_affect_maps = ["Time", "res", "rmax", "center", "pan", "tilt", "FOV", "camera_distance", "center_on_star", "cubemap_dir", "camera_dir", "camera_right", "camera_up", "rescale_hsml", "res"]
-        self.params_hash = str(hash(json.dumps(dict([(k, self.params[k]) for k in self.params_that_affect_maps]) ,sort_keys=True)))
+        dump = {}
+        for k in self.params_that_affect_maps:
+            if type(self.params[k]) == np.ndarray:
+                dump[k] = self.params[k].tolist()
+            else:
+                dump[k] = self.params[k]
+        self.params_hash = str(hash(json.dumps(dump,sort_keys=True)))
+
         if not os.path.isdir(".maps"): os.mkdir(".maps")
         self.map_files = dict([(m, ".maps/" + m + "_" + self.params_hash) for m in self.required_maps]) # filename for the saved maps will by MAPNAME_(hash # of input params)
         self.maps = {}

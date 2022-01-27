@@ -157,11 +157,27 @@ def GetSnapData(snappath, required_snapdata):
     print("opening ", snappath)
     with h5py.File(snappath,'r') as F:
         snapdata["Header"] = dict(F["Header"].attrs)
+        header = snapdata["Header"]
+        time = header["Time"]
+        z = header["Redshift"]
+        hubble = header["HubbleParam"]
+        # attempt to guess if this is a cosmological simulation from the agreement or lack thereof between time and redshift. note at t=1,z=0, even if non-cosmological, this won't do any harm
+        if(np.abs(time*(1.+z)-1.) < 1.e-6): 
+            cosmological=True; ascale=time;
+        else:
+            cosmological = False; ascale=1;
+
         for field in required_snapdata:
             if field in F.keys():
                 snapdata[field] = F[field][:]
                 if "ID" in field: snapdata[field] = np.int_(snapdata[field]) # cast to int for things that should be signed integers
 
+                if cosmological:
+                    if "Coordinates" in field or "SmoothingLength" in field: 
+                        snapdata[field] *= time/hubble
+                    if "Mass" in field: snapdata[field] /= hubble
+                    if "Velocities" in field: snapdata[field] *= time**0.5
+                    if "Density" in field or "Pressure" in field: snapdata[field] *= 1/hubble / (time/hubble)**3
 
     id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
     for ptype in ptypes_toread:
