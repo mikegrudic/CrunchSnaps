@@ -56,11 +56,13 @@ if camera_data.shape[1] == 4: # columns will be time, distance, pan, tilt
     time, camera_dist, pan, tilt = camera_data.T
     for i in range(len(time)):
         params.append({"Time": time[i], "camera_distance": camera_dist[i], "pan": pan[i], "tilt": tilt[i], "index": i})
-elif camera_data.shape[1] == 7: # columns will be time, camera_pos, distance, pan, tilt
+elif camera_data.shape[1] == 7: # columns will be time, distance, camera_pos, pan, tilt
     time = camera_data[:,0]
     camera_dist = camera_data[:,1]
     camera_pos = camera_data[:,1:4]
     pan, tilt = camera_data[:,-2:].T
+    for i in range(len(time)):
+        params.append({"Time": time[i], "center": camera_pos[i], "camera_distance": camera_dist[i], "index": i})
 elif camera_data.shape[1] == 8: # columns will be time, camera position, camera direction, camera distance
     time = camera_data[:,0]
     camera_pos = camera_data[:,1:4]
