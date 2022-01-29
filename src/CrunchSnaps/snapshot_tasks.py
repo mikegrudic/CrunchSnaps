@@ -1,7 +1,7 @@
 import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import LightSource
-from meshoid import GridSurfaceDensity as GridSurfaceDensity, GridRadTransfer
+from meshoid import GridSurfaceDensity, GridRadTransfer
 import aggdraw
 from skimage.color import rgb2hsv, hsv2rgb
 from PIL import Image, ImageDraw, ImageFont, ImageChops
@@ -46,7 +46,7 @@ class SinkVis(Task):
         self.default_params = {"Time": 0,
                                "res": 512,
                                "rmax": None,
-                               "limits": [1,3e3],
+                               "limits": [10,3e3],
                                "center": None,
                                "pan": 0,
                                "tilt": 0,
@@ -291,16 +291,16 @@ class SinkVis(Task):
                 pen = aggdraw.Pen(self.Star_Edge_Color(),1) #gridres/800
                 sink_relscale = 0.0025
                 X_star ,m_star = X_star[m_star.argsort()[::-1]], np.sort(m_star)[::-1]
-                X_star, m_star = X_star[X_star[:,2]>0], m_star[X_star[:,2]>0]                
-                for j in np.arange(len(X_star))[m_star>1e-2]:
+
+                for j in np.arange(len(X_star))[m_star>1e-2]:                    
                     X = X_star[j]
                     ms = m_star[j]
-                    star_size = gridres * sink_relscale * (np.log10(ms/self.params["sink_scale"]) + 1)
+                    star_size = max(1,gridres * sink_relscale * (np.log10(ms/self.params["sink_scale"]) + 1))
 #                    if self.params["camera_distance"] < np.inf:
                         # make 100msun ~ 0.03pc, scale down from there
 #                        if X[2] < 0: continue
 #                        star_size = gridres * 0.03 / dist_to_camera / self.params["rmax"] * (ms/100)**(1./3)                        
-                    star_size = max(3,star_size)
+                    star_size = max(1,star_size)
                     p = aggdraw.Brush(self.GetStarColor(ms))
                     norm_coords = (X[:2]+self.params["rmax"])/(2*self.params["rmax"])*gridres
                     #Pillow puts the origin in th top left corner, so we need to flip the y axis

@@ -1,3 +1,4 @@
 meshoid>=1.33
-amuse-framework
+amuse-masc
 amuse-fresco
+meshoid
