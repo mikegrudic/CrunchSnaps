@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Usage:
-SinkVis.py <files> ... [options]
+SinkVis2.py <files> ... [options]
 
 Options:
     -h --help                  Show this screen.
@@ -84,7 +84,7 @@ from natsort import natsorted
 import numpy as np
 import CrunchSnaps
 
-taskdict = {"SigmaGas": CrunchSnaps.SinkVisSigmaGas, "HubbleSHO": CrunchSnaps.SinkVisNarrowbandComposite}
+taskdict = {"SigmaGas": CrunchSnaps.SinkVisSigmaGas, "HubbleSHO": CrunchSnaps.SinkVisNarrowbandComposite, "CoolMap": CrunchSnaps.SinkVisCoolMap}
 
 def parse_inputs_to_jobparams(input):
     arguments=input
@@ -94,14 +94,25 @@ def parse_inputs_to_jobparams(input):
     n_interp = int(arguments["--interp_fac"])
 #    print(arguments["--tasks"])
     tasks = arguments["--tasks"].split(",")
+    N_tasks = len(tasks)    
     res = int(arguments["--res"])
 
     limits = np.array([float(c) for c in arguments["--limits"].split(',')])
 
     # parameters that every single task will have in common
-    common_params = {"plot_fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": limits, "no_timestamp": input["--no_timestamp"], "threads": np_render, "res": res}
+    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": limits, "no_timestamp": input["--no_timestamp"], "threads": np_render, "rmax": float(input["--rmax"])}
 
-    return None
+    N_params = len(filenames)*n_interp
+    
+    params = []
+    for j in range(N_tasks):
+        p = []
+        for i in range(N_params):
+            d = common_params.copy()
+            p.append(d.copy())
+        params.append(p)
+    print(params)
+    return params
     
     # 
 def main(input):
