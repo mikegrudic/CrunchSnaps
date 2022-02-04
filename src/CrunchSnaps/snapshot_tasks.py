@@ -71,7 +71,8 @@ class SinkVis(Task):
                                "camera_up": None,
                                "index": None,
                                "no_stars": False,
-                               "overwrite": False
+                               "overwrite": False,
+                               "unit_scalefac": 1,
         }
 
 
@@ -238,7 +239,7 @@ class SinkVis(Task):
 
 
     def AddSizeScaleToImage(self):
-        if self.params["camera_distance"] < np.inf: return
+#        if self.params["camera_distance"] < np.inf: return
         if self.params["backend"]=="matplotlib": return # matplotlib will have axis ticks for scale
         pc_to_AU = 206265.0
         if self.params["no_size_scale"]: return
@@ -247,12 +248,15 @@ class SinkVis(Task):
         draw = ImageDraw.Draw(F)
         gridres = self.params["res"]
         font = ImageFont.truetype("LiberationSans-Regular.ttf", gridres//12)
-        r = self.params["rmax"]
-        if (r>1000):
+        r = self.params["rmax"] * self.params["unit_scalefac"]
+        if self.params["camera_distance"] < np.inf:
+            r = self.params["rmax"] * self.params["camera_distance"] * self.params["unit_scalefac"]
+#        print("r=%g\n"%r)
+        if (r*2>1000):
             scale_kpc=10**np.round(np.log10(r*0.5/1000))
             size_scale_text="%3.3gkpc"%(scale_kpc)
             size_scale_ending=gridres/16+gridres*(scale_kpc*1000)/(2*r)
-        if (r>1e-2):
+        elif (r>1e-2):
             scale_pc=10**np.round(np.log10(r*0.5))
             size_scale_text="%3.3gpc"%(scale_pc)
             size_scale_ending=gridres/16+gridres*(scale_pc)/(2*r)
