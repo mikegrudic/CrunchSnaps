@@ -28,12 +28,12 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
     N_tasks = len(tasks)
         
     # broadcast task params across the different tasks if necessary
-    if len(tasks) > 1 and task_params:
-        for i in range(len(task_params)):
-            if type(tasks[i]) == dict:
+    if len(tasks) > 1 and task_params: # if we are doing more than one type of task and have given parameters
+        for i in range(len(task_params)): # loop over parameters list
+            if type(tasks[i]) == dict: # if we have a list of dicts
                 tasks[i] = [tasks[i], tasks[i]]
-            elif type(tasks[i]) == list:
-                if len(tasks[i]) < N_tasks:
+            elif type(tasks[i]) == list: # if we have a list of lists
+                if len(tasks[i]) < N_tasks: 
                     tasks[i] = [tasks[0], tasks[0]]            
         
     # don't yet know what the snapshot times are - get the snapshot times in a prepass
@@ -88,8 +88,10 @@ def DoParamsPass(chunk):
 
         ############################ IO ######################################################
         # OK now we do file I/O if we don't find what we need in the buffer
-        if time < snaptimes.max(): t1, t2 = snaptimes[snaptimes<=time][-1], snaptimes[snaptimes>=time][0]
-        else: t1, t2 = snaptimes[-2:]
+        if len(snaptimes) >= 2:
+            if time < snaptimes.max(): t1, t2 = snaptimes[snaptimes<=time][-1], snaptimes[snaptimes>=time][0] # if the time is within our timeline
+            else: t1, t2 = snaptimes[-2:] # else if we have >1 snapshot, let those be the two times we interpolate/extrapolate from
+        else: t1=t2=snaptimes[0] # otherwise we have exactly 1 snapshot, so set t1=t2 and ignore all time dependence
         # do a pass to delete anything that will no longer be needed
         for k in list(snapdata_buffer.keys()):
             if k < t1: del snapdata_buffer[k] # delete if not needed for interpolation (including old interpolants)
@@ -102,7 +104,10 @@ def DoParamsPass(chunk):
         if time in snapdata_buffer.keys(): # if we have the snapshot for this exact time in the buffer, no interpolation needed
             snapdata_for_thistime = snapdata_buffer[time]
         else:
-            snapdata_for_thistime = SnapInterpolate(time, t1, t2, snapdata_buffer)
+            if t1 != t2:
+                snapdata_for_thistime = SnapInterpolate(time, t1, t2, snapdata_buffer)
+            else:
+                snapdata_for_thistime = snapdata_buffer[t1]
             snapdata_buffer[time] = snapdata_for_thistime
 
         ################# task execution  ####################################################
