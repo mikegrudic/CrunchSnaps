@@ -116,9 +116,10 @@ def DoParamsPass(chunk):
         data = [t.DoTask(snapdata_for_thistime) for t in task_instances]    
 
 
-def SnapInterpolate(t,t1,t2,snapdata_buffer):
-    stuff_to_interp_lin = "PartType0/Coordinates", "PartType0/Velocities", "PartType0/MagneticField", "PartType5/Coordinates", "PartType5/Velocities",
-    stuff_to_interp_log = "PartType0/SmoothingLength", "PartType0/InternalEnergy", "PartType0/Pressure", "PartType0/SoundSpeed", "PartType0/Density", "PartType5/Masses", "PartType5/BH_Mass", "PartType0/Masses"
+def SnapInterpolate(t,t1,t2,snapdata_buffer, min_val=1e-40):
+    stuff_to_skip = 'Header', 'PartType0/ParticleIDs', 'PartType5/ParticleIDs', 'PartType0/ParticleIDGenerationNumber', 'PartType0/ParticleChildIDsNumber'
+    #stuff_to_interp_lin = "PartType0/Coordinates", "PartType0/Velocities", "PartType0/MagneticField", "PartType5/Coordinates", "PartType5/Velocities",
+    stuff_to_interp_log = "PartType0/SmoothingLength", "PartType0/InternalEnergy", "PartType0/Pressure", "PartType0/SoundSpeed", "PartType0/Density", "PartType5/Masses", "PartType5/BH_Mass", "PartType0/Masses", "PartType0/ElectronAbundance", "PartType0/HII", "PartType0/Temperature",
     interpolated_data = snapdata_buffer[t1].copy()
 
     idx1, idx2 = {}, {}
@@ -134,19 +135,19 @@ def SnapInterpolate(t,t1,t2,snapdata_buffer):
     
     wt1, wt2 = (t2 - t)/(t2 - t1), (t - t1)/(t2 - t1)
     for field in snapdata_buffer[t1].keys():
-        ptype = field.split("/")[0]
-        if field in stuff_to_interp_lin:
+        if not (field in stuff_to_skip):
+            ptype = field.split("/")[0]
             f1, f2 = snapdata_buffer[t1][field][idx1[ptype]], snapdata_buffer[t2][field][idx2[ptype]]
-            if "Coordinates" in field: # special behaviour to handle periodic BCs
-                dx = f2 - f1
-                dx = NearestImage(dx,snapdata_buffer[t1]["Header"]["BoxSize"])
-                interpolated_data[field] = f1 + wt2 * dx
-            else:                
-                interpolated_data[field] = f1 * wt1 + f2 * wt2
-            
-        elif field in stuff_to_interp_log:        
-            f1, f2 = snapdata_buffer[t1][field][idx1[ptype]], snapdata_buffer[t2][field][idx2[ptype]]
-            interpolated_data[field] = np.exp(np.log(f1) * wt1 + np.log(f2) * wt2)
+            if field in stuff_to_interp_log:        
+                f1 += min_val; f2 += min_val; #nonzero min_val added to avoid issues
+                interpolated_data[field] = np.exp(np.log(f1) * wt1 + np.log(f2) * wt2)
+            else: #interpolate everything else linearily
+                if "Coordinates" in field: # special behaviour to handle periodic BCs
+                    dx = f2 - f1
+                    dx = NearestImage(dx,snapdata_buffer[t1]["Header"]["BoxSize"])
+                    interpolated_data[field] = f1 + wt2 * dx
+                else:                
+                    interpolated_data[field] = f1 * wt1 + f2 * wt2
                                        
     return interpolated_data
         

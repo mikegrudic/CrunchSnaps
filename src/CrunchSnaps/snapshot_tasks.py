@@ -539,8 +539,9 @@ class SinkVisNarrowbandComposite(SinkVis):
             msun_to_g = 2e33
 
             lum = np.c_[j_B_Ha,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None]
-            lum[:,1] *= lum[:,0].sum() / lum[:,1].sum()
-            lum[:,2] *= lum[:,0].sum()/ lum[:,2].sum()
+            
+            if lum[:,1].sum(): lum[:,1] *= lum[:,0].sum() / lum[:,1].sum()
+            if lum[:,2].sum(): lum[:,2] *= lum[:,0].sum()/ lum[:,2].sum()
 
             def get_color_matrix(rot):
                 a = np.eye(3)
