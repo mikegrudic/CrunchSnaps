@@ -73,12 +73,13 @@ class SinkVis(Task):
                                "no_stars": False,
                                "overwrite": False,
                                "unit_scalefac": 1,
+                               "outputfolder": "."
         }
 
 
-
         self.AssignDefaultParams()
-        self.params["filename_incomplete"] = self.params["filename"].replace(".","_incomplete.")
+        basename, ext = os.path.splitext(self.params["filename"])
+        self.params["filename_incomplete"] = basename+"_incomplete"+ext
         self.params_that_affect_maps = ["Time", "res", "rmax", "center", "pan", "tilt", "FOV", "camera_distance", "center_on_star", "cubemap_dir", "camera_dir", "camera_right", "camera_up", "rescale_hsml", "res"]
         dump = {}
         for k in self.params_that_affect_maps:
@@ -88,8 +89,9 @@ class SinkVis(Task):
                 dump[k] = self.params[k]
         self.params_hash = str(hash(json.dumps(dump,sort_keys=True)))
 
-        if not os.path.isdir(".maps"): os.mkdir(".maps")
-        self.map_files = dict([(m, ".maps/" + m + "_" + self.params_hash) for m in self.required_maps]) # filename for the saved maps will by MAPNAME_(hash # of input params)
+        mapdir = self.params["outputfolder"]+"/.maps"
+        if not os.path.isdir(mapdir): os.mkdir(mapdir)
+        self.map_files = dict([(m, mapdir+"/" + m + "_" + self.params_hash) for m in self.required_maps]) # filename for the saved maps will by MAPNAME_(hash # of input params)
         self.maps = {}
 
         self.DetermineRequiredSnapdata()
@@ -376,7 +378,7 @@ class SinkVisSigmaGas(SinkVis):
 #         self.params["filename"] = "SurfaceDensity_%s_%s.png"%(str(self.params["index"]).zfill(4), str(round(self.params["pan"])).zfill(4))
 #        else:
         if self.params["filename"] is None:
-            self.params["filename"] = "SurfaceDensity_" + self.params["filename_suffix"]
+            self.params["filename"] = self.params["outputfolder"]+"/"+"SurfaceDensity_" + self.params["filename_suffix"]
 
     def DetermineRequiredSnapdata(self):
         super().DetermineRequiredSnapdata()
@@ -451,7 +453,7 @@ class SinkVisCoolMap(SinkVis):
 #        if self.params["filename"] is None: self.params["filename"] = "CoolMap_%s_%s.png"%(str(self.params["Index"]).zfill(4), str(round(self.params["pan"])).zfill(4))
 #        else:
         if self.params["filename"] is None:
-            self.params["filename"] = "CoolMap_" + self.params["filename_suffix"]
+            self.params["filename"] = self.params["outputfolder"]+"/"+"CoolMap_" + self.params["filename_suffix"]
 #            self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
         
         
@@ -507,7 +509,7 @@ class SinkVisNarrowbandComposite(SinkVis):
     def AssignDefaultParams(self):
         super().AssignDefaultParams()
         if self.params["filename"] is None:
-            self.params["filename"] = "NarrowbandComposite_" + self.params["filename_suffix"]
+            self.params["filename"] = self.params["outputfolder"]+"/"+"NarrowbandComposite_" + self.params["filename_suffix"]
 #            self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
         
         
@@ -541,8 +543,9 @@ class SinkVisNarrowbandComposite(SinkVis):
             msun_to_g = 2e33
 
             lum = np.c_[j_B_Ha,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None]
-            lum[:,1] *= lum[:,0].sum() / lum[:,1].sum()
-            lum[:,2] *= lum[:,0].sum()/ lum[:,2].sum()
+            
+            if lum[:,1].sum(): lum[:,1] *= lum[:,0].sum() / lum[:,1].sum()
+            if lum[:,2].sum(): lum[:,2] *= lum[:,0].sum()/ lum[:,2].sum()
 
             def get_color_matrix(rot):
                 a = np.eye(3)

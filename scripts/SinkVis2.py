@@ -83,6 +83,7 @@ from docopt import docopt
 from natsort import natsorted
 import numpy as np
 import CrunchSnaps
+import h5py
 
 taskdict = {"SigmaGas": CrunchSnaps.SinkVisSigmaGas, "HubbleSHO": CrunchSnaps.SinkVisNarrowbandComposite, "CoolMap": CrunchSnaps.SinkVisCoolMap}
 
@@ -100,18 +101,32 @@ def parse_inputs_to_jobparams(input):
     limits = np.array([float(c) for c in arguments["--limits"].split(',')])
 
     # parameters that every single task will have in common
-    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": limits, "no_timestamp": input["--no_timestamp"], "threads": np_render, "rmax": float(input["--rmax"])}
+    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": limits, "no_timestamp": input["--no_timestamp"], "threads": np_render, "rmax": float(input["--rmax"]), "outputfolder":input["--outputfolder"]}
 
     N_params = len(filenames)*n_interp
     
+    #Find times of each snapshot
+    snaps = natsorted(input["<files>"])
+    # don't yet know what the snapshot times are - get the snapshot times in a prepass
+    snaptimes = []
+    print("Sinkvis2 getting snapshot timeline...")
+    for s in snaps:
+        with h5py.File(s, 'r') as F:
+            snaptimes.append(F["Header"].attrs["Time"])
+    print("done!")
+    #Interpolate times for interpolating frames
+    if n_interp>1:
+        snaptimes = np.interp(np.arange(n_interp*len(filenames))/n_interp, np.arange(len(filenames)), snaptimes)
+    #print(snaptimes)
     params = []
     for j in range(N_tasks):
         p = []
         for i in range(N_params):
             d = common_params.copy()
+            d["Time"] = snaptimes[i]
             p.append(d.copy())
         params.append(p)
-    print(params)
+    #print(params)
     return params
     
     # 
