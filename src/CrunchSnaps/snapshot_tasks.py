@@ -102,7 +102,7 @@ class SinkVis(Task):
                 set_num_threads(self.params["threads"])
         else: self.parallel = False
 
-        if isfile(self.params["filename"]):
+        if isfile(self.params["filename"]) and not self.params["overwrite"]:
             self.RequiredSnapdata = []
             self.TaskDone = True
         else:

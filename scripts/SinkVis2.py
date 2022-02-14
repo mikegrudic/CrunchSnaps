@@ -7,6 +7,7 @@ Options:
     -h --help                  Show this screen.
     --tasks=<task1,task2...>                    List of names of the plots you want to make for each snapshot [default: SigmaGas]
     --rmax=<pc>                Maximum radius of plot window; defaults to box size/10. Note that this is FOV/2 in radians if FOV_plot is enabled
+    --overwrite                Overwrite existing files if they already exist
     --FOV_plot                 Flag, if enables an image is created for an observer at the coordinates defined by c, looking in direction dir, with FOV of 2*rmax, projection options 'spherical', 'frustum', the default is 'frustum'
     --dir=<x,y,z>              Coordinate direction to orient the image along - x, y, or z. It also accepts vector values [default: z] 
     --full_box                 Sets the plot to the entire box, overrides rmax
@@ -63,7 +64,7 @@ Options:
     --fresco_mass_limits=<min,max>  Parameter that determines how masses are rescaled for fresco. Stellar masses are roughly clipped between min and max values, useful to define a max as massive stars are extremely luminous and dominate the image [default: 0,0]
     --fresco_mass_rescale=<f>  Rescale masses plugged into Fresco mass-luminosity relation by raising masses to this power [default: 0.3]
     --energy_v_scale=<v0>      Scale in the weighting of kinetic energy (w=m*(1+(v/v0)^2)), [default: 1000.0]
-    --outputfolder=<name>      Specifies the folder to save the images and movies to
+    --outputfolder=<name>      Specifies the folder to save the images and movies to [default: .]
     --name_addition=<name>     Extra string to be put after the name of the ouput files, defaults to empty string
     --no_pickle                Flag, if set no pickle file is created to make replots faster
     --no_timestamp             Flag, if set no timestamp will be put on the images
@@ -101,7 +102,7 @@ def parse_inputs_to_jobparams(input):
     limits = np.array([float(c) for c in arguments["--limits"].split(',')])
 
     # parameters that every single task will have in common
-    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": limits, "no_timestamp": input["--no_timestamp"], "threads": np_render, "rmax": float(input["--rmax"]), "outputfolder":input["--outputfolder"]}
+    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": limits, "no_timestamp": input["--no_timestamp"], "threads": np_render, "rmax": float(input["--rmax"]), "outputfolder":input["--outputfolder"], "overwrite": input["--overwrite"]}
 
     N_params = len(filenames)*n_interp
     
