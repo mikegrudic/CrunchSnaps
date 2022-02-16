@@ -73,7 +73,8 @@ class SinkVis(Task):
                                "no_stars": False,
                                "overwrite": False,
                                "unit_scalefac": 1,
-                               "outputfolder": "."
+                               "outputfolder": ".",
+                               "SHO_RGB_norm": 0
         }
 
 
@@ -541,11 +542,12 @@ class SinkVisNarrowbandComposite(SinkVis):
 
             pc_to_cm = 3.08e18
             msun_to_g = 2e33
+            
 
             lum = np.c_[j_B_Ha,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None]
-            
-            if lum[:,1].sum(): lum[:,1] *= lum[:,0].sum() / lum[:,1].sum()
-            if lum[:,2].sum(): lum[:,2] *= lum[:,0].sum()/ lum[:,2].sum()
+            lum_sum = np.sum(lum,axis=0)
+            if lum_sum[1]: lum[:,1] *= lum_sum[0]/lum_sum[1]
+            if lum_sum[2]: lum[:,2] *= lum_sum[0]/lum_sum[2]
 
             def get_color_matrix(rot):
                 a = np.eye(3)
@@ -567,9 +569,15 @@ class SinkVisNarrowbandComposite(SinkVis):
             
             sigmoid = lambda x: x/np.sqrt(1+x*x) # tapering function to soften the saturation
             ha_map = np.copy(self.maps["SHO_RGB"])
-            self.maps["SHO_RGB"][:,:,0] = sigmoid(ha_map[:,:,2]/np.percentile(ha_map[:,:,2],99))
-            self.maps["SHO_RGB"][:,:,1] = sigmoid(ha_map[:,:,0]/np.percentile(ha_map[:,:,0],99))
-            self.maps["SHO_RGB"][:,:,2] = sigmoid(ha_map[:,:,1]/np.percentile(ha_map[:,:,1],99))
+            
+            if self.params["SHO_RGB_norm"] == 0: 
+                norm = [np.percentile(ha_map[:,:,2],99), np.percentile(ha_map[:,:,0],99), np.percentile(ha_map[:,:,1],99) ]
+            else:
+                norm = [self.params["SHO_RGB_norm"], self.params["SHO_RGB_norm"], self.params["SHO_RGB_norm"]]
+            print("Using SHO_RGB normalizations %g %g %g"%(norm[0],norm[1],norm[2]))
+            self.maps["SHO_RGB"][:,:,0] = sigmoid(ha_map[:,:,2]/norm[0])
+            self.maps["SHO_RGB"][:,:,1] = sigmoid(ha_map[:,:,0]/norm[1])
+            self.maps["SHO_RGB"][:,:,2] = sigmoid(ha_map[:,:,1]/norm[2])
 
             np.savez_compressed(self.map_files["SHO_RGB"], SHO_RGB=self.maps["SHO_RGB"])
 

@@ -15,6 +15,7 @@ Options:
     --c=<cx,cy,cz>             Coordinates of plot window center relative to box center [default: 0.0,0.0,0.0]
     --limits=<min,max>         Dynamic range of surface density colormap [default: 10,3e3]
     --Tlimits=<min,max>        Dynamic range of temperature colormap in K [default: 0,0]
+    --SHO_RGB_norm=<f>         Normalization constant for narrow band plot, set automatically by default [default: 0.0]
     --energy_limits=<min,max>  Dynamic range of kinetic energy colormap in code units [default: 0,0]
     --ecmap=<name>             Name of colormap to use for kinetic energy [default: viridis]
     --Tcmap=<name>             Name of colormap to use for temperature [default: inferno]
@@ -102,7 +103,7 @@ def parse_inputs_to_jobparams(input):
     limits = np.array([float(c) for c in arguments["--limits"].split(',')])
 
     # parameters that every single task will have in common
-    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": limits, "no_timestamp": input["--no_timestamp"], "threads": np_render, "rmax": float(input["--rmax"]), "outputfolder":input["--outputfolder"], "overwrite": input["--overwrite"]}
+    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": limits, "no_timestamp": input["--no_timestamp"], "threads": np_render, "rmax": float(input["--rmax"]), "outputfolder":input["--outputfolder"], "SHO_RGB_norm": float(input["--SHO_RGB_norm"])}
 
     N_params = len(filenames)*n_interp
     
