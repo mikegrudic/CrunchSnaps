@@ -385,6 +385,7 @@ class SinkVisSigmaGas(SinkVis):
         super().DetermineRequiredSnapdata()
         # check if we have sigma_gas map already saved
         if isfile(self.map_files["sigma_gas"] + ".npz"):
+            print("Loading sigma_gas map from %s"%(self.map_files["sigma_gas"]))
             self.maps["sigma_gas"] = np.load(self.map_files["sigma_gas"] + ".npz")['sigma_gas']            
         else:
             self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/BH_Mass", "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
@@ -396,7 +397,6 @@ class SinkVisSigmaGas(SinkVis):
 
     def MakeImages(self,snapdata):
         vmin, vmax = self.params["limits"]
-                              
         f = (np.log10(self.maps["sigma_gas"])-np.log10(vmin))/(np.log10(vmax)-np.log10(vmin))
 
         if self.params["backend"]=="PIL":
@@ -435,13 +435,13 @@ class SinkVisCoolMap(SinkVis):
         super().DetermineRequiredSnapdata()
         # check if we have sigma_gas map already saved
         if isfile(self.map_files["sigma_gas"] + ".npz"):
-#            print("loading " + self.map_files["sigma_gas"] + ".npz")
+            print("Loading sigma_gas map from %s"%(self.map_files["sigma_gas"]))
             self.maps["sigma_gas"] = np.load(self.map_files["sigma_gas"]+".npz")["sigma_gas"]            
         else:
             self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/BH_Mass", "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
 
         if isfile(self.map_files["sigma_1D"] + ".npz"):
-#            print("loading map!")
+            print("Loading sigma_1D map from %s"%(self.map_files["sigma_1D"]))
             self.maps["sigma_1D"] = np.load(self.map_files["sigma_1D"] + ".npz")["sigma_1D"]
         else:
             self.RequiredSnapdata += ["PartType0/Velocities"]
@@ -473,6 +473,7 @@ class SinkVisCoolMap(SinkVis):
             self.maps["sigma_1D"] = np.sqrt(sigma_1D - v_avg**2)/1e3
             np.savez_compressed(self.map_files["sigma_1D"], sigma_1D=self.maps["sigma_1D"])
 
+    def MakeImages(self,snapdata):
         fgas = (np.log10(self.maps["sigma_gas"])-np.log10(self.params["limits"][0]))/np.log10(self.params["limits"][1]/self.params["limits"][0])
         fgas = np.clip(fgas,0,1)
         ls = LightSource(azdeg=315, altdeg=45)
@@ -480,8 +481,7 @@ class SinkVisCoolMap(SinkVis):
         mapcolor = plt.get_cmap(self.params["cool_cmap"])(np.log10(self.maps["sigma_1D"]/0.1)/2)
         cool_data = ls.blend_hsv(mapcolor[:,:,:3], fgas[:,:,None])
         self.maps["coolmap"] = cool_data
-
-    def MakeImages(self,snapdata):
+    
         plt.imsave(self.params["filename_incomplete"], np.flipud(self.maps["coolmap"])) # NOTE - we invert this to get the coordinate system right
         super().MakeImages(snapdata)
 
@@ -498,12 +498,12 @@ class SinkVisNarrowbandComposite(SinkVis):
         # check if we have maps already saved
         render_maps = False
         for mapname in self.required_maps:
-            if not isfile(self.map_files[mapname]): render_maps = True
-
+            if not isfile(self.map_files[mapname]+".npz"): render_maps = True
         if render_maps:
             self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/Temperature", "PartType0/ElectronAbundance", "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber", "PartType0/Density", "PartType0/HII"]
         else: # load pre-existing
             for mapname in self.required_maps:
+                print("Loading %s map from %s"%(mapname, self.map_files[mapname]))
                 self.maps[mapname] = np.load(self.map_files[mapname]+".npz")[mapname]            
                 
 
@@ -524,6 +524,8 @@ class SinkVisNarrowbandComposite(SinkVis):
             hii = snapdata["PartType0/HII"]
             nH = rho * 30
             ne = nH * fe
+            
+            ne = np.clip(ne,None,np.percentile(ne,100*(1.0-100/len(ne))) ) #clip by 100th largest value in case we have few rogue cells with extremely large values
 
             T4 = T/1e4
             j_B_Ha = 1.24e-25 * (T4)**(-0.942-0.031 * np.log(T4)) * 2.86 * nH*hii * ne
@@ -545,9 +547,12 @@ class SinkVisNarrowbandComposite(SinkVis):
             
 
             lum = np.c_[j_B_Ha,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None]
-            lum_sum = np.sum(lum,axis=0)
-            if lum_sum[1]: lum[:,1] *= lum_sum[0]/lum_sum[1]
-            if lum_sum[2]: lum[:,2] *= lum_sum[0]/lum_sum[2]
+            lum_sum = np.sum(lum,axis=0); full_sum = np.sum(lum_sum)
+            if full_sum:
+                if lum_sum[0]: lum[:,0] *= full_sum/lum_sum[0]
+                if lum_sum[1]: lum[:,1] *= full_sum/lum_sum[1]
+                if lum_sum[2]: lum[:,2] *= full_sum/lum_sum[2]
+            
 
             def get_color_matrix(rot):
                 a = np.eye(3)
@@ -566,22 +571,21 @@ class SinkVisNarrowbandComposite(SinkVis):
                 kappa[self.pos[:,2]<0] = 0
                 
             self.maps["SHO_RGB"] = GridRadTransfer(np.copy(lum), np.copy(self.mass), np.copy(kappa),  np.copy(self.pos), np.copy(self.hsml), self.params["res"], 2*self.params["rmax"]).swapaxes(0,1)
-            
-            sigmoid = lambda x: x/np.sqrt(1+x*x) # tapering function to soften the saturation
-            ha_map = np.copy(self.maps["SHO_RGB"])
-            
-            if self.params["SHO_RGB_norm"] == 0: 
-                norm = [np.percentile(ha_map[:,:,2],99), np.percentile(ha_map[:,:,0],99), np.percentile(ha_map[:,:,1],99) ]
-            else:
-                norm = [self.params["SHO_RGB_norm"], self.params["SHO_RGB_norm"], self.params["SHO_RGB_norm"]]
-            print("Using SHO_RGB normalizations %g %g %g"%(norm[0],norm[1],norm[2]))
-            self.maps["SHO_RGB"][:,:,0] = sigmoid(ha_map[:,:,2]/norm[0])
-            self.maps["SHO_RGB"][:,:,1] = sigmoid(ha_map[:,:,0]/norm[1])
-            self.maps["SHO_RGB"][:,:,2] = sigmoid(ha_map[:,:,1]/norm[2])
-
             np.savez_compressed(self.map_files["SHO_RGB"], SHO_RGB=self.maps["SHO_RGB"])
 
     def MakeImages(self,snapdata):
+        sigmoid = lambda x: x/np.sqrt(1+x*x) # tapering function to soften the saturation
+        ha_map = np.copy(self.maps["SHO_RGB"])
+        
+        if self.params["SHO_RGB_norm"] == 0: 
+            norm = [np.percentile(ha_map[:,:,2],99), np.percentile(ha_map[:,:,0],99), np.percentile(ha_map[:,:,1],99) ]
+        else:
+            norm = [self.params["SHO_RGB_norm"], self.params["SHO_RGB_norm"], self.params["SHO_RGB_norm"]]
+        print("Using SHO_RGB normalizations %g %g %g"%(norm[0],norm[1],norm[2]))
+        self.maps["SHO_RGB"][:,:,0] = sigmoid(ha_map[:,:,2]/norm[0])
+        self.maps["SHO_RGB"][:,:,1] = sigmoid(ha_map[:,:,0]/norm[1])
+        self.maps["SHO_RGB"][:,:,2] = sigmoid(ha_map[:,:,1]/norm[2])
+    
         plt.imsave(self.params["filename_incomplete"], self.maps["SHO_RGB"][::-1]) # NOTE - we invert this to get the coordinate system right
         super().MakeImages(snapdata)
         #self.AddStarsToImage(snapdata)        
