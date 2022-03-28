@@ -574,7 +574,8 @@ class SinkVisNarrowbandComposite(SinkVis):
             np.savez_compressed(self.map_files["SHO_RGB"], SHO_RGB=self.maps["SHO_RGB"])
 
     def MakeImages(self,snapdata):
-        sigmoid = lambda x: x/np.sqrt(1+x*x) # tapering function to soften the saturation
+        #sigmoid = lambda x: x/np.sqrt(1+x*x) # tapering function to soften the saturation
+        sigmoid = lambda x: x/(1+x) # tapering function to soften the saturation
         ha_map = np.copy(self.maps["SHO_RGB"])
         
         if self.params["SHO_RGB_norm"] == 0: 
