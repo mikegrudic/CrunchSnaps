@@ -5,13 +5,17 @@ SinkVis.py <camerafile> <simdir> ... [options]
 
 Options:
     -h --help              Show this screen.
+    --map_type=<type>      Set the type of map to do, available options are SigmaGas,CoolMap and SHOMap [default: CoolMap]
     --fresco_stars         Render stars with Fresco
+    --extinct_stars        Calculate the extinction of stars to observers and attenuate their light, used only if --fresco_stars is set. Note: enabling this can make the calculation significantly slower
     --limits=<min,max>     Surface density limits  [default: 1,3e3]
     --res=<N>              Resolution [default: 256]
     --np=<N>               Number of renders to do in parallel [default: 1]
     --np_render=<N>        Number of cores per process to run rundering calls on [default: 1]
     --cubemap              Render 6 faces of a cubemap surrounding the camera
-    --no_timestamp
+    --no_timestamp         Don't add timestamp
+    --no_size_scale        Don't draw wsize scale
+    --SHO_RGB_norm=<f>     Normalization constant for narrow band plot, set automatically by default [default: 0.0]
 """
 
 from docopt import docopt
@@ -27,10 +31,11 @@ cubemap = options["--cubemap"]
 res = int(options["--res"])
 nproc = int(options["--np"])
 np_render = int(options["--np_render"])
+SHO_RGB_norm = float(options["--SHO_RGB_norm"])
 
 limits = np.array([float(c) for c in options["--limits"].split(',')])
 
-common_params = {"fresco_stars": options["--fresco_stars"], "res": res, "limits": limits, "no_timestamp": options["--no_timestamp"], "threads": np_render}
+common_params = {"fresco_stars": options["--fresco_stars"], "res": res, "limits": limits, "no_timestamp": options["--no_timestamp"], "no_size_scale": options["--no_size_scale"], "threads": np_render, "SHO_RGB_norm": SHO_RGB_norm, "extinct_stars": options["--extinct_stars"]}
 
 camera_data = np.atleast_2d(np.loadtxt(options["<camerafile>"]))
 sim_dir = options["<simdir>"][0] 
@@ -44,9 +49,16 @@ sim_dir = options["<simdir>"][0]
 #tilt = 30*np.sin(2*np.pi * (time/1.3e-3))
 #np.savetxt("camerafile.txt", np.c_[time, camera_dist, pan, tilt])
 
-
 params = []
-tasks = [SinkVisCoolMap]
+if options["--map_type"]=="SigmaGas":
+    tasks = [SinkVisSigmaGas]
+elif options["--map_type"]=="CoolMap":
+    tasks = [SinkVisCoolMap]
+elif options["--map_type"]=="SHOMap":
+    tasks = [SinkVisNarrowbandComposite]
+else:
+    print("Map type %s not recognized, exiting..."%(options["--map_type"])); exit()
+
 
 if camera_data.shape[1] == 1: # just times
     time = camera_data[:,0]

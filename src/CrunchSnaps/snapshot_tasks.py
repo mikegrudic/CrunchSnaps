@@ -10,11 +10,13 @@ matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from .amuse_fresco import *
 from numba import get_num_threads, set_num_threads
+from scipy.interpolate import RectBivariateSpline
 from .misc_functions import *
 from os.path import isfile
 import json
 import os
 import sys
+from multiprocessing import Pool
 hashseed = os.getenv('PYTHONHASHSEED')
 if not hashseed:
     os.environ['PYTHONHASHSEED'] = '0'
@@ -27,7 +29,7 @@ class Task:
         self.params = params
 
     def GetRequiredSnapdata(self):
-        return self.RequiredSnapdata
+        return list(np.unique(self.RequiredSnapdata))
 
     def AssignDefaultParams(self):
         for k in self.default_params.keys():
@@ -61,6 +63,7 @@ class SinkVis(Task):
                                "camera_distance": np.inf,
                                "center_on_star": False,
                                "fresco_stars": False,
+                               "extinct_stars": False,
                                "fresco_param": 0.001,
                                "fresco_mass_limits": [0,0],
                                "fresco_mass_rescale": 0.3,
@@ -119,7 +122,7 @@ class SinkVis(Task):
         self.params["filename_suffix"] = "%s_%s_%s.png"%(str(self.params["index"]).zfill(5), str(round(self.params["pan"]*10)).zfill(4), self.params["cubemap_dir"]) 
 
 
-    def CoordinateTransform(self,x,m=None,h=None, contravariant=False):
+    def CoordinateTransform(self,x,m=None,h=None, contravariant=False, update_r=True):
         # center on the designated center coordinate
         if not contravariant: x[:] -= self.params["center"]
 
@@ -156,7 +159,7 @@ class SinkVis(Task):
                 r = np.sum(x*x,axis=1)**0.5 # distance from camera
                 x[:,:2] = x[:,:2] / x[:,2][:,None] # homogeneous coordinates
                 r = np.abs(x[:,2])
-                self.r = r
+                if update_r: self.r = r
                 if h is not None:
                     h[:] = h / r # kernel lengths are now angular (divide by distance)
                     h[x[:,2]<0] = 0             # assign 0 weight/size to anything behind the camera
@@ -284,10 +287,14 @@ class SinkVis(Task):
             fname = self.params["filename_incomplete"]
             if self.params["fresco_stars"]: # use fresco for stellar images
                 if self.params["camera_distance"] < np.inf:
-                    X_star, m_star = X_star[X_star[:,2]>0], m_star[X_star[:,2]>0]
-#                    m_star /= X_star[:,2]**2
-                if len(X_star) == 0: return
-                data_stars_fresco = make_amuse_fresco_stars_only(X_star,m_star, np.zeros_like(m_star),2*self.params["rmax"],res=self.params["res"],vmax=self.params["fresco_param"],mass_rescale=self.params["fresco_mass_rescale"],mass_limits=self.params["fresco_mass_limits"])
+                    stars_in_view = X_star[:,2]>0
+                    X_star, m_star = X_star[stars_in_view], m_star[stars_in_view]
+                if len(m_star) == 0: return
+                if self.params["extinct_stars"]:
+                    tau = self.maps["tau"]
+                else:
+                    tau = np.zeros_like(m_star)
+                data_stars_fresco = make_amuse_fresco_stars_only(X_star,m_star, np.zeros_like(m_star),2*self.params["rmax"],res=self.params["res"],vmax=self.params["fresco_param"],mass_rescale=self.params["fresco_mass_rescale"],mass_limits=self.params["fresco_mass_limits"],optical_depth=tau)
                 img = plt.imread(fname)
                 plt.imsave(fname,np.clip(img[:,:,:3]+data_stars_fresco,0,1))
             else: # use derpy PIL circles
@@ -365,11 +372,52 @@ class SinkVis(Task):
         self.GenerateMaps(snapdata)
         self.MakeImages(snapdata)
         return self.maps
-
+        
+    def GenerateTauMap(self,snapdata):
+        #Calculate optical depths for each star to observer
+        ########################
+        #Get star data first
+        if len(snapdata["PartType5/Masses"])==0: return
+        X_star = np.copy(snapdata["PartType5/Coordinates"])
+        self.CoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)),update_r=False)
+        if self.params["camera_distance"] < np.inf:
+            x_camera = np.array([0,0,0]) #coordinate system centered on camera
+            #Find stars in view
+            star_view_angle = np.arctan2( np.sqrt(X_star[:,0]**0 + X_star[:,1]**2), X_star[:,2] )
+            stars_in_view = (X_star[:,2]>0) & ( np.abs(star_view_angle) <= (self.params["FOV"]*np.pi/180) )
+        else:
+            x_camera = np.array([0,0,-self.params["center"][2]]) #put it at the bottom of the box
+            stars_in_view = np.ones(len(X_star))
+        #######################
+        #Calculate optical depth to each star from the camera
+        print("Calculating optical depth for stars"); import time; starttime = time.time()
+        # #Generate a surafce density map, which is used as an upper estimate for the optical depth
+        # nH = snapdata["PartType0/Density"]* 30 #convert to cm-3
+        # dense_gas = nH>10 #Exclude low density gas, below 10 cm^-3, this usually corresponds to low density stuff that either does not matter or is not between the observer and the star
+        # #print(np.min(nH),np.median(nH),np.mean(nH),np.max(nH))
+        # gridres=1024
+        # sigma_map = GridSurfaceDensity(self.mass[dense_gas], self.pos[dense_gas], self.hsml[dense_gas], np.zeros(3), 2*self.params["rmax"], res=gridres,parallel=self.parallel) #shouldn't be transposed because we are using it to interpolate, not to plot
+        # sigma_max_func = RectBivariateSpline(np.linspace(-self.params["rmax"], self.params["rmax"], num=gridres),np.linspace(-self.params["rmax"], self.params["rmax"], num=gridres),sigma_map)
+        # tau_max = 0.052*sigma_max_func.ev(X_star[stars_in_view,0],X_star[stars_in_view,1]) #here we use the basic formula to convert from surface density to tau
+        # #we only do the full calculation for stars for which tau_max>threshold, for the others we assume 0
+        # stars_to_do = (tau_max>=0.2)
+        # print("\t %d stars, %d in view, of these %d with tau<0.2"%(len(X_star),np.sum(stars_in_view),np.sum(stars_in_view)-np.sum(stars_to_do) ))
+        stars_to_do = snapdata["PartType5/Masses"][stars_in_view]>-1
+        #Calculate optical depth for chosen stars
+        tau = np.zeros_like(snapdata["PartType5/Masses"][stars_in_view]) #init
+        kappa = 0.052*np.ones_like(snapdata["PartType0/Masses"]) #opacity per unit mass, using NH/cm^-2 = 2.2e21 Av/mag observed fit, could be changed here to use something more sophisticated
+        smooth_distance = 2*self.params["rmax"]/100 #for default parameters this means that stars within 1% of the picture size are assumed to have the same tau
+        if self.params["camera_distance"] < np.inf:  smooth_distance = 2*self.params["rmax"]*self.params["camera_distance"]/self.params["FOV"] #this roughly translates to stars at camera_distance within 1 degree of each other having the same tau
+        tau[stars_to_do] = optical_depth_for_targets( (snapdata["PartType5/Coordinates"][stars_in_view])[stars_to_do], x_camera,snapdata["PartType0/Coordinates"],snapdata["PartType0/Masses"],snapdata["PartType0/SmoothingLength"],kappa,smooth_distance=smooth_distance)
+        #print("sigma", tau/np.median(kappa) )
+        print("Calculation took %g minutes"%( (time.time()-starttime)/60 ))
+        self.maps["tau"]=tau
+        np.savez_compressed(self.map_files["tau"], tau=self.maps["tau"])
 
 class SinkVisSigmaGas(SinkVis):
     def __init__(self,params):
         self.required_maps = ["sigma_gas"]                                 
+        if params["extinct_stars"]: self.required_maps += ['tau']
         super().__init__(params)
         if self.TaskDone: return
         self.AssignDefaultParams()
@@ -388,13 +436,22 @@ class SinkVisSigmaGas(SinkVis):
             print("Loading sigma_gas map from %s"%(self.map_files["sigma_gas"]))
             self.maps["sigma_gas"] = np.load(self.map_files["sigma_gas"] + ".npz")['sigma_gas']            
         else:
-            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/BH_Mass", "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
+            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs",  "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
+        if self.params["extinct_stars"]:
+            if isfile(self.map_files["tau"] + ".npz"):
+                 print("Loading tau map from %s"%(self.map_files["tau"]))
+                 self.maps["tau"] = np.load(self.map_files["tau"] + ".npz")['tau']            
+            else:
+                 self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs",  "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
         
     def GenerateMaps(self,snapdata):
         if not "sigma_gas" in self.maps.keys():
             self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T        
             np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])        
-
+        if (not ("tau" in self.maps.keys())) and ("tau" in self.required_maps):
+            self.GenerateTauMap(snapdata)
+            
+            
     def MakeImages(self,snapdata):
         vmin, vmax = self.params["limits"]
         f = (np.log10(self.maps["sigma_gas"])-np.log10(vmin))/(np.log10(vmax)-np.log10(vmin))
@@ -426,6 +483,7 @@ class SinkVisSigmaGas(SinkVis):
 class SinkVisCoolMap(SinkVis):
     def __init__(self,params):
         self.required_maps = ["sigma_gas", "sigma_1D"] #physical rendered quantities that can get saved and reused
+        if params["extinct_stars"]: self.required_maps += ['tau']
         super().__init__(params)
         if self.TaskDone: return        
         self.default_params["cool_cmap"] = 'magma'
@@ -438,15 +496,21 @@ class SinkVisCoolMap(SinkVis):
             print("Loading sigma_gas map from %s"%(self.map_files["sigma_gas"]))
             self.maps["sigma_gas"] = np.load(self.map_files["sigma_gas"]+".npz")["sigma_gas"]            
         else:
-            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/BH_Mass", "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
+            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs",  "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
 
         if isfile(self.map_files["sigma_1D"] + ".npz"):
             print("Loading sigma_1D map from %s"%(self.map_files["sigma_1D"]))
             self.maps["sigma_1D"] = np.load(self.map_files["sigma_1D"] + ".npz")["sigma_1D"]
         else:
             self.RequiredSnapdata += ["PartType0/Velocities"]
-            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/BH_Mass", "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
-#        print(self.RequiredSnapdata)
+            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs",  "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
+        
+        if self.params["extinct_stars"]:
+            if isfile(self.map_files["tau"] + ".npz"):
+                 print("Loading tau map from %s"%(self.map_files["tau"]))
+                 self.maps["tau"] = np.load(self.map_files["tau"] + ".npz")['tau']            
+            else:
+                 self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs",  "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
         
 
     def AssignDefaultParams(self):
@@ -472,6 +536,8 @@ class SinkVisCoolMap(SinkVis):
             v_avg = GridSurfaceDensity(self.mass * v[:,2], self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T/self.maps["sigma_gas"]
             self.maps["sigma_1D"] = np.sqrt(sigma_1D - v_avg**2)/1e3
             np.savez_compressed(self.map_files["sigma_1D"], sigma_1D=self.maps["sigma_1D"])
+        if (not ("tau" in self.maps.keys())) and ("tau" in self.required_maps):
+            self.GenerateTauMap(snapdata)
 
     def MakeImages(self,snapdata):
         fgas = (np.log10(self.maps["sigma_gas"])-np.log10(self.params["limits"][0]))/np.log10(self.params["limits"][1]/self.params["limits"][0])
@@ -489,6 +555,7 @@ class SinkVisCoolMap(SinkVis):
 class SinkVisNarrowbandComposite(SinkVis):
     def __init__(self,params):
         self.required_maps = ["SHO_RGB"] #RGB map of SII, Halpha, and OIII
+        if params["extinct_stars"]: self.required_maps += ['tau']
         super().__init__(params)
         if self.TaskDone: return
         self.AssignDefaultParams()
@@ -516,6 +583,9 @@ class SinkVisNarrowbandComposite(SinkVis):
         
     def GenerateMaps(self,snapdata):
         super().GenerateMaps(snapdata)
+        
+        if (not ("tau" in self.maps.keys())) and ("tau" in self.required_maps):
+            self.GenerateTauMap(snapdata)
              
         if not "SHO_RGB" in self.maps.keys():
             rho = snapdata["PartType0/Density"]

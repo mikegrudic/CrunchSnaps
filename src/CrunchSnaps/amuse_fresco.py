@@ -12,6 +12,8 @@ from amuse.units import units, nbody_system
 from amuse.ext import masc
 from amuse.ext.fresco import make_fresco_image
 import h5py
+from scipy.spatial.distance import pdist,squareform
+from numba import njit
 
 
 
@@ -37,9 +39,62 @@ def inspectvar(var):
         print(a)
     return
 
-def make_amuse_fresco_stars_only(x,mstar,age_yr,L,res=512,p=5e-4,mass_limits=[0,0],mass_rescale=1.,filename=None,vmax=None):
+@njit(fastmath=True)
+def optical_depth_for_targets_subfunc(dx,h, d_tau, maxdist):
+    #Subfunction for optical_depth_for_targets, opitmized with njit
+    ind = ( (dx[:,0]-h) < maxdist) & ( (dx[:,0]+h) > 0) #we only care about the stuff between target and observer
+    q = (np.sqrt(dx[:,1]**2 + dx[:,2]**2)/h)[ind] #normalized radial distance
+    kernel = np.zeros_like(q) #numerical factor for how much the particle overlap with our path
+    ind1 = (q<=0.5); ind2 = (q>0.5) & (q<1.0)
+    kernel[ind1] = 1 - 6*q[ind1]*q[ind1] * (1-q[ind1])
+    kernel[ind2] = 2.0 * (1-q[ind2])**3
+    return np.sum( 1.8189136353359467 * kernel * d_tau[ind] )
+
+
+def optical_depth_for_targets(target_coords,x_obs,x,m,h,kappa,smooth_distance=0):  
+    #Calculate the optical depth between a set of targets and an observer
+    optical_depths = np.zeros(len(target_coords),dtype=np.float32) #init
+    #Get distances between all targets, used if smooth_distance > 0
+    dist_mtx = squareform(pdist(target_coords))
+    #Keep a list of targets for which we already have an estimate for the optical depth
+    indices_done = []
+    #Center everything on observer
+    dx_orig = x - x_obs
+    #Shorthand, roughly the optical length through a cell
+    d_tau = kappa*m/(h*h)
+    for i, x_target in enumerate(target_coords):
+        if not (i in indices_done): #only do it if we haven't already got an estimate
+            #Center on observer
+            x_target -= x_obs
+            #Get normalized vectors
+            e1= x_target/np.linalg.norm(x_target)
+            if np.abs(e1[2])<1:
+                e2 = np.cross(e1, [0,0,1])
+            else:
+                e2 = np.cross(e1, [0,1,0]) #exception if the observer is looking directly at the target
+            e2 /= np.linalg.norm(e2)
+            e3 = np.cross(e1,e2); e3 /= np.linalg.norm(e3)
+            #Transform into new coordinates
+            T = np.vstack( (e1,e2,e3) ).T
+            dx = dx_orig@T
+            #Find stuff between observer and target
+            observer_distance = np.sum(x_target*e1)           
+            optical_depths[i] = optical_depth_for_targets_subfunc(dx,h, d_tau, observer_distance)
+            indices_done.append(i) #we are done with star i
+            #Find all stars within smooth_distance and assume they have the same optical length
+            if smooth_distance>0:
+                in_range_indices = np.nonzero(dist_mtx[i,:]<smooth_distance)[0]
+                in_range_indices = np.setdiff1d(in_range_indices,indices_done) #only indices we have not gone over before
+                if len(in_range_indices):
+                    optical_depths[in_range_indices] = optical_depths[i] #assume these have the same optical depths
+                    indices_done += list(in_range_indices)
+    return  optical_depths
+
+def make_amuse_fresco_stars_only(x,mstar,age_yr,L,res=512,p=5e-4,mass_limits=[0,0],mass_rescale=1.,filename=None,vmax=None,optical_depth=None):
     number_of_stars = len(mstar)
 
+    if optical_depth is None:
+        optical_depth = np.zeros_like(mstar)
     if (mass_limits[0]!=0.0) or (mass_limits[1]!=0.0):
         if (mass_limits[0]==0.0): mass_limits[0]=np.min(mstar)
         if (mass_limits[1]==0.0): mass_limits[1]=np.max(mstar)
@@ -59,7 +114,7 @@ def make_amuse_fresco_stars_only(x,mstar,age_yr,L,res=512,p=5e-4,mass_limits=[0,
     
     
     #inspectvar(units)
-    stars.luminosity = lum_MS(mstar_new) | units.LSun
+    stars.luminosity = ( np.exp(-optical_depth)*lum_MS(mstar_new) ) | units.LSun
     #stars.main_sequence_lifetime = [450.0, 420.0] | units.Myr
     stars.radius = rad_MS(mstar_new) | units.RSun
     #stars.spin = [4700, 4700] | units.yr**-1
