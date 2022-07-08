@@ -10,7 +10,7 @@ from os.path import isfile
 from numba import vectorize, njit
 from math import copysign
 
-def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc=1, nthreads=1):
+def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc=1, nthreads=1, snaptime_dict=None):
     """
     Main CrunchSnaps routine, performs a list of tasks using (possibly interpolated) time series simulation data
     snaps - list of paths of simulation snapshots
@@ -36,17 +36,13 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
                 if len(tasks[i]) < N_tasks: 
                     tasks[i] = [tasks[0], tasks[0]]            
         
-    # don't yet know what the snapshot times are - get the snapshot times in a prepass
-    snaptimes, snapnums = [], []
-    print("getting snapshot timeline...")
-    for s in snaps:
-        with h5py.File(s, 'r') as F:
-            snaptimes.append(F["Header"].attrs["Time"])
-            snapnums.append(int(s.split("snapshot_")[1].split(".hdf5")[0]))
-    print("done!")
+    if snaptime_dict is None:
+        snaptime_dict = get_snapshot_time_dict(snaps)
 
-    snaptimes = np.array(snaptimes)
+    snapnums = np.array([snapnum_from_path(s) for s in snaps])
+    snaptimes = np.array([snaptime_dict[snapnum_from_path(s)] for s in snaps])
     snapdict = dict(zip(snaptimes, snaps))
+    print(snapnums, snaptimes, snapdict)
 
     if (not task_params) or (type(task_params) == dict): # if task_params is empty or a single dict that we must broadcast
         N_params = len(snaps)*interp_fac # default to just doing a pass on snapshots with optional interpolation and default parameters

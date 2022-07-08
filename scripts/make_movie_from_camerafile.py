@@ -46,7 +46,7 @@ sim_dir = options["<simdir>"][0]
 
 
 params = []
-tasks = [SinkVisCoolMap]
+tasks = [SinkVisSigmaGas]
 
 if camera_data.shape[1] == 1: # just times
     time = camera_data[:,0]

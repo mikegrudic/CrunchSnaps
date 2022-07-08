@@ -21,7 +21,7 @@ Options:
     --Tcmap=<name>             Name of colormap to use for temperature [default: inferno]
     --cmap=<name>              Name of colormap to use [default: viridis]
     --cmap_fresco=<name>       Name of colormap to use for plot_fresco_stars, defaults to same as cmap [default: same]
-    --cool_cmap=<name>         Name of colormap to use for plot_cool_map, defaults to same as cmap [default: same]
+    --cool_cmap=<name>         Name of colormap to use for plot_cool_map, defaults to same as cmap [default: magma]
     --abundance_map=<N>        Will plot the surface density of metal species N (so P[:].Metallicity[N] in GIZMO),off by default [default: -1]
     --interp_fac=<N>           Number of interpolating frames per snapshot [default: 1]
     --np=<N>                   Number of processors to run on [default: 1]
@@ -85,11 +85,15 @@ from docopt import docopt
 from natsort import natsorted
 import numpy as np
 import CrunchSnaps
+from CrunchSnaps.misc_functions import *
 import h5py
+from os.path import exists, abspath
+from glob import glob
 
 taskdict = {"SigmaGas": CrunchSnaps.SinkVisSigmaGas, "HubbleSHO": CrunchSnaps.SinkVisNarrowbandComposite, "CoolMap": CrunchSnaps.SinkVisCoolMap}
 
-def parse_inputs_to_jobparams(input):
+
+def parse_inputs_to_jobparams(input): # parse input parameters to generate a list of job parameters
     arguments=input
     filenames = natsorted(arguments["<files>"])
     nproc = int(arguments["--np"])
@@ -103,23 +107,21 @@ def parse_inputs_to_jobparams(input):
     limits = np.array([float(c) for c in arguments["--limits"].split(',')])
 
     # parameters that every single task will have in common
-    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": limits, "no_timestamp": input["--no_timestamp"], "threads": np_render, "rmax": float(input["--rmax"]), "outputfolder":input["--outputfolder"], "SHO_RGB_norm": float(input["--SHO_RGB_norm"])}
+    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": limits, "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": float(input["--SHO_RGB_norm"]), "cool_cmap": input["--cool_cmap"]}
+
+    if input["--rmax"] is None:
+        common_params["rmax"] = None
+    else:
+        common_params["rmax"] = float(input["--rmax"])
 
     N_params = len(filenames)*n_interp
     
-    #Find times of each snapshot
-    snaps = natsorted(input["<files>"])
-    # don't yet know what the snapshot times are - get the snapshot times in a prepass
-    snaptimes = []
-    print("Sinkvis2 getting snapshot timeline...")
-    for s in snaps:
-        with h5py.File(s, 'r') as F:
-            snaptimes.append(F["Header"].attrs["Time"])
-    print("done!")
-    #Interpolate times for interpolating frames
-    if n_interp>1:
+    snaptime_dict = get_snapshot_time_dict(input["<files>"]) # get times of snapshots
+    snaptimes = np.array([snaptime_dict[snapnum_from_path(s)] for s in input["<files>"]])
+
+    if n_interp>1: # get times of frames if we're doing an interpolated movie
         snaptimes = np.interp(np.arange(n_interp*len(filenames))/n_interp, np.arange(len(filenames)), snaptimes)
-    #print(snaptimes)
+    
     params = []
     for j in range(N_tasks):
         p = []
@@ -128,10 +130,9 @@ def parse_inputs_to_jobparams(input):
             d["Time"] = snaptimes[i]
             p.append(d.copy())
         params.append(p)
-    #print(params)
+
     return params
     
-    # 
 def main(input):
     tasks = input["--tasks"].split(",")
     print(tasks)
