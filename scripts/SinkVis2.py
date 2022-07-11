@@ -13,7 +13,7 @@ Options:
     --full_box                 Sets the plot to the entire box, overrides rmax
     --target_time=<f>          If set to nonzero, SinkVis will try to make a single image by interpolating from the available files [default: 0.0] 
     --c=<cx,cy,cz>             Coordinates of plot window center relative to box center [default: 0.0,0.0,0.0]
-    --limits=<min,max>         Dynamic range of surface density colormap [default: 10,3e3]
+    --limits=<min,max>         Dynamic range of surface density colormap
     --Tlimits=<min,max>        Dynamic range of temperature colormap in K [default: 0,0]
     --SHO_RGB_norm=<f>         Normalization constant for narrow band plot, set automatically by default [default: 0.0]
     --energy_limits=<min,max>  Dynamic range of kinetic energy colormap in code units [default: 0,0]
@@ -103,11 +103,12 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
     tasks = arguments["--tasks"].split(",")
     N_tasks = len(tasks)    
     res = int(arguments["--res"])
-
-    limits = np.array([float(c) for c in arguments["--limits"].split(',')])
+    
+    if arguments["--limits"]:
+        limits = np.array([float(c) for c in arguments["--limits"].split(',')])
 
     # parameters that every single task will have in common
-    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": limits, "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": float(input["--SHO_RGB_norm"]), "cool_cmap": input["--cool_cmap"]}
+    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": float(input["--SHO_RGB_norm"]), "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"])}
 
     if input["--rmax"] is None:
         common_params["rmax"] = None
@@ -128,14 +129,15 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         for i in range(N_params):
             d = common_params.copy()
             d["Time"] = snaptimes[i]
+            d["index"] = {v:k for v, k in zip(snaptime_dict.values(),snaptime_dict.keys())}[snaptimes[i]] * 10 + i%n_interp
             p.append(d.copy())
         params.append(p)
-
+    
     return params
     
 def main(input):
     tasks = input["--tasks"].split(",")
-    print(tasks)
+#    print(tasks)
     tasks = [taskdict[t] for t in tasks]
     nproc = int(input["--np"])
     np_render = int(input["--np_render"])

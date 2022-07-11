@@ -48,7 +48,7 @@ class SinkVis(Task):
         self.default_params = {"Time": 0,
                                "res": 512,
                                "rmax": None,
-                               "limits": [10,3e3],
+                               "limits": None, #[10,3e3],
                                "center": None,
                                "pan": 0,
                                "tilt": 0,
@@ -417,7 +417,8 @@ class SinkVis(Task):
 class SinkVisSigmaGas(SinkVis):
     def __init__(self,params):
         self.required_maps = ["sigma_gas"]                                 
-        if params["extinct_stars"]: self.required_maps += ['tau']
+        if "extinct_stars" in params.keys():
+            if params["extinct_stars"]: self.required_maps += ['tau']
         super().__init__(params)
         if self.TaskDone: return
         self.AssignDefaultParams()
@@ -453,6 +454,10 @@ class SinkVisSigmaGas(SinkVis):
             
             
     def MakeImages(self,snapdata):
+        if self.params["limits"] is None: # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
+            sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
+            self.params["limits"] = np.interp([0.01,0.99], sigmagas_flat.cumsum()/sigmagas_flat.sum(), sigmagas_flat)
+
         vmin, vmax = self.params["limits"]
         f = (np.log10(self.maps["sigma_gas"])-np.log10(vmin))/(np.log10(vmax)-np.log10(vmin))
 

@@ -42,7 +42,7 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
     snapnums = np.array([snapnum_from_path(s) for s in snaps])
     snaptimes = np.array([snaptime_dict[snapnum_from_path(s)] for s in snaps])
     snapdict = dict(zip(snaptimes, snaps))
-    print(snapnums, snaptimes, snapdict)
+#    print(snapnums, snaptimes, snapdict)
 
     if (not task_params) or (type(task_params) == dict): # if task_params is empty or a single dict that we must broadcast
         N_params = len(snaps)*interp_fac # default to just doing a pass on snapshots with optional interpolation and default parameters
