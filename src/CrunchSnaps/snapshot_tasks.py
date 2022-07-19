@@ -390,27 +390,14 @@ class SinkVis(Task):
             stars_in_view = np.ones(len(X_star))
         #######################
         #Calculate optical depth to each star from the camera
-        print("Calculating optical depth for stars"); import time; starttime = time.time()
-        # #Generate a surafce density map, which is used as an upper estimate for the optical depth
-        # nH = snapdata["PartType0/Density"]* 30 #convert to cm-3
-        # dense_gas = nH>10 #Exclude low density gas, below 10 cm^-3, this usually corresponds to low density stuff that either does not matter or is not between the observer and the star
-        # #print(np.min(nH),np.median(nH),np.mean(nH),np.max(nH))
-        # gridres=1024
-        # sigma_map = GridSurfaceDensity(self.mass[dense_gas], self.pos[dense_gas], self.hsml[dense_gas], np.zeros(3), 2*self.params["rmax"], res=gridres,parallel=self.parallel) #shouldn't be transposed because we are using it to interpolate, not to plot
-        # sigma_max_func = RectBivariateSpline(np.linspace(-self.params["rmax"], self.params["rmax"], num=gridres),np.linspace(-self.params["rmax"], self.params["rmax"], num=gridres),sigma_map)
-        # tau_max = 0.052*sigma_max_func.ev(X_star[stars_in_view,0],X_star[stars_in_view,1]) #here we use the basic formula to convert from surface density to tau
-        # #we only do the full calculation for stars for which tau_max>threshold, for the others we assume 0
-        # stars_to_do = (tau_max>=0.2)
-        # print("\t %d stars, %d in view, of these %d with tau<0.2"%(len(X_star),np.sum(stars_in_view),np.sum(stars_in_view)-np.sum(stars_to_do) ))
+        print("Calculating optical depth for stars"); #import time; starttime = time.time()
         stars_to_do = snapdata["PartType5/Masses"][stars_in_view]>-1
         #Calculate optical depth for chosen stars
         tau = np.zeros_like(snapdata["PartType5/Masses"][stars_in_view]) #init
         kappa = 0.052*np.ones_like(snapdata["PartType0/Masses"]) #opacity per unit mass, using NH/cm^-2 = 2.2e21 Av/mag observed fit, could be changed here to use something more sophisticated
-        smooth_distance = 2*self.params["rmax"]/100 #for default parameters this means that stars within 1% of the picture size are assumed to have the same tau
-        if self.params["camera_distance"] < np.inf:  smooth_distance = 2*self.params["rmax"]*self.params["camera_distance"]/self.params["FOV"] #this roughly translates to stars at camera_distance within 1 degree of each other having the same tau
-        tau[stars_to_do] = optical_depth_for_targets( (snapdata["PartType5/Coordinates"][stars_in_view])[stars_to_do], x_camera,snapdata["PartType0/Coordinates"],snapdata["PartType0/Masses"],snapdata["PartType0/SmoothingLength"],kappa,smooth_distance=smooth_distance)
+        tau[stars_to_do] = optical_depth_for_targets( (snapdata["PartType5/Coordinates"][stars_in_view])[stars_to_do], x_camera,snapdata["PartType0/Coordinates"],snapdata["PartType0/Masses"],snapdata["PartType0/SmoothingLength"],kappa, nthreads=self.params["threads"])
         #print("sigma", tau/np.median(kappa) )
-        print("Calculation took %g minutes"%( (time.time()-starttime)/60 ))
+        #print("Optical depth calculation took %g minutes"%( (time.time()-starttime)/60 ))
         self.maps["tau"]=tau
         np.savez_compressed(self.map_files["tau"], tau=self.maps["tau"])
 

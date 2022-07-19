@@ -93,6 +93,16 @@ def DoParamsPass(chunk):
             if k < t1: del snapdata_buffer[k] # delete if not needed for interpolation (including old interpolants)
         for t in t1, t2:
             if not t in snapdata_buffer.keys(): snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata)
+        for t in list(snapdata_buffer.keys()):
+            missing = [key for key in required_snapdata if not (key in snapdata_buffer[t].keys())]
+            if len(missing):
+                print("\nFor time %s missing data in snapshot buffer: "%(t), missing)
+                if t in [t1, t2]:
+                    print("Reopening file...")
+                    snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata)
+                else: #means it is interpolated data
+                    print("Deleting buffer entry %s, we will redo the interpolation..."%(t))
+                    del snapdata_buffer[t] #we have to redo the interpolation for this one
 
         ##########################  interpolation #############################################
         # now get the particle data we need for this time, interpolating if needed

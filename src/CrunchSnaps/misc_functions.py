@@ -30,7 +30,7 @@ def NearestImage(x,boxsize):
     if abs(x) > boxsize/2: return -copysign(boxsize-abs(x),x)
     else: return x
 
-def get_snapshot_time_dict(snaps):
+def get_snapshot_time_dict(snaps,save_to_file=False):
     snaps = natsorted(snaps)
     all_snaps = natsorted(glob(snaps[0].split("snapshot")[0] + "snapshot*.hdf5")) # look for other snapshots in same directory
     if len(snaps) == 1: # if we only have one snapshot, keep it simple and just open the file. otherwise we will do some fancy stuff to avoid opening multiple files for the timeline
@@ -53,7 +53,8 @@ def get_snapshot_time_dict(snaps):
 #             snapnums.append(snapnum_from_path(s))
              with h5py.File(s, 'r') as F:
                  snaptime_dict[snapnum_from_path(s)] = F["Header"].attrs["Time"]
-        np.savetxt(snaptimes_path, np.c_[[k for k in snaptime_dict.keys()], [v for v in snaptime_dict.values()]])
+        if save_to_file:
+            np.savetxt(snaptimes_path, np.c_[[k for k in snaptime_dict.keys()], [v for v in snaptime_dict.values()]])
 
     return snaptime_dict
 
