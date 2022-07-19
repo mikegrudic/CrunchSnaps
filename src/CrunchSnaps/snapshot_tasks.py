@@ -350,7 +350,7 @@ class SinkVis(Task):
                 if "PartType5/Coordinates" in snapdata.keys():
                     self.params["center"] = snapdata["PartType5/Coordinates"][snapdata["PartType5/BH_Mass"].argsort()[::-1]][self.params["center_on_star"]-1] # center on the n'th most massive star
                 else: # otherwise center on the densest gas cell
-                    self.params["center"] = snapdata["PartType0/Coordinates"][snapdata["PartType0/Density"].argmax()]
+                    self.params["center"] = snapdata["PartType0/Coordinates"][snapdata["PartType0/SmoothingLength"].argmin()]
             else:
                 self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"]*0.5,3)
             center = self.params["center"]
