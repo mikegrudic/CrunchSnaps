@@ -114,6 +114,19 @@ class SinkVis(Task):
 
     def DetermineRequiredSnapdata(self):
         self.RequiredSnapdata = ["PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass"]
+        # check if we have maps already saved
+        self.render_maps = False
+        for mapname in self.required_maps:
+            if not isfile(self.map_files[mapname]+".npz"): 
+                self.render_maps = True
+            else:
+                print("Loading %s map from %s"%(mapname, self.map_files[mapname]))
+                try:
+                    self.maps[mapname] = np.load(self.map_files[mapname]+".npz")[mapname]
+                except:
+                    print("Error when loading file %s! Removing potentially corrupted file..."%self.map_files[mapname])
+                    os.remove(self.map_files[mapname]+".npz")
+                    self.render_maps = True
 
     def AssignDefaultParams(self):
         super().AssignDefaultParams()
@@ -350,7 +363,7 @@ class SinkVis(Task):
                 if "PartType5/Coordinates" in snapdata.keys():
                     self.params["center"] = snapdata["PartType5/Coordinates"][snapdata["PartType5/BH_Mass"].argsort()[::-1]][self.params["center_on_star"]-1] # center on the n'th most massive star
                 else: # otherwise center on the densest gas cell
-                    self.params["center"] = snapdata["PartType0/Coordinates"][snapdata["PartType0/SmoothingLength"].argmin()]
+                    self.params["center"] = snapdata["PartType0/Coordinates"][snapdata["PartType0/Density"].argmax()]
             else:
                 self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"]*0.5,3)
             center = self.params["center"]
@@ -419,18 +432,9 @@ class SinkVisSigmaGas(SinkVis):
 
     def DetermineRequiredSnapdata(self):
         super().DetermineRequiredSnapdata()
-        # check if we have sigma_gas map already saved
-        if isfile(self.map_files["sigma_gas"] + ".npz"):
-            print("Loading sigma_gas map from %s"%(self.map_files["sigma_gas"]))
-            self.maps["sigma_gas"] = np.load(self.map_files["sigma_gas"] + ".npz")['sigma_gas']            
-        else:
+        if self.render_maps:
+            #gas data for surface density 
             self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs",  "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
-        if self.params["extinct_stars"]:
-            if isfile(self.map_files["tau"] + ".npz"):
-                 print("Loading tau map from %s"%(self.map_files["tau"]))
-                 self.maps["tau"] = np.load(self.map_files["tau"] + ".npz")['tau']            
-            else:
-                 self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs",  "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
         
     def GenerateMaps(self,snapdata):
         if not "sigma_gas" in self.maps.keys():
@@ -481,29 +485,15 @@ class SinkVisCoolMap(SinkVis):
         self.default_params["cool_cmap"] = 'magma'
         self.AssignDefaultParams()
 
+
+
     def DetermineRequiredSnapdata(self):
         super().DetermineRequiredSnapdata()
-        # check if we have sigma_gas map already saved
-        if isfile(self.map_files["sigma_gas"] + ".npz"):
-            print("Loading sigma_gas map from %s"%(self.map_files["sigma_gas"]))
-            self.maps["sigma_gas"] = np.load(self.map_files["sigma_gas"]+".npz")["sigma_gas"]            
-        else:
+        if self.render_maps:
+            #gas data for surface density 
             self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs",  "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
-
-        if isfile(self.map_files["sigma_1D"] + ".npz"):
-            print("Loading sigma_1D map from %s"%(self.map_files["sigma_1D"]))
-            self.maps["sigma_1D"] = np.load(self.map_files["sigma_1D"] + ".npz")["sigma_1D"]
-        else:
+            #extra velocity data for kinemtic map
             self.RequiredSnapdata += ["PartType0/Velocities"]
-            self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs",  "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
-        
-        if self.params["extinct_stars"]:
-            if isfile(self.map_files["tau"] + ".npz"):
-                 print("Loading tau map from %s"%(self.map_files["tau"]))
-                 self.maps["tau"] = np.load(self.map_files["tau"] + ".npz")['tau']            
-            else:
-                 self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs",  "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber"]
-        
 
     def AssignDefaultParams(self):
         super().AssignDefaultParams()
@@ -554,16 +544,8 @@ class SinkVisNarrowbandComposite(SinkVis):
 
     def DetermineRequiredSnapdata(self):
         super().DetermineRequiredSnapdata()
-        # check if we have maps already saved
-        render_maps = False
-        for mapname in self.required_maps:
-            if not isfile(self.map_files[mapname]+".npz"): render_maps = True
-        if render_maps:
+        if self.render_maps:
             self.RequiredSnapdata += ["PartType0/Coordinates","PartType0/Masses","PartType0/ParticleIDs", "PartType0/Temperature", "PartType0/ElectronAbundance", "PartType0/SmoothingLength","PartType0/ParticleChildIDsNumber","PartType0/ParticleIDGenerationNumber", "PartType0/Density", "PartType0/HII"]
-        else: # load pre-existing
-            for mapname in self.required_maps:
-                print("Loading %s map from %s"%(mapname, self.map_files[mapname]))
-                self.maps[mapname] = np.load(self.map_files[mapname]+".npz")[mapname]            
                 
 
     def AssignDefaultParams(self):
