@@ -98,8 +98,6 @@ class SinkVis(Task):
         self.map_files = dict([(m, mapdir+"/" + m + "_" + self.params_hash) for m in self.required_maps]) # filename for the saved maps will by MAPNAME_(hash # of input params)
         self.maps = {}
 
-        self.DetermineRequiredSnapdata()
-
         if self.params["threads"] != 1:
             self.parallel = True
             if self.params["threads"] > 0: # if negative, just use all available threads, otherwise set to desired value
@@ -108,9 +106,11 @@ class SinkVis(Task):
 
         if isfile(self.params["filename"]) and not self.params["overwrite"]:
            self.RequiredSnapdata = []
+           print("%s already exists, skipping figure..."%(self.params["filename"]))
            self.TaskDone = True
         else:
-            self.TaskDone = False
+           self.TaskDone = False
+           self.DetermineRequiredSnapdata()
 
     def DetermineRequiredSnapdata(self):
         self.RequiredSnapdata = ["PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass"]
