@@ -9,6 +9,7 @@ Options:
     --fresco_stars         Render stars with Fresco
     --extinct_stars        Calculate the extinction of stars to observers and attenuate their light, used only if --fresco_stars is set. Note: enabling this can make the calculation significantly slower
     --limits=<min,max>     Surface density limits  [default: 1,3e3]
+    --no_overwrite         Flag, if enabled existing figures are mot overwritten
     --res=<N>              Resolution [default: 256]
     --np=<N>               Number of renders to do in parallel [default: 1]
     --np_render=<N>        Number of cores per process to run rundering calls on [default: 1]
@@ -32,10 +33,14 @@ res = int(options["--res"])
 nproc = int(options["--np"])
 np_render = int(options["--np_render"])
 SHO_RGB_norm = float(options["--SHO_RGB_norm"])
+if options["--no_overwrite"]:
+    overwrite=False
+else:
+    overwrite=True
 
 limits = np.array([float(c) for c in options["--limits"].split(',')])
 
-common_params = {"fresco_stars": options["--fresco_stars"], "res": res, "limits": limits, "no_timestamp": options["--no_timestamp"], "no_size_scale": options["--no_size_scale"], "threads": np_render, "SHO_RGB_norm": SHO_RGB_norm, "extinct_stars": options["--extinct_stars"]}
+common_params = {"fresco_stars": options["--fresco_stars"], "res": res, "limits": limits, "no_timestamp": options["--no_timestamp"], "no_size_scale": options["--no_size_scale"], "threads": np_render, "SHO_RGB_norm": SHO_RGB_norm, "extinct_stars": options["--extinct_stars"], 'overwrite': overwrite }
 
 camera_data = np.atleast_2d(np.loadtxt(options["<camerafile>"]))
 sim_dir = options["<simdir>"][0] 

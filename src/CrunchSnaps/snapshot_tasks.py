@@ -74,7 +74,7 @@ class SinkVis(Task):
                                "camera_up": None,
                                "index": None,
                                "no_stars": False,
-                               "overwrite": False,
+                               "overwrite": True,
                                "unit_scalefac": 1,
                                "outputfolder": ".",
                                "SHO_RGB_norm": 0
@@ -106,11 +106,11 @@ class SinkVis(Task):
                 set_num_threads(self.params["threads"])
         else: self.parallel = False
 
-        #if isfile(self.params["filename"]) and not self.params["overwrite"]:
-        #    self.RequiredSnapdata = []
-#            self.TaskDone = True
-#        else:
-        self.TaskDone = False
+        if isfile(self.params["filename"]) and not self.params["overwrite"]:
+           self.RequiredSnapdata = []
+           self.TaskDone = True
+        else:
+            self.TaskDone = False
 
     def DetermineRequiredSnapdata(self):
         self.RequiredSnapdata = ["PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass"]
