@@ -87,10 +87,13 @@ def optical_depth_for_targets(target_coords,x_obs,x,m,h,kappa,nthreads=1):
     K = r_eff.max() * (1+1e-6) # largest possible gas cell radius
     w = np.sqrt(K**2 - r_eff**2) # this is the fake z coordinate in the 3D space we're embedding the tree in
     x_fake = np.c_[dx_sph[:,1],dx_sph[:,2],w] # construct the fake 3D coordinates
+    #print("\t Coordinate transform for %d sources and %d gas done, building KDTree..."%(target_coords_sph.shape[0],len(R)))
     tree3d = cKDTree(x_fake, leafsize=64) # construct the fake 3D tree
+    #print("\t KDTree built, start neighbor queries...")
     #Query tree for each target       
     target_coords_fake = np.vstack((target_coords_sph[:,1],target_coords_sph[:,2],np.zeros(target_coords_sph.shape[0]))).T
     ind_all = tree3d.query_ball_point(target_coords_fake,K,workers=nthreads) # particles within distance K in the fake 3D space will be within their actual radius in the 2D space
+    #print("\t Neighbor queries done, integrating along field lines...")
     for i,ind in enumerate(ind_all):
         #Choose only those between observer and target
         between_ind = R[ind]<=target_coords_sph[i,0]

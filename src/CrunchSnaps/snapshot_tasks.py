@@ -403,14 +403,14 @@ class SinkVis(Task):
             stars_in_view = np.ones(len(X_star))
         #######################
         #Calculate optical depth to each star from the camera
-        print("Calculating optical depth for stars"); #import time; starttime = time.time()
         stars_to_do = snapdata["PartType5/Masses"][stars_in_view]>-1
+        print("Calculating optical depth for %d stars in %d gas cells..."%(np.sum(stars_to_do), len(snapdata["PartType0/Masses"]))); #import time; starttime = time.time()
         #Calculate optical depth for chosen stars
         tau = np.zeros_like(snapdata["PartType5/Masses"][stars_in_view]) #init
-        kappa = 0.052*np.ones_like(snapdata["PartType0/Masses"]) #opacity per unit mass, using NH/cm^-2 = 2.2e21 Av/mag observed fit, could be changed here to use something more sophisticated
-        tau[stars_to_do] = optical_depth_for_targets( (snapdata["PartType5/Coordinates"][stars_in_view])[stars_to_do], x_camera,snapdata["PartType0/Coordinates"],snapdata["PartType0/Masses"],snapdata["PartType0/SmoothingLength"],kappa, nthreads=self.params["threads"])
-        #print("sigma", tau/np.median(kappa) )
-        #print("Optical depth calculation took %g minutes"%( (time.time()-starttime)/60 ))
+        if len(snapdata["PartType5/Masses"][stars_in_view][stars_to_do]):
+            kappa = 0.052*np.ones_like(snapdata["PartType0/Masses"]) #opacity per unit mass, using NH/cm^-2 = 2.2e21 Av/mag observed fit, could be changed here to use something more sophisticated
+            tau[stars_to_do] = optical_depth_for_targets( (snapdata["PartType5/Coordinates"][stars_in_view])[stars_to_do], x_camera,snapdata["PartType0/Coordinates"],snapdata["PartType0/Masses"],snapdata["PartType0/SmoothingLength"],kappa, nthreads=self.params["threads"])
+        #print("Optical depth calculation for %d stars took %g minutes"%( np.sum(stars_to_do), (time.time()-starttime)/60 ))
         self.maps["tau"]=tau
         np.savez_compressed(self.map_files["tau"], tau=self.maps["tau"])
 
@@ -562,6 +562,7 @@ class SinkVisNarrowbandComposite(SinkVis):
             self.GenerateTauMap(snapdata)
              
         if not "SHO_RGB" in self.maps.keys():
+            #print("Generating SHO map...")
             rho = snapdata["PartType0/Density"]
             T = snapdata["PartType0/Temperature"]
             fe = snapdata["PartType0/ElectronAbundance"]
@@ -613,8 +614,9 @@ class SinkVisNarrowbandComposite(SinkVis):
                 lum[:] /= self.r[:,None]**2 # have to convert here because smoothing lengths are now in angular units
                 lum[self.pos[:,2]<0] = 0  # ignore stuff behind the camera 
                 kappa[self.pos[:,2]<0] = 0
-                
+            #print("\t Starting GridRadTransfer for %d gas cells..."%(np.sum(self.pos[:,2]<0))); import time; starttime = time.time()
             self.maps["SHO_RGB"] = GridRadTransfer(np.copy(lum), np.copy(self.mass), np.copy(kappa),  np.copy(self.pos), np.copy(self.hsml), self.params["res"], 2*self.params["rmax"]).swapaxes(0,1)
+            #print("\t GridRadTransfer finished in %g min, saving map to %s..."%( (time.time()-starttime)/60, self.map_files["SHO_RGB"]))
             np.savez_compressed(self.map_files["SHO_RGB"], SHO_RGB=self.maps["SHO_RGB"])
 
     def MakeImages(self,snapdata):
