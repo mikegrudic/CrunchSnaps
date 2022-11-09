@@ -99,16 +99,23 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
     nproc = int(arguments["--np"])
     np_render = int(arguments["--np_render"])
     n_interp = int(arguments["--interp_fac"])
-#    print(arguments["--tasks"])
     tasks = arguments["--tasks"].split(",")
     N_tasks = len(tasks)    
     res = int(arguments["--res"])
-    
+    direction = arguments["--dir"]
+        
     if arguments["--limits"]:
         limits = np.array([float(c) for c in arguments["--limits"].split(',')])
 
     # parameters that every single task will have in common
     common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": float(input["--SHO_RGB_norm"]), "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"])}
+
+    if direction=='x':
+        common_params["camera_dir"] = np.array([1.,0,0])
+        common_params["camera_up"] = np.array([0,0,1.])
+    elif direction=='y':
+        common_params["camera_dir"] = np.array([0,1.,0])
+        common_params["camera_up"] = np.array([0,0,1.])
 
     if input["--rmax"] is None:
         common_params["rmax"] = None
@@ -137,7 +144,6 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
     
 def main(input):
     tasks = input["--tasks"].split(",")
-#    print(tasks)
     tasks = [taskdict[t] for t in tasks]
     nproc = int(input["--np"])
     np_render = int(input["--np_render"])
