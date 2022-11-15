@@ -198,7 +198,7 @@ class SinkVis(Task):
         if self.params["camera_dir"] is not None:
             self.camera_dir = self.params["camera_dir"]
             NormalizeVector(self.params["camera_dir"])
-            if self.params["camera_up"] is None: self.camera_up = np.array([0,1.,0]) # default "up" direction is +y, we will project it out if the camera is tilted
+            if not self.params["camera_up"]: self.camera_up = np.array([0,1.,0]) # default "up" direction is +y, we will project it out if the camera is tilted
             else: self.camera_up = self.params["camera_up"]
             
             # if we've specified an up direction, project out the component parallel to the forward direction and normalize
@@ -570,7 +570,8 @@ class SinkVisNarrowbandComposite(SinkVis):
             nH = rho * 30
             ne = nH * fe
             
-            ne = np.clip(ne,None,np.percentile(ne,100*(1.0-100/len(ne))) ) #clip by 100th largest value in case we have few rogue cells with extremely large values
+            #ne = np.clip(ne,None,np.percentile(ne,100*(1.0-100/len(ne))) ) #clip by 100th largest value in case we have few rogue cells with extremely large values
+            ne = np.clip(ne,None,np.percentile(ne,99) ) #clip by 99th percentile, this removes bright interfaces around dense regions which we can't properly interpolate between snapshots
 
             T4 = T/1e4
             j_B_Ha = 1.24e-25 * (T4)**(-0.942-0.031 * np.log(T4)) * 2.86 * nH*hii * ne

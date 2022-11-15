@@ -76,6 +76,7 @@ Options:
     --highlight_wind=<f>       Factor by which to increase wind particle masses if you want to highlight them [default: 1]
     --smooth_center=<Ns>       If not 0 and SinkVis is supposed to center on a particle (e.g. with center_on_ID) then the center coordinates are smoothed across Ns snapshots, [default: 0]
     --disable_multigrid        Disables GridSurfaceDensityMultigrid froms meshoid, uses slower GridSurfaceDensity instead
+    --extinct_stars            Flag on whether to extinct stars
 """
 
 #Example
@@ -125,10 +126,13 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
     N_params = len(filenames)*n_interp
     
     snaptime_dict = get_snapshot_time_dict(input["<files>"]) # get times of snapshots
-    snaptimes = np.array([snaptime_dict[snapnum_from_path(s)] for s in input["<files>"]])
+    snaptime_dict_inv = {v:k for v, k in zip(snaptime_dict.values(),snaptime_dict.keys())}
+    snaptimes_orig = np.array([snaptime_dict[snapnum_from_path(s)] for s in input["<files>"]])
 
     if n_interp>1: # get times of frames if we're doing an interpolated movie
-        snaptimes = np.interp(np.arange(n_interp*len(filenames))/n_interp, np.arange(len(filenames)), snaptimes)
+        snaptimes = np.interp(np.arange(n_interp*len(filenames))/n_interp, np.arange(len(filenames)), snaptimes_orig)
+    else:
+        snaptimes = snaptimes_orig
     
     params = []
     for j in range(N_tasks):
@@ -136,7 +140,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         for i in range(N_params):
             d = common_params.copy()
             d["Time"] = snaptimes[i]
-            d["index"] = {v:k for v, k in zip(snaptime_dict.values(),snaptime_dict.keys())}[snaptimes[i]] * 10 + i%n_interp
+            #d["index"] = snaptime_dict_inv[snaptimes_orig[i]] * 10 + i%n_interp
             p.append(d.copy())
         params.append(p)
     
