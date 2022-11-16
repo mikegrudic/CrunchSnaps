@@ -571,7 +571,7 @@ class SinkVisNarrowbandComposite(SinkVis):
             ne = nH * fe
             
             #ne = np.clip(ne,None,np.percentile(ne,100*(1.0-100/len(ne))) ) #clip by 100th largest value in case we have few rogue cells with extremely large values
-            ne = np.clip(ne,None,np.percentile(ne,99) ) #clip by 99th percentile, this removes bright interfaces around dense regions which we can't properly interpolate between snapshots
+            ne = np.clip(ne,None,np.percentile(ne,95) ) #clip by 95th percentile, this removes bright interfaces around dense regions which we can't properly interpolate between snapshots
 
             T4 = T/1e4
             j_B_Ha = 1.24e-25 * (T4)**(-0.942-0.031 * np.log(T4)) * 2.86 * nH*hii * ne

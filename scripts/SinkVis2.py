@@ -109,7 +109,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         limits = np.array([float(c) for c in arguments["--limits"].split(',')])
 
     # parameters that every single task will have in common
-    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": float(input["--SHO_RGB_norm"]), "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"])}
+    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": float(input["--SHO_RGB_norm"]), "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "extinct_stars": int(input["--extinct_stars"])}
 
     if direction=='x':
         common_params["camera_dir"] = np.array([1.,0,0])
