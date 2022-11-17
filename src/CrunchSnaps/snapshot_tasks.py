@@ -380,8 +380,8 @@ class SinkVis(Task):
     def DoTask(self, snapdata):
         if self.TaskDone: return 
         self.AssignDefaultParamsFromSnapdata(snapdata)
-        if set(self.required_maps) != set(self.maps.keys()): # if we don't already have the maps we need
-            self.SetupCoordsAndWeights(snapdata)        
+        #if set(self.required_maps) != set(self.maps.keys()): # if we don't already have the maps we need
+        self.SetupCoordsAndWeights(snapdata)        
         self.GenerateMaps(snapdata)
         self.MakeImages(snapdata)
         return self.maps
