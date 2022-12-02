@@ -33,6 +33,10 @@ segment_real_times = np.array([0, segment1_realtime_end, total_length_seconds_no
 segment_frames_per_sim_time = fps * np.diff(segment_real_times)/np.diff(segment_sim_times)
 Nsegments = len(segment_sim_times) - 1
 
+def abs_nonzero(x):
+    x_abs = np.abs(x)
+    return x_abs[x_abs!=0]
+
 def angle_positive_map(x):
     return (x+2*np.pi)%(2*np.pi)
 
@@ -64,18 +68,39 @@ def poly_exp_decay_func_deriv2(x,params):
     return ( np.exp(-x/scale) * ( Polynomial(poly_params).deriv(2)(x) - Polynomial(poly_params).deriv(1)(x)/scale ) -  poly_exp_decay_func_deriv(x,params)/scale)
 
 
-def fitfunc(params,args,regularization_param=1e-4):
+def fitfunc(params,args,regularization_param=1e-4,linearization_param=0,acc_param=0):
     y0, v0, a0, y1, v1, dx = args #unpack target values
     tot_err = 0 #total error
-    weights = [100,10,1,100,1] #relative weigts of constraints
-    for target, func, dist, wt in zip( [y0, v0, a0, y1, v1, dx], [poly_exp_decay_func,poly_exp_decay_func_deriv,poly_exp_decay_func_deriv2, poly_exp_decay_func, poly_exp_decay_func_deriv], [0,0,0,dx,dx], weights ):
+    weights = [10,1,1,10,1] #relative weigts of constraints
+    #Scales of changes
+    dy_scale = np.min( abs_nonzero([y1,y0,y1-y0]) )
+    dv_scale = np.mean(  abs_nonzero([v1-v0, (y1-y0)/dx]) )
+    da_scale = np.mean(  abs_nonzero([a0, dv_scale/dx, dy_scale/(dx**2)]) )
+    for target, func, dist, wt, delta_scale in zip( [y0, v0, a0, y1, v1, dx], [poly_exp_decay_func,poly_exp_decay_func_deriv,poly_exp_decay_func_deriv2, poly_exp_decay_func, poly_exp_decay_func_deriv], [0,0,0,dx,dx], weights, [dy_scale,dv_scale,da_scale,dy_scale,dv_scale] ):
         # if target:
             # tot_err += wt*( 1.0 - func(dist,params)/target )**2 #match BC
         # else: #need to handle 0
             # tot_err += wt*func(dist,params)**2 
-        tot_err += wt*(func(dist,params)-target)**2 
+        #tot_err += wt*(func(dist,params)-target)**2 
+        
+        if delta_scale:
+            tot_err += wt*((func(dist,params)-target)/delta_scale)**2 
+        else: #need to handle where we know nothing of the scale
+            tot_err += wt*func(dist,params)**2 
     #regularization error
-    tot_err += regularization_param * np.sum(params**2)
+    if regularization_param:
+        tot_err += regularization_param * np.sum(params**2)
+    
+    xlin = np.linspace(0,dx,num=20)
+    #Make the accelerations gentler
+    if acc_param:
+        tot_err += acc_param * np.max( np.abs(poly_exp_decay_func_deriv2(xlin,params)) )
+    
+    #Make it closer to linear
+    if linearization_param:
+        ylin = y0 + (y1-y0)*xlin/dx
+        tot_err += linearization_param * np.trapz( (poly_exp_decay_func(xlin,params) - ylin)**2 )
+    
     return tot_err
 
 def zoom_between(y,y1,n, func='exp_poly2', verbose=False, errtol=1e-2): #movement of camera during zoom, default is linear
@@ -94,22 +119,25 @@ def zoom_between(y,y1,n, func='exp_poly2', verbose=False, errtol=1e-2): #movemen
         elif func=='exp_poly2':
             y0 = y[-1]; v0 = np.diff(y)[-1]; a0 = np.diff(np.diff(y))[-1];
             v1=0 #let's have zero final velocity
-            init_guess = [a0/2 + 4*(y0-y1)/(n**2) + 4*(v0+2*(y0-y1)/n)/n,v0+(y0-y1)/(n/2),y0-y1,n/2,y1] #initial guess for second order case, using partial solutions for first 3 constraints
+            init_guess = [y0-y1, v0+(y0-y1) /(n/2), a0/2 + 4*(y0-y1)/(n**2) + 4*(v0+2*(y0-y1)/n)/n, n/2, y1] #initial guess for second order case, using partial solutions for first 3 constraints
             BC_params = [y0, v0, a0, y1, v1, n]
             if verbose:
                 print("Boundary conditions parameters params ", BC_params)
                 print("Initial guess for parameters ", init_guess)
             opt = optimize.minimize(fitfunc, init_guess, args=BC_params, method = 'BFGS', options={"disp":verbose, 'eps': 1e-8, 'maxiter': 1000}) #need tgo reduce eps if it gives inaccurate fits
             if verbose: 
+                dy_scale = np.min( abs_nonzero([y1,y0,y1-y0]) )
+                dv_scale = np.mean(  abs_nonzero([v1-v0, (y1-y0)/n]) )
+                da_scale = np.mean(  abs_nonzero([a0, dv_scale/n, dy_scale/(n**2)]) )
                 print("Fitted params ", opt.x)
                 print("Fit error %g"%(opt.fun))
                 print("At position %g:"%(x[-2]))
-                print("\t y0: %g fit %g"%(y0,poly_exp_decay_func(x[-2],opt.x)))
-                print("\t v0: %g fit %g"%(v0,poly_exp_decay_func_deriv(x[-2],opt.x)))
-                print("\t a0: %g fit %g"%(a0,poly_exp_decay_func_deriv2(x[-2],opt.x)))
+                print("\t y0: %g fit %g used scale: %g"%(y0,poly_exp_decay_func(x[-2],opt.x),dy_scale))
+                print("\t v0: %g fit %g used scale: %g"%(v0,poly_exp_decay_func_deriv(x[-2],opt.x),dv_scale))
+                print("\t a0: %g fit %g used scale: %g"%(a0,poly_exp_decay_func_deriv2(x[-2],opt.x),da_scale))
                 print("At position %g:"%(x[-1]))
-                print("\t y1: %g fit %g"%(y1,poly_exp_decay_func(x[-1],opt.x)))
-                print("\t v1: %g fit %g"%(v1,poly_exp_decay_func_deriv(x[-1],opt.x)))
+                print("\t y1: %g fit %g used scale: %g"%(y1,poly_exp_decay_func(x[-1],opt.x),dy_scale))
+                print("\t v1: %g fit %g used scale: %g"%(v1,poly_exp_decay_func_deriv(x[-1],opt.x),dv_scale))
             if np.sqrt( (y0-poly_exp_decay_func(x[-2],opt.x))**2 + (y1-poly_exp_decay_func(x[-1],opt.x))**2 ) > max(errtol,np.abs(y0)*errtol,np.abs(y1)*errtol) :
                 raise Exception("Fit does not match endpoints within error tolerance!")
             x_interp = np.linspace(x[-2],x[-1],num=n+1)[1:-1]#skip last frame which would be on top of target
@@ -235,6 +263,12 @@ for i in range(N_frames_tot-1):
     plt.plot(real_times[i:i+2], dx[i:i+2], c = plt.get_cmap('viridis')(norm_time[i]))
 plt.xlabel('T [s]'); plt.ylabel('X [pc]')
 fig.savefig('Path_x_t.png', dpi=200)
+
+fig = plt.figure()
+for i in range(N_frames_tot-1):
+    plt.plot(real_times[i:i+2], dy[i:i+2], c = plt.get_cmap('viridis')(norm_time[i]))
+plt.xlabel('T [s]'); plt.ylabel('Y [pc]')
+fig.savefig('Path_y_t.png', dpi=200)
 
 # fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
 # for i in range(N_frames_tot-1):
