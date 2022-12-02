@@ -97,7 +97,7 @@ def optical_depth_for_targets(target_coords,x_obs,x,m,h,kappa,nthreads=1):
     for i,ind in enumerate(ind_all):
         #Choose only those between observer and target
         between_ind = R[ind]<=target_coords_sph[i,0]
-        #Find distance to sightline normlaized by cell size (<1 by definition)
+        #Find distance to sightline normalized by cell size (<1 by definition)
         delta = dx_sph[ind][between_ind] - target_coords_sph[i]
         q = np.sqrt(delta[:,1]**2+delta[:,2]**2)/r_eff[ind][between_ind]
         #Calculate contributions for each cell
@@ -108,7 +108,7 @@ def optical_depth_for_targets(target_coords,x_obs,x,m,h,kappa,nthreads=1):
         optical_depths[i] = np.sum(1.8189136353359467 * kernel * d_tau[ind][between_ind]) #This means we take either 100% or zero of a gas cell's d_tau, with a hard transition at the softening length 
     return  optical_depths
 
-def make_amuse_fresco_stars_only(x,mstar,age_yr,L,res=512,p=5e-4,mass_limits=[0,0],mass_rescale=1.,filename=None,vmax=None,optical_depth=None):
+def make_amuse_fresco_stars_only(x,mstar,age_yr,L,lum=None,stage=None,res=512,p=5e-4,mass_limits=[0,0],mass_rescale=1.,filename=None,vmax=None,optical_depth=None, MS_only=False):
     number_of_stars = len(mstar)
 
     if optical_depth is None:
@@ -130,9 +130,16 @@ def make_amuse_fresco_stars_only(x,mstar,age_yr,L,res=512,p=5e-4,mass_limits=[0,
     stars = new_stars
     gas = Particles()
     
+    #use luminsoity if provided
+    lum_final = lum_MS(mstar_new)
+    if (lum is not None): #take the lower of the rescaled MS and the current luminosity
+        ind = (lum_final > lum)
+        lum_final[ind] = lum[ind]
+    if MS_only and (stage is not None):
+        lum_final[stage<5] = 0
     
     #inspectvar(units)
-    stars.luminosity = ( np.exp(-optical_depth)*lum_MS(mstar_new) ) | units.LSun
+    stars.luminosity = ( np.exp(-optical_depth)*lum_final ) | units.LSun
     #stars.main_sequence_lifetime = [450.0, 420.0] | units.Myr
     stars.radius = rad_MS(mstar_new) | units.RSun
     #stars.spin = [4700, 4700] | units.yr**-1

@@ -9,14 +9,15 @@ Options:
     --fresco_stars         Render stars with Fresco
     --extinct_stars        Calculate the extinction of stars to observers and attenuate their light, used only if --fresco_stars is set. Note: enabling this can make the calculation significantly slower
     --limits=<min,max>     Surface density limits  [default: 1,3e3]
-    --no_overwrite         Flag, if enabled existing figures are mot overwritten
+    --no_overwrite         Flag, if enabled existing figures are not overwritten
     --res=<N>              Resolution [default: 256]
     --np=<N>               Number of renders to do in parallel [default: 1]
     --np_render=<N>        Number of cores per process to run rundering calls on [default: 1]
     --cubemap              Render 6 faces of a cubemap surrounding the camera
     --no_timestamp         Don't add timestamp
     --no_size_scale        Don't draw wsize scale
-    --SHO_RGB_norm=<f>     Normalization constant for narrow band plot, set automatically by default [default: 0.0]
+    --SHO_RGB_norm=<f>     Normalization constant for narrow band plot, set automatically by default. If a vector is provided, then each channel is normalized by the correponding component [default: 0.0]
+    --sparse_snaps         Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
 """
 
 from docopt import docopt
@@ -32,7 +33,10 @@ cubemap = options["--cubemap"]
 res = int(options["--res"])
 nproc = int(options["--np"])
 np_render = int(options["--np_render"])
-SHO_RGB_norm = float(options["--SHO_RGB_norm"])
+if ',' in options["--SHO_RGB_norm"]: #normalization by channel
+    SHO_RGB_norm = np.array([float(c) for c in options["--SHO_RGB_norm"].split(',')])
+else: #same normalization constant for each channel
+    SHO_RGB_norm = float(options["--SHO_RGB_norm"]
 if options["--no_overwrite"]:
     overwrite=False
 else:
@@ -40,7 +44,7 @@ else:
 
 limits = np.array([float(c) for c in options["--limits"].split(',')])
 
-common_params = {"fresco_stars": options["--fresco_stars"], "res": res, "limits": limits, "no_timestamp": options["--no_timestamp"], "no_size_scale": options["--no_size_scale"], "threads": np_render, "SHO_RGB_norm": SHO_RGB_norm, "extinct_stars": options["--extinct_stars"], 'overwrite': overwrite }
+common_params = {"fresco_stars": options["--fresco_stars"], "res": res, "limits": limits, "no_timestamp": options["--no_timestamp"], "no_size_scale": options["--no_size_scale"], "threads": np_render, "SHO_RGB_norm": SHO_RGB_norm, "extinct_stars": options["--extinct_stars"], 'overwrite': overwrite, "sparse_snaps": options["--sparse_snaps"] }
 
 camera_data = np.atleast_2d(np.loadtxt(options["<camerafile>"]))
 sim_dir = options["<simdir>"][0] 
