@@ -16,7 +16,7 @@ Options:
     --c=<cx,cy,cz>             Coordinates of plot window center relative to box center [default: 0.0,0.0,0.0]
     --limits=<min,max>         Dynamic range of surface density colormap
     --Tlimits=<min,max>        Dynamic range of temperature colormap in K [default: 0,0]
-    --SHO_RGB_norm=<f>         Normalization constant for narrow band plot, set automatically by default [default: 0.0]
+    --SHO_RGB_norm=<f>         Normalization constant for narrow band plot, set automatically by default. If a vector is provided, then each channel is normalized by the correponding component [default: 0.0]
     --energy_limits=<min,max>  Dynamic range of kinetic energy colormap in code units [default: 0,0]
     --ecmap=<name>             Name of colormap to use for kinetic energy [default: viridis]
     --Tcmap=<name>             Name of colormap to use for temperature [default: inferno]
@@ -77,6 +77,8 @@ Options:
     --highlight_wind=<f>       Factor by which to increase wind particle masses if you want to highlight them [default: 1]
     --smooth_center=<Ns>       If not 0 and SinkVis is supposed to center on a particle (e.g. with center_on_ID) then the center coordinates are smoothed across Ns snapshots, [default: 0]
     --disable_multigrid        Disables GridSurfaceDensityMultigrid froms meshoid, uses slower GridSurfaceDensity instead
+    --extinct_stars            Flag on whether to extinct stars
+    --sparse_snaps             Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
 """
 
 #Example
@@ -104,12 +106,16 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
     N_tasks = len(tasks)    
     res = int(arguments["--res"])
     direction = arguments["--dir"]
+    if ',' in arguments["--SHO_RGB_norm"]: #normalization by channel
+        SHO_RGB_norm = np.array([float(c) for c in arguments["--SHO_RGB_norm"].split(',')])
+    else: #same normalization constant for each channel
+        SHO_RGB_norm = float(arguments["--SHO_RGB_norm"]
         
     if arguments["--limits"]:
         limits = np.array([float(c) for c in arguments["--limits"].split(',')])
 
     # parameters that every single task will have in common
-    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": float(input["--SHO_RGB_norm"]), "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "backend": input["--backend"], "cmap": input["--cmap"]}
+    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": SHO_RGB_norm, "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "extinct_stars": int(input["--extinct_stars"]), "sparse_snaps": input["--sparse_snaps"]}
 
     if direction=='x':
         common_params["camera_dir"] = np.array([1.,0,0])
@@ -126,10 +132,13 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
     N_params = len(filenames)*n_interp
     
     snaptime_dict = get_snapshot_time_dict(input["<files>"]) # get times of snapshots
-    snaptimes = np.array([snaptime_dict[snapnum_from_path(s)] for s in input["<files>"]])
+    snaptime_dict_inv = {v:k for v, k in zip(snaptime_dict.values(),snaptime_dict.keys())}
+    snaptimes_orig = np.array([snaptime_dict[snapnum_from_path(s)] for s in input["<files>"]])
 
     if n_interp>1: # get times of frames if we're doing an interpolated movie
-        snaptimes = np.interp(np.arange(n_interp*len(filenames))/n_interp, np.arange(len(filenames)), snaptimes)
+        snaptimes = np.interp(np.arange(n_interp*len(filenames))/n_interp, np.arange(len(filenames)), snaptimes_orig)
+    else:
+        snaptimes = snaptimes_orig
     
     params = []
     for j in range(N_tasks):
@@ -137,7 +146,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         for i in range(N_params):
             d = common_params.copy()
             d["Time"] = snaptimes[i]
-            d["index"] = {v:k for v, k in zip(snaptime_dict.values(),snaptime_dict.keys())}[snaptimes[i]] * 10 + i%n_interp
+            #d["index"] = snaptime_dict_inv[snaptimes_orig[i]] * 10 + i%n_interp
             p.append(d.copy())
         params.append(p)
     

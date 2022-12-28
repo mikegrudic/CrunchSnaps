@@ -113,7 +113,7 @@ class SinkVis(Task):
            self.DetermineRequiredSnapdata()
 
     def DetermineRequiredSnapdata(self):
-        self.RequiredSnapdata = ["PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass"]
+        self.RequiredSnapdata = ["PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass", "PartType5/ProtoStellarStage","PartType5/StarLuminosity_Solar"]
         # check if we have maps already saved
         self.render_maps = False
         for mapname in self.required_maps:
@@ -198,7 +198,7 @@ class SinkVis(Task):
         if self.params["camera_dir"] is not None:
             self.camera_dir = self.params["camera_dir"]
             NormalizeVector(self.params["camera_dir"])
-            if self.params["camera_up"] is None: self.camera_up = np.array([0,1.,0]) # default "up" direction is +y, we will project it out if the camera is tilted
+            if not self.params["camera_up"]: self.camera_up = np.array([0,1.,0]) # default "up" direction is +y, we will project it out if the camera is tilted
             else: self.camera_up = self.params["camera_up"]
             
             # if we've specified an up direction, project out the component parallel to the forward direction and normalize
@@ -219,7 +219,7 @@ class SinkVis(Task):
         return
 
     def SaveImage(self):
-        print("saving ", self.params["filename"])        
+        print("Saving ", self.params["filename"])        
         if self.params["backend"] == "matplotlib":
             rmax = self.params["rmax"]
             self.ax.set(xlim=[-rmax,rmax],ylim=[-rmax,rmax])
@@ -289,11 +289,16 @@ class SinkVis(Task):
         F.close()                       
             
     def AddStarsToImage(self,snapdata):
-#        print([k for k in snapdata.keys()])
         if not "PartType5/Coordinates" in snapdata.keys(): return
+        if not len(snapdata["PartType5/Coordinates"]): return
         X_star = np.copy(snapdata["PartType5/Coordinates"])
         m_star = snapdata["PartType5/BH_Mass"]
-
+        if ("PartType5/StarLuminosity_Solar" in snapdata.keys()) and len(snapdata["PartType5/StarLuminosity_Solar"]):
+            lum = snapdata["PartType5/StarLuminosity_Solar"]
+            stage = snapdata["PartType5/ProtoStellarStage"]
+        else:
+            lum = None; stage = None
+        
         self.CoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))
         
         if self.params["backend"]=="PIL":
@@ -302,12 +307,14 @@ class SinkVis(Task):
                 if self.params["camera_distance"] < np.inf:
                     stars_in_view = X_star[:,2]>0
                     X_star, m_star = X_star[stars_in_view], m_star[stars_in_view]
+                    if lum is not None:
+                        lum, stage = lum[stars_in_view], stage[stars_in_view]
                 if len(m_star) == 0: return
                 if self.params["extinct_stars"]:
                     tau = self.maps["tau"]
                 else:
                     tau = np.zeros_like(m_star)
-                data_stars_fresco = make_amuse_fresco_stars_only(X_star,m_star, np.zeros_like(m_star),2*self.params["rmax"],res=self.params["res"],vmax=self.params["fresco_param"],mass_rescale=self.params["fresco_mass_rescale"],mass_limits=self.params["fresco_mass_limits"],optical_depth=tau)
+                data_stars_fresco = make_amuse_fresco_stars_only(X_star,m_star, np.zeros_like(m_star),2*self.params["rmax"], lum=lum, stage=stage, res=self.params["res"],vmax=self.params["fresco_param"],mass_rescale=self.params["fresco_mass_rescale"],mass_limits=self.params["fresco_mass_limits"],optical_depth=tau)
                 img = plt.imread(fname)
                 plt.imsave(fname,np.clip(img[:,:,:3]+data_stars_fresco,0,1))
             else: # use derpy PIL circles
@@ -380,8 +387,7 @@ class SinkVis(Task):
     def DoTask(self, snapdata):
         if self.TaskDone: return 
         self.AssignDefaultParamsFromSnapdata(snapdata)
-        if set(self.required_maps) != set(self.maps.keys()): # if we don't already have the maps we need
-            self.SetupCoordsAndWeights(snapdata)        
+        self.SetupCoordsAndWeights(snapdata)
         self.GenerateMaps(snapdata)
         self.MakeImages(snapdata)
         return self.maps
@@ -400,7 +406,7 @@ class SinkVis(Task):
             stars_in_view = (X_star[:,2]>0) & ( np.abs(star_view_angle) <= (self.params["FOV"]*np.pi/180) )
         else:
             x_camera = np.array([0,0,-self.params["center"][2]]) #put it at the bottom of the box
-            stars_in_view = np.ones(len(X_star))
+            stars_in_view = np.ones(len(X_star),dtype=np.int32)
         #######################
         #Calculate optical depth to each star from the camera
         stars_to_do = snapdata["PartType5/Masses"][stars_in_view]>-1
@@ -572,8 +578,10 @@ class SinkVisNarrowbandComposite(SinkVis):
             nH = rho * 30
             ne = nH * fe
             
-            ne = np.clip(ne,None,np.percentile(ne,100*(1.0-100/len(ne))) ) #clip by 100th largest value in case we have few rogue cells with extremely large values
+            #ne = np.clip(ne,None,np.percentile(ne,100*(1.0-100/len(ne))) ) #clip by 100th largest value in case we have few rogue cells with extremely large values
+            ne = np.clip(ne,None,np.percentile(ne,99)) #clip by 99th percentile, this removes some too bright pixels in Ha, usually at interfaces with dense regions, which are hard to interpolate anyway
 
+            wavelength = 6562
             T4 = T/1e4
             j_B_Ha = 1.24e-25 * (T4)**(-0.942-0.031 * np.log(T4)) * 2.86 * nH*hii * ne
 
@@ -593,7 +601,10 @@ class SinkVisNarrowbandComposite(SinkVis):
             msun_to_g = 2e33
             
 
-            lum = np.c_[j_B_Ha,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None]
+            #lum = np.c_[j_B_Ha,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None]
+            lum = np.c_[j_NII,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None] #NII behaves much better for interpolation than Ha, mostly because it does not diverge in the limit of ne->inf, similar to OIII and SII
+            
+            #Here we normalize the emission, but it is done relative to the current emissions, so each snapshot has a different absolute normalization. If an absolute normalization is desired across snapshots, this part should be commented out and a vector should be used for SHO_RGB_norm to normalize individual channels
             lum_sum = np.sum(lum,axis=0); full_sum = np.sum(lum_sum)
             if full_sum:
                 if lum_sum[0]: lum[:,0] *= full_sum/lum_sum[0]
@@ -617,8 +628,11 @@ class SinkVisNarrowbandComposite(SinkVis):
                 lum[self.pos[:,2]<0] = 0  # ignore stuff behind the camera 
                 kappa[self.pos[:,2]<0] = 0
             #print("\t Starting GridRadTransfer for %d gas cells..."%(np.sum(self.pos[:,2]<0))); import time; starttime = time.time()
-            self.maps["SHO_RGB"] = GridRadTransfer(np.copy(lum), np.copy(self.mass), np.copy(kappa),  np.copy(self.pos), np.copy(self.hsml), self.params["res"], 2*self.params["rmax"]).swapaxes(0,1)
+            #self.maps["SHO_RGB"] = GridRadTransfer(np.copy(lum), np.copy(self.mass), np.copy(kappa),  np.copy(self.pos), np.copy(self.hsml), self.params["res"], 2*self.params["rmax"]).swapaxes(0,1)
             #print("\t GridRadTransfer finished in %g min, saving map to %s..."%( (time.time()-starttime)/60, self.map_files["SHO_RGB"]))
+            
+            self.maps["SHO_RGB"] = GridRadTransfer(np.copy(lum), np.copy(self.mass), np.copy(kappa),  np.copy(self.pos), np.copy(self.hsml), self.params["res"], 2*self.params["rmax"]).swapaxes(0,1)
+            
             np.savez_compressed(self.map_files["SHO_RGB"], SHO_RGB=self.maps["SHO_RGB"])
 
     def MakeImages(self,snapdata):
@@ -626,11 +640,13 @@ class SinkVisNarrowbandComposite(SinkVis):
         sigmoid = lambda x: x/(1+x) # tapering function to soften the saturation
         ha_map = np.copy(self.maps["SHO_RGB"])
         
-        if self.params["SHO_RGB_norm"] == 0: 
+        if hasattr(self.params["SHO_RGB_norm"], "__iter__"): #normalization constant per channel provided
+            norm = self.params["SHO_RGB_norm"]
+        elif (self.params["SHO_RGB_norm"] == 0):  #guess normalization for each channel
             norm = [np.percentile(ha_map[:,:,2],99), np.percentile(ha_map[:,:,0],99), np.percentile(ha_map[:,:,1],99) ]
-        else:
+            print("Using SHO_RGB normalizations %g %g %g"%(norm[0],norm[1],norm[2]))
+        else: #use the same normlization constant for each channel
             norm = [self.params["SHO_RGB_norm"], self.params["SHO_RGB_norm"], self.params["SHO_RGB_norm"]]
-        print("Using SHO_RGB normalizations %g %g %g"%(norm[0],norm[1],norm[2]))
         self.maps["SHO_RGB"][:,:,0] = sigmoid(ha_map[:,:,2]/norm[0])
         self.maps["SHO_RGB"][:,:,1] = sigmoid(ha_map[:,:,0]/norm[1])
         self.maps["SHO_RGB"][:,:,2] = sigmoid(ha_map[:,:,1]/norm[2])
