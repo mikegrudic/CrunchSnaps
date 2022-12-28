@@ -5,10 +5,11 @@ SinkVis2.py <files> ... [options]
 
 Options:
     -h --help                  Show this screen.
-    --tasks=<task1,task2...>                    List of names of the plots you want to make for each snapshot [default: SigmaGas]
+    --tasks=<task1,task2...>   List of names of the plots you want to make for each snapshot [default: SigmaGas]
     --rmax=<pc>                Maximum radius of plot window; defaults to box size/10. Note that this is FOV/2 in radians if FOV_plot is enabled
     --overwrite                Overwrite existing files if they already exist
     --FOV_plot                 Flag, if enables an image is created for an observer at the coordinates defined by c, looking in direction dir, with FOV of 2*rmax, projection options 'spherical', 'frustum', the default is 'frustum'
+    --backend=<b>              matplotlib vs PIL [default: PIL]
     --dir=<x,y,z>              Coordinate direction to orient the image along - x, y, or z. It also accepts vector values [default: z] 
     --full_box                 Sets the plot to the entire box, overrides rmax
     --target_time=<f>          If set to nonzero, SinkVis will try to make a single image by interpolating from the available files [default: 0.0] 
@@ -108,7 +109,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         limits = np.array([float(c) for c in arguments["--limits"].split(',')])
 
     # parameters that every single task will have in common
-    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": float(input["--SHO_RGB_norm"]), "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"])}
+    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": float(input["--SHO_RGB_norm"]), "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "backend": input["--backend"], "cmap": input["--cmap"]}
 
     if direction=='x':
         common_params["camera_dir"] = np.array([1.,0,0])

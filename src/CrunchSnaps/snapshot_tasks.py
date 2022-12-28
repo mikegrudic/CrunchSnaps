@@ -479,7 +479,8 @@ class SinkVisSigmaGas(SinkVis):
 class SinkVisCoolMap(SinkVis):
     def __init__(self,params):
         self.required_maps = ["sigma_gas", "sigma_1D"] #physical rendered quantities that can get saved and reused
-        if params["extinct_stars"]: self.required_maps += ['tau']
+        if "extinct_stars" in params.keys():
+            if params["extinct_stars"]: self.required_maps += ['tau']
         super().__init__(params)
         if self.TaskDone: return        
         self.default_params["cool_cmap"] = 'magma'
@@ -537,7 +538,8 @@ class SinkVisCoolMap(SinkVis):
 class SinkVisNarrowbandComposite(SinkVis):
     def __init__(self,params):
         self.required_maps = ["SHO_RGB"] #RGB map of SII, Halpha, and OIII
-        if params["extinct_stars"]: self.required_maps += ['tau']
+        if "extinct_stars" in params.keys():
+            if params["extinct_stars"]: self.required_maps += ['tau']
         super().__init__(params)
         if self.TaskDone: return
         self.AssignDefaultParams()
