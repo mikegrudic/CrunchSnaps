@@ -109,7 +109,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
     if ',' in arguments["--SHO_RGB_norm"]: #normalization by channel
         SHO_RGB_norm = np.array([float(c) for c in arguments["--SHO_RGB_norm"].split(',')])
     else: #same normalization constant for each channel
-        SHO_RGB_norm = float(arguments["--SHO_RGB_norm"]
+        SHO_RGB_norm = float(arguments["--SHO_RGB_norm"])
         
     if arguments["--limits"]:
         limits = np.array([float(c) for c in arguments["--limits"].split(',')])
