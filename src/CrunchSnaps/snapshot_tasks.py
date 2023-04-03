@@ -198,7 +198,7 @@ class SinkVis(Task):
         if self.params["camera_dir"] is not None:
             self.camera_dir = self.params["camera_dir"]
             NormalizeVector(self.params["camera_dir"])
-            if not self.params["camera_up"]: self.camera_up = np.array([0,1.,0]) # default "up" direction is +y, we will project it out if the camera is tilted
+            if self.params["camera_up"] is None: self.camera_up = np.array([0,1.,0]) # default "up" direction is +y, we will project it out if the camera is tilted
             else: self.camera_up = self.params["camera_up"]
             
             # if we've specified an up direction, project out the component parallel to the forward direction and normalize

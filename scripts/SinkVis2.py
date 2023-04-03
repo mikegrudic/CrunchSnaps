@@ -115,7 +115,16 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         limits = np.array([float(c) for c in arguments["--limits"].split(',')])
 
     # parameters that every single task will have in common
-    common_params = {"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": SHO_RGB_norm, "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "extinct_stars": int(input["--extinct_stars"]), "sparse_snaps": input["--sparse_snaps"]}
+    common_params = {i.replace("--",""): input[i] for i in input}
+    del common_params["<files>"]
+    for c, i in common_params.items():
+        if type(i) != str: continue
+        if "," in i:
+            common_params[c] = np.array([float(k) for k in i.split(",")])
+        elif i.replace(".","").isnumeric():
+            common_params[c] = float(i)
+    common_params.update({"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": SHO_RGB_norm, "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "extinct_stars": int(input["--extinct_stars"]), "sparse_snaps": input["--sparse_snaps"], "backend": input["--backend"]})
+
 
     if direction=='x':
         common_params["camera_dir"] = np.array([1.,0,0])
@@ -146,7 +155,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         for i in range(N_params):
             d = common_params.copy()
             d["Time"] = snaptimes[i]
-            #d["index"] = snaptime_dict_inv[snaptimes_orig[i]] * 10 + i%n_interp
+            d["index"] = snaptime_dict_inv[snaptimes_orig[i]] * 10 + i%n_interp
             p.append(d.copy())
         params.append(p)
     
