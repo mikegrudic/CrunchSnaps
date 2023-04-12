@@ -579,7 +579,7 @@ class SinkVisNarrowbandComposite(SinkVis):
             ne = nH * fe
             
             #ne = np.clip(ne,None,np.percentile(ne,100*(1.0-100/len(ne))) ) #clip by 100th largest value in case we have few rogue cells with extremely large values
-            ne = np.clip(ne,None,np.percentile(ne,99)) #clip by 99th percentile, this removes some too bright pixels in Ha, usually at interfaces with dense regions, which are hard to interpolate anyway
+#            ne = np.clip(ne,None,np.percentile(ne,99)) #clip by 99th percentile, this removes some too bright pixels in Ha, usually at interfaces with dense regions, which are hard to interpolate anyway
 
             wavelength = 6562
             T4 = T/1e4
@@ -601,8 +601,8 @@ class SinkVisNarrowbandComposite(SinkVis):
             msun_to_g = 2e33
             
 
-            #lum = np.c_[j_B_Ha,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None]
-            lum = np.c_[j_NII,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None] #NII behaves much better for interpolation than Ha, mostly because it does not diverge in the limit of ne->inf, similar to OIII and SII
+            lum = np.c_[j_B_Ha,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None]
+#            lum = np.c_[j_NII,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None] #NII behaves much better for interpolation than Ha, mostly because it does not diverge in the limit of ne->inf, similar to OIII and SII
             
             #Here we normalize the emission, but it is done relative to the current emissions, so each snapshot has a different absolute normalization. If an absolute normalization is desired across snapshots, this part should be commented out and a vector should be used for SHO_RGB_norm to normalize individual channels
             lum_sum = np.sum(lum,axis=0); full_sum = np.sum(lum_sum)
@@ -622,7 +622,7 @@ class SinkVisNarrowbandComposite(SinkVis):
 
             color_matrix = get_color_matrix(-0.3)
             lum = lum @ color_matrix
-            kappa = np.array([200,300,400]) * np.ones_like(self.mass)[:,None] / (pc_to_cm**2 / msun_to_g)
+            kappa = np.array([159,233,283]) * np.ones_like(self.mass)[:,None] / (pc_to_cm**2 / msun_to_g)
             if self.params["camera_distance"] < np.inf:
                 lum[:] /= self.r[:,None]**2 # have to convert here because smoothing lengths are now in angular units
                 lum[self.pos[:,2]<0] = 0  # ignore stuff behind the camera 

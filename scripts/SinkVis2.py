@@ -6,7 +6,7 @@ SinkVis2.py <files> ... [options]
 Options:
     -h --help                  Show this screen.
     --tasks=<task1,task2...>   List of names of the plots you want to make for each snapshot [default: SigmaGas]
-    --rmax=<pc>                Maximum radius of plot window; defaults to box size/10. Note that this is FOV/2 in radians if FOV_plot is enabled
+    --rmax=<pc>                Maximum radius of plot window; defaults to box size/10. Note that this is FOV/2 in radians if camera_dist is <inf
     --overwrite                Overwrite existing files if they already exist
     --FOV_plot                 Flag, if enables an image is created for an observer at the coordinates defined by c, looking in direction dir, with FOV of 2*rmax, projection options 'spherical', 'frustum', the default is 'frustum'
     --backend=<b>              matplotlib vs PIL [default: PIL]
@@ -17,6 +17,8 @@ Options:
     --limits=<min,max>         Dynamic range of surface density colormap
     --Tlimits=<min,max>        Dynamic range of temperature colormap in K [default: 0,0]
     --SHO_RGB_norm=<f>         Normalization constant for narrow band plot, set automatically by default. If a vector is provided, then each channel is normalized by the correponding component [default: 0.0]
+    --camera_distance=<D>      Camera distance if perspective rendering is required [default: inf]
+    --freeze_rotation=<num1,num2,...> Snapshot numbers at which to add a freeze-frame rotation [default: None]
     --energy_limits=<min,max>  Dynamic range of kinetic energy colormap in code units [default: 0,0]
     --ecmap=<name>             Name of colormap to use for kinetic energy [default: viridis]
     --Tcmap=<name>             Name of colormap to use for temperature [default: inferno]
@@ -27,7 +29,7 @@ Options:
     --interp_fac=<N>           Number of interpolating frames per snapshot [default: 1]
     --np=<N>                   Number of processors to run on [default: 1]
     --np_render=<N>            Number of openMP threads to run rendering on (-1 uses all available cores divided by --np) [default: 1]
-    --res=<N>                  Image resolution [default: 512]
+    --res=<N>                  Image resolution [default: 1024]
     --v_res=<N>                Resolution for overplotted velocity field if plot_v_map is on [default: 32]
     --vector_quiver_map        If enabled the velocity map will be quivers, if not then field line maps
     --velocity_scale=<f>       Scale for the quivers when using plot_v_map with vector_quiver_map, in m/s [default: 1000]
@@ -47,7 +49,7 @@ Options:
     --N_high=<N>               Number of sinks to center on using the center_on_star or center_on_densest flags [default: 1]
     --center_on_ID=<ID>        Center image on sink particle with specific ID, does not center if zero [default: 0]
     --rotating_images          If set SinkVis will create a set of images for a single snashot by rotating the system around a pre-specified rotation_axis
-    --rotation_init=<f>        Rotation angle for the first image around the rotation axis [default: 0]
+    --rotation_init=<f>        Rotation angle for the first image around the rotation axis [default: 0] 
     --rotation_max=<f>         Rotation angle for the final image around the rotation axis [default: 6.2831853]
     --rotation_steps=<N>       Number rotational steps (i.e. number of images to be made), spanning from the initial to the maximum rotation [default: 4]
     --rotation_axis=<x,y,z>    Vector defining the axis around whic the rotated images are made [default: 0.0,1.0,0.0]
@@ -119,9 +121,9 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
     del common_params["<files>"]
     for c, i in common_params.items():
         if type(i) != str: continue
-        if "," in i:
+        if "," in i and c != "tasks":
             common_params[c] = np.array([float(k) for k in i.split(",")])
-        elif i.replace(".","").isnumeric():
+        elif i.replace(".","").isnumeric() or i=="inf":
             common_params[c] = float(i)
     common_params.update({"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": SHO_RGB_norm, "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "extinct_stars": int(input["--extinct_stars"]), "sparse_snaps": input["--sparse_snaps"], "backend": input["--backend"]})
 
@@ -149,16 +151,25 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
     else:
         snaptimes = snaptimes_orig
     
-    params = []
-    for j in range(N_tasks):
-        p = []
-        for i in range(N_params):
-            d = common_params.copy()
-            d["Time"] = snaptimes[i]
-            d["index"] = snaptime_dict_inv[snaptimes_orig[i]] * 10 + i%n_interp
-            p.append(d.copy())
-        params.append(p)
-    
+    p = []
+    for i in range(N_params):
+        d = common_params.copy()
+        d["Time"] = snaptimes[i]
+        snapnum = snaptime_dict_inv[snaptimes_orig[i//n_interp]]
+        d["index"] = snapnum * 10 + i%n_interp
+        p.append(d.copy())
+        
+        if i%n_interp==0 and (input["--freeze_rotation"] is not None):
+            if snapnum in [int(f) for f in input["--freeze_rotation"].split(",")]: # add a rotation freeze
+                for k in range(360): # do a pan
+                    print(k)
+                    d = p[-1].copy()
+                    d["index"] = snapnum * 10 + i%n_interp
+                    d["pan"] = k
+                    d["tilt"] = 10*np.sin(2*np.pi*k/360) # add a bit of tilt for 3D look
+                    p.append(d)
+
+    params = N_tasks * [p] # one list of params per task
     return params
     
 def main(input):
