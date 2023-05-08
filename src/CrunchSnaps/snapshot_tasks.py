@@ -529,6 +529,9 @@ class SinkVisCoolMap(SinkVis):
             self.GenerateTauMap(snapdata)
 
     def MakeImages(self,snapdata):
+        if self.params["limits"] is None: # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
+            sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
+            self.params["limits"] = np.interp([0.01,0.99], sigmagas_flat.cumsum()/sigmagas_flat.sum(), sigmagas_flat)
         fgas = (np.log10(self.maps["sigma_gas"])-np.log10(self.params["limits"][0]))/np.log10(self.params["limits"][1]/self.params["limits"][0])
         fgas = np.clip(fgas,0,1)
         ls = LightSource(azdeg=315, altdeg=45)

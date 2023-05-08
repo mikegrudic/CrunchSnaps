@@ -81,6 +81,7 @@ Options:
     --disable_multigrid        Disables GridSurfaceDensityMultigrid froms meshoid, uses slower GridSurfaceDensity instead
     --extinct_stars            Flag on whether to extinct stars
     --sparse_snaps             Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
+    --equal_frame_times        Ensure frames in render sequence are equally spaced, even if snapshot times are not
 """
 
 #Example
@@ -108,6 +109,8 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
     N_tasks = len(tasks)    
     res = int(arguments["--res"])
     direction = arguments["--dir"]
+    equal_frame_times = arguments["--equal_frame_times"]
+
     if ',' in arguments["--SHO_RGB_norm"]: #normalization by channel
         SHO_RGB_norm = np.array([float(c) for c in arguments["--SHO_RGB_norm"].split(',')])
     else: #same normalization constant for each channel
@@ -141,20 +144,23 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         common_params["rmax"] = float(input["--rmax"])
 
     N_params = len(filenames)*n_interp
-    
+    print(input["<files>"])
     snaptime_dict = get_snapshot_time_dict(input["<files>"]) # get times of snapshots
     snaptime_dict_inv = {v:k for v, k in zip(snaptime_dict.values(),snaptime_dict.keys())}
     snaptimes_orig = np.array([snaptime_dict[snapnum_from_path(s)] for s in input["<files>"]])
 
     if n_interp>1: # get times of frames if we're doing an interpolated movie
-        snaptimes = np.interp(np.arange(n_interp*len(filenames))/n_interp, np.arange(len(filenames)), snaptimes_orig)
+        frametimes = np.interp(np.arange(n_interp*len(filenames))/n_interp, np.arange(len(filenames)), snaptimes_orig)
     else:
-        snaptimes = snaptimes_orig
+        frametimes = snaptimes_orig
+
+    if equal_frame_times:
+        frametimes = np.linspace(frametimes.min(),frametimes.max(),len(frametimes))
     
     p = []
     for i in range(N_params):
         d = common_params.copy()
-        d["Time"] = snaptimes[i]
+        d["Time"] = frametimes[i]
         snapnum = snaptime_dict_inv[snaptimes_orig[i//n_interp]]
         d["index"] = snapnum * 10 + i%n_interp
         p.append(d.copy())

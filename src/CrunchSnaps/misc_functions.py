@@ -50,9 +50,8 @@ def get_snapshot_time_dict(snaps,save_to_file=False):
     if np.any([not (snapnum_from_path(s) in snaptime_dict.keys()) for s in snaps]): # check if we have a snapshot missing from the dictionary, if so we must do a pass
         print("Sinkvis2 getting snapshot times...")
         for s in all_snaps:
-#             snapnums.append(snapnum_from_path(s))
-             with h5py.File(s, 'r') as F:
-                 snaptime_dict[snapnum_from_path(s)] = F["Header"].attrs["Time"]
+            with h5py.File(s, 'r') as F:
+                snaptime_dict[snapnum_from_path(s)] = F["Header"].attrs["Time"]
         if save_to_file:
             np.savetxt(snaptimes_path, np.c_[[k for k in snaptime_dict.keys()], [v for v in snaptime_dict.values()]])
 
