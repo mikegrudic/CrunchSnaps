@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageChops
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
-from .amuse_fresco import *
+#from .amuse_fresco import *
 from numba import get_num_threads, set_num_threads
 from scipy.interpolate import RectBivariateSpline
 from .misc_functions import *
@@ -26,7 +26,7 @@ class Task:
     """Class containing generic routines common to all tasks, and assigns default (null/empty) attributes that any task should have"""
     def __init__(self,params):
         self.RequiredSnapdata = []
-        self.params = params
+        self.params = params.copy()
 
     def GetRequiredSnapdata(self):
         return list(np.unique(self.RequiredSnapdata))
@@ -38,6 +38,8 @@ class Task:
     def AssignDefaultParamsFromSnapdata(self,snapdata):
         return
 
+    def DoTask(self,snapdata):
+        return
     
 
 class SinkVis(Task):
@@ -62,6 +64,7 @@ class SinkVis(Task):
                                "FOV": 90,
                                "camera_distance": np.inf,
                                "center_on_star": False,
+                               "center_on_densest": False,
                                "fresco_stars": False,
                                "extinct_stars": False,
                                "fresco_param": 0.001,
@@ -84,7 +87,7 @@ class SinkVis(Task):
         self.AssignDefaultParams()
         basename, ext = os.path.splitext(self.params["filename"])
         self.params["filename_incomplete"] = basename+"_incomplete"+ext
-        self.params_that_affect_maps = ["Time", "res", "rmax", "center", "pan", "tilt", "FOV", "camera_distance", "center_on_star", "cubemap_dir", "camera_dir", "camera_right", "camera_up", "rescale_hsml", "res"]
+        self.params_that_affect_maps = ["Time", "res", "rmax", "center", "pan", "tilt", "FOV", "camera_distance", "center_on_star", "center_on_densest", "cubemap_dir", "camera_dir", "camera_right", "camera_up", "rescale_hsml", "res"]
         dump = {}
         for k in self.params_that_affect_maps:
             if type(self.params[k]) == np.ndarray:
@@ -94,7 +97,12 @@ class SinkVis(Task):
         self.params_hash = str(hash(json.dumps(dump,sort_keys=True)))
 
         mapdir = self.params["outputfolder"]+"/.maps"
-        if not os.path.isdir(mapdir): os.mkdir(mapdir)
+        while not os.path.isdir(mapdir): 
+            try:
+                os.mkdir(mapdir)
+            except:
+                continue
+    
         self.map_files = dict([(m, mapdir+"/" + m + "_" + self.params_hash) for m in self.required_maps]) # filename for the saved maps will by MAPNAME_(hash # of input params)
         self.maps = {}
 
@@ -113,7 +121,8 @@ class SinkVis(Task):
            self.DetermineRequiredSnapdata()
 
     def DetermineRequiredSnapdata(self):
-        self.RequiredSnapdata = ["PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass", "PartType5/ProtoStellarStage","PartType5/StarLuminosity_Solar"]
+        self.RequiredSnapdata = ["PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass",]
+        if self.params["fresco_stars"]: self.RequiredSnapdata += ["PartType5/ProtoStellarStage","PartType5/StarLuminosity_Solar"]
         # check if we have maps already saved
         self.render_maps = False
         for mapname in self.required_maps:
@@ -229,21 +238,22 @@ class SinkVis(Task):
 
     def MakeImages(self,snapdata):
         if not self.params["no_stars"]: self.AddStarsToImage(snapdata)
-        self.AddSizeScaleToImage()
-        self.AddTimestampToImage()
+        self.AddSizeScaleToImage(snapdata["Header"])
+        self.AddTimestampToImage(snapdata["Header"])
         self.SaveImage()
         
 
-    def AddTimestampToImage(self):
+    def AddTimestampToImage(self,header):
         if self.params["no_timestamp"]: return
         fname = self.params["filename_incomplete"]
-        time = self.params["Time"]
-        if (time*979>=1e-2):
-            time_text="%3.2gMyr"%(time*979)
-        elif(time*979>=1e-4):
-            time_text="%3.2gkyr"%(time*979*1e3)
+        unit_time_in_s = header["UnitLength_In_CGS"]/header["UnitVelocity_In_CGS"]
+        time_Myr = self.params["Time"]*unit_time_in_s / 3.154e13
+        if (time_Myr>=1e-2):
+            time_text="%3.2gMyr"%(time_Myr)
+        elif(time_Myr>=1e-4):
+            time_text="%3.2gkyr"%(time_Myr*1e3)
         else:
-            time_text="%3.2gyr"%(time*979*1e6)
+            time_text="%3.2gyr"%(time_Myr*1e6)
             
         if self.params["backend"]=="PIL":
             F = Image.open(fname)
@@ -257,7 +267,7 @@ class SinkVis(Task):
             self.ax.text(-self.params["rmax"]*0.85, self.params["rmax"]*0.85,time_text,color="#FFFFFF")
 
 
-    def AddSizeScaleToImage(self):
+    def AddSizeScaleToImage(self,header):
 #        if self.params["camera_distance"] < np.inf: return
         if self.params["backend"]=="matplotlib": return # matplotlib will have axis ticks for scale
         pc_to_AU = 206265.0
@@ -267,9 +277,9 @@ class SinkVis(Task):
         draw = ImageDraw.Draw(F)
         gridres = self.params["res"]
         font = ImageFont.truetype("LiberationSans-Regular.ttf", gridres//12)
-        r = self.params["rmax"] * self.params["unit_scalefac"]
+        r = self.params["rmax"] *header["UnitLength_In_CGS"] / 3.086e18 # in pc
         if self.params["camera_distance"] < np.inf:
-            r = self.params["rmax"] * self.params["camera_distance"] * self.params["unit_scalefac"]
+            r = self.params["rmax"] * self.params["camera_distance"] #* self.params["unit_scalefac"]
 #        print("r=%g\n"%r)
         if (r*2>1000):
             scale_kpc=10**np.round(np.log10(r*0.5/1000))
@@ -326,13 +336,13 @@ class SinkVis(Task):
                 sink_relscale = 0.0025
                 X_star ,m_star = X_star[m_star.argsort()[::-1]], np.sort(m_star)[::-1]
 
-                for j in np.arange(len(X_star))[m_star>1e-2]:                    
+                for j in np.arange(len(X_star)):                    
                     X = X_star[j]
                     ms = m_star[j]
                     star_size = max(1,gridres * sink_relscale * (np.log10(ms/self.params["sink_scale"]) + 1))
-#                    if self.params["camera_distance"] < np.inf:
+                    if self.params["camera_distance"] < np.inf:
                         # make 100msun ~ 0.03pc, scale down from there
-#                        if X[2] < 0: continue
+                        if X[2] < 0: continue
 #                        star_size = gridres * 0.03 / dist_to_camera / self.params["rmax"] * (ms/100)**(1./3)                        
                     star_size = max(1,star_size)
                     p = aggdraw.Brush(self.GetStarColor(ms))
@@ -361,12 +371,19 @@ class SinkVis(Task):
             star_colors = np.array([[255, 100, 60],[120, 200, 150],[75, 80, 255]]) #alternate colors, red-green-blue, easier to see on a bright color map
         else:
             star_colors = np.array([[255, 203, 132],[255, 243, 233],[155, 176, 255]]) #default colors, reddish for small ones, yellow-white for mid sized and blue for large
-        colors = np.int_([np.interp(np.log10(mass_in_msun),[-1,0,1],star_colors[:,i]) for i in range(3)])
+        print(mass_in_msun)
+        if mass_in_msun > 1e3: # assume a black hole
+            colors = [np.zeros_like(mass_in_msun) for i in range(3)]
+        else:
+            colors = np.int_([np.interp(np.log10(mass_in_msun),[-1,0,1],star_colors[:,i]) for i in range(3)])
         return (colors[0],colors[1],colors[2])# if len(colors)==1 else colors)
 
     def AssignDefaultParamsFromSnapdata(self,snapdata):
         if self.params["center"] is None:
-            if self.params["center_on_star"]:
+            if self.params["center_on_densest"]:
+                rho = snapdata["PartType0/Masses"]/snapdata["PartType0/SmoothingLength"]**3
+                self.params["center"] = snapdata["PartType0/Coordinates"][rho.argmax()]
+            elif self.params["center_on_star"]:
                 if "PartType5/Coordinates" in snapdata.keys():
                     self.params["center"] = snapdata["PartType5/Coordinates"][snapdata["PartType5/BH_Mass"].argsort()[::-1]][self.params["center_on_star"]-1] # center on the n'th most massive star
                 else: # otherwise center on the densest gas cell
@@ -422,7 +439,7 @@ class SinkVis(Task):
 
 class SinkVisSigmaGas(SinkVis):
     def __init__(self,params):
-        self.required_maps = ["sigma_gas"]                                 
+        self.required_maps = ["sigma_gas",]
         if "extinct_stars" in params.keys():
             if params["extinct_stars"]: self.required_maps += ['tau']
         super().__init__(params)
@@ -431,8 +448,6 @@ class SinkVisSigmaGas(SinkVis):
 
     def AssignDefaultParams(self):
         super().AssignDefaultParams()
-#         self.params["filename"] = "SurfaceDensity_%s_%s.png"%(str(self.params["index"]).zfill(4), str(round(self.params["pan"])).zfill(4))
-#        else:
         if self.params["filename"] is None:
             self.params["filename"] = self.params["outputfolder"]+"/"+"SurfaceDensity_" + self.params["filename_suffix"]
 
@@ -490,9 +505,8 @@ class SinkVisCoolMap(SinkVis):
         super().__init__(params)
         if self.TaskDone: return        
         self.default_params["cool_cmap"] = 'magma'
+        self.default_params["v_limits"] = None
         self.AssignDefaultParams()
-
-
 
     def DetermineRequiredSnapdata(self):
         super().DetermineRequiredSnapdata()
@@ -504,12 +518,8 @@ class SinkVisCoolMap(SinkVis):
 
     def AssignDefaultParams(self):
         super().AssignDefaultParams()
-#        if self.params["filename"] is None: self.params["filename"] = "CoolMap_%s_%s.png"%(str(self.params["Index"]).zfill(4), str(round(self.params["pan"])).zfill(4))
-#        else:
         if self.params["filename"] is None:
-            self.params["filename"] = self.params["outputfolder"]+"/"+"CoolMap_" + self.params["filename_suffix"]
-#            self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
-        
+            self.params["filename"] = self.params["outputfolder"]+"/"+"CoolMap_" + self.params["filename_suffix"]        
         
     def GenerateMaps(self,snapdata):
         super().GenerateMaps(snapdata)
@@ -532,11 +542,15 @@ class SinkVisCoolMap(SinkVis):
         if self.params["limits"] is None: # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
             self.params["limits"] = np.interp([0.01,0.99], sigmagas_flat.cumsum()/sigmagas_flat.sum(), sigmagas_flat)
+        if self.params["v_limits"] is None:
+#            Ekin_flat = np.sort((self.maps["sigma_gas"]*self.maps["sigma_1D"]**2).flatten()[self.maps["sigma_1D"].flatten().argsort()])
+            self.params["v_limits"] = np.percentile(self.maps["sigma_1D"].flatten(),[0,99]) #np.interp([0.0,0.95], Ekin_flat.cumsum()/Ekin_flat.sum(), np.sort(self.maps["sigma_1D"].flatten()))
         fgas = (np.log10(self.maps["sigma_gas"])-np.log10(self.params["limits"][0]))/np.log10(self.params["limits"][1]/self.params["limits"][0])
         fgas = np.clip(fgas,0,1)
         ls = LightSource(azdeg=315, altdeg=45)
         #lightness = ls.hillshade(z, vert_exag=4)
-        mapcolor = plt.get_cmap(self.params["cool_cmap"])(np.log10(self.maps["sigma_1D"]/0.1)/2)
+        #print(self.params["v_limits"])
+        mapcolor = plt.get_cmap(self.params["cool_cmap"])(np.log10(self.maps["sigma_1D"]/self.params["v_limits"][0])/np.log10(self.params["v_limits"][1]/self.params["v_limits"][0]))
         cool_data = ls.blend_hsv(mapcolor[:,:,:3], fgas[:,:,None])
         self.maps["coolmap"] = cool_data
     
@@ -659,4 +673,15 @@ class SinkVisNarrowbandComposite(SinkVis):
         #self.AddStarsToImage(snapdata)        
 #        self.AddSizeScaleToImage()
 #        self.AddTimestampToImage()
-        
+
+
+# class SinkVisSigmaGasStars(SinkVisSigmaGas):
+#     def __init__(self, params):
+#         super().__init__(self,params)
+#         self.required_maps += ["sigma_star"]
+
+#     def GenerateMaps(self,snapdata):
+#         super().GenerateMaps(self,snapdata)
+#         if not "sigma_star" in self.maps.keys():
+#             self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T
+#            np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])        

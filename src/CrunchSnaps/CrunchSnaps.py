@@ -9,32 +9,33 @@ from functools import partial
 from os.path import isfile
 from numba import vectorize, njit
 from math import copysign
+from copy import copy
+#from charm4py import charm
 
-def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc=1, nthreads=1, snaptime_dict=None):
+def DoTasksForSimulation(snaps=[], task_types=[], task_params=[], interp_fac=1, nproc=1, nthreads=1, snaptime_dict=None):
     """
     Main CrunchSnaps routine, performs a list of tasks using (possibly interpolated) time series simulation data
     snaps - list of paths of simulation snapshots
-    tasks - list of tasks to perform at each simulation time
+    task_types - list of tasks to perform at each simulation time
     task_params - shape [N_tasks,N_params] list of dictionaries containing the parameters for each task - if only (N_tasks,) list is provided this will be broadcast
     """
 
     ####################################################################################################
     # do a bunch of default behaviors, broadcasting of input parameters, figure out the timeline, etc.
     ####################################################################################################
-    if len(snaps) == 0 or len(tasks) == 0: return # no work to do so just quit
+    if len(snaps) == 0 or len(task_types) == 0: return # no work to do so just quit
 
     snaps = natsorted(snaps)
         
-    N_tasks = len(tasks)
-        
+    N_task_types = len(task_types)
     # broadcast task params across the different tasks if necessary
-    if len(tasks) > 1 and task_params: # if we are doing more than one type of task and have given parameters
-        for i in range(len(task_params)): # loop over parameters list
-            if type(tasks[i]) == dict: # if we have a list of dicts
-                tasks[i] = [tasks[i], tasks[i]]
-            elif type(tasks[i]) == list: # if we have a list of lists
-                if len(tasks[i]) < N_tasks: 
-                    tasks[i] = [tasks[0], tasks[0]]            
+#    if len(task_types) > 1 and task_params: # if we are doing more than one type of task and have given parameters
+#        for i in range(len(task_params)): # loop over parameters list
+#            if type(task_types[i]) == dict: # if we have a list of dicts
+#                task_types[i] = [task_types[i], task_types[i]]
+#            elif type(task_types[i]) == list: # if we have a list of lists
+#                if len(task_types[i]) < N_tasks: 
+#                    task_types[i] = [task_types[0], task_types[0]]
         
     if snaptime_dict is None:
         snaptime_dict = get_snapshot_time_dict(snaps)
@@ -42,36 +43,37 @@ def DoTasksForSimulation(snaps=[], tasks=[], task_params=[], interp_fac=1, nproc
     snapnums = np.array([snapnum_from_path(s) for s in snaps])
     snaptimes = np.array([snaptime_dict[snapnum_from_path(s)] for s in snaps])
     snapdict = dict(zip(snaptimes, snaps))
-#    print(snapnums, snaptimes, snapdict)
 
     if (not task_params) or (type(task_params) == dict): # if task_params is empty or a single dict that we must broadcast
         N_params = len(snaps)*interp_fac # default to just doing a pass on snapshots with optional interpolation and default parameters
         if interp_fac > 1: params_times = np.interp(np.arange(N_params)/interp_fac,np.arange(N_params//interp_fac),snaptimes)
         else: params_times = snaptimes
-        if not task_params: task_params = [[{"Time": params_times[i], "index": i, "threads": nthreads} for i in range(N_params)] for t in tasks] # need to generate params from scratch
+        if not task_params: task_params = [[{"Time": params_times[i], "index": i, "threads": nthreads} for i in range(N_params)] for t in task_types] # need to generate params from scratch
         else: # already have the dict of defaults; need to broadcast
             task_params_orig = task_params.copy()
-            task_params = [[task_params_orig.copy() for i in range(N_params)] for t in tasks]
+            task_params = [[task_params_orig.copy() for i in range(N_params)] for t in task_types]
             [[task_params[j][i].update({"Time": params_times[i], "index": i, "threads": nthreads}) for i in range(N_params)] for j in range(N_tasks)] # add the other defaults
     else:
         N_params = len(task_params[0])    
     # note that params must be sorted by time!
     
     index_chunks = np.array_split(np.arange(N_params), nproc)
-    chunks=[(i, index_chunks[i], tasks, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
+    chunks=[(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
         Pool(nproc).map(DoParamsPass, chunks,chunksize=1) # this is where we fork into parallel tasks
     else:
         [DoParamsPass(c) for c in chunks]
 
 def DoParamsPass(chunk):
-    process_num, task_chunk_indices, tasks, snaps, task_params, snapdict, snaptimes, snapnums = chunk # unpack chunk data
-    N_tasks = len(tasks)
+    process_num, task_chunk_indices, task_types, snaps, task_params, snapdict, snaptimes, snapnums = chunk # unpack chunk data
+    N_task_types = len(task_types)
+
     snapdata_buffer = {} # should store data from at most 2 snapshots
     for i in task_chunk_indices:        
         ######################### initialization  ############################################
         # initialize the task objects and figure out what data the tasks need
-        task_instances = [tasks[n](task_params[n][i]) for n in range(N_tasks)] # instantiate a task object for each task to be done
+        task_instances = [task_types[n](task_params[n][i]) for n in range(N_task_types)] # instantiate a task object for each task to be done
+
         if np.all([t.TaskDone for t in task_instances]): continue
         time = task_params[0][i]["Time"]
         if task_params[0][i]["sparse_snaps"]: 
@@ -97,16 +99,16 @@ def DoParamsPass(chunk):
             if k < t1: del snapdata_buffer[k] # delete if not needed for interpolation (including old interpolants)
         for t in t1, t2:
             if not t in snapdata_buffer.keys(): snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata,process_num)
-        for t in list(snapdata_buffer.keys()):
-            missing = [key for key in required_snapdata if not (key in snapdata_buffer[t].keys())]
-            if len(missing):
-                print("\n%d: For time %s missing data in buffer: "%(process_num,t), missing)
-                if t in [t1, t2]:
-                    print("%d: Loading missing data for time %s from snapshot file..."%(process_num,t))
-                    snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num)
-                else: #means it is interpolated data
-                    print("%d: Deleting interpolated buffer entry %s, we will redo the interpolation..."%(process_num, t))
-                    del snapdata_buffer[t] #we have to redo the interpolation for this one
+        # for t in list(snapdata_buffer.keys()):
+        #     missing = [key for key in required_snapdata if not (key in snapdata_buffer[t].keys())]
+        #     if len(missing):
+        #         print("\n%d: For time %s missing data in buffer: "%(process_num,t), missing)
+        #         if t in [t1, t2]:
+        #             print("%d: Loading missing data for time %s from snapshot file..."%(process_num,t))
+        #             snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num)
+        #         else: #means it is interpolated data
+        #             print("%d: Deleting interpolated buffer entry %s, we will redo the interpolation..."%(process_num, t))
+        #             del snapdata_buffer[t] #we have to redo the interpolation for this one
 
         ##########################  interpolation #############################################
         # now get the particle data we need for this time, interpolating if needed
@@ -125,7 +127,6 @@ def DoParamsPass(chunk):
 
         ################# task execution  ####################################################
         # actually do the task - each method can optionally return data to be compiled in the pass through the snapshots
-
         data = [t.DoTask(snapdata_for_thistime) for t in task_instances]    
 
 
@@ -181,7 +182,7 @@ def SnapInterpolate(t,t1,t2,snapdata_buffer, sparse_snaps=False):
                     if "Coordinates" in field: # special behaviour to handle periodic BCs
                         dx = f2 - f1
                         dx = NearestImage(dx,snapdata_buffer[t1]["Header"]["BoxSize"])
-                        interpolated_data[field] = f1 + wt2 * dx
+                        interpolated_data[field] = (f1 + wt2 * dx)%(snapdata_buffer[t1]["Header"]["BoxSize"])
                     else:                
                         interpolated_data[field] = f1 * wt1 + f2 * wt2
     
@@ -201,8 +202,12 @@ def GetSnapData(snappath, required_snapdata, process_num):
         snapdata["Header"] = dict(F["Header"].attrs)
         header = snapdata["Header"]
         time = header["Time"]
-        z = header["Redshift"]
-        hubble = header["HubbleParam"]
+        if "Redshift" in header.keys(): 
+            z = header["Redshift"]
+            hubble = header["HubbleParam"]
+        else:
+            z = 0
+            hubble = 1
         # attempt to guess if this is a cosmological simulation from the agreement or lack thereof between time and redshift. note at t=1,z=0, even if non-cosmological, this won't do any harm
         if(np.abs(time*(1.+z)-1.) < 1.e-6): 
             cosmological=True; ascale=time;
@@ -220,17 +225,16 @@ def GetSnapData(snappath, required_snapdata, process_num):
                     if "Mass" in field: snapdata[field] /= hubble
                     if "Velocities" in field: snapdata[field] *= time**0.5
                     if "Density" in field or "Pressure" in field: snapdata[field] *= 1/hubble / (time/hubble)**3
-            else: #data missing from snapshot
-                print("%d: %s missing in snapshot %s"%(process_num, field, snappath))
-                snapdata[field] = np.array([])
+#            else: #data missing from snapshot
+#                print("%d: %s missing in snapshot %s"%(process_num, field, snappath))
+#                snapdata[field] = np.array([])
 
     id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
     for ptype in ptypes_toread:
         if not ptype+"/ParticleIDs" in snapdata.keys(): continue
         if not len(snapdata[ptype + "/ParticleIDs"]): continue
         ids = snapdata[ptype + "/ParticleIDs"]
-
-        if ptype == "PartType0": # if we have to worry about wind IDs and splitting
+        if ptype == "PartType0" and "PartType0/ParticleChildIDsNumber" in snapdata.keys(): # if we have to worry about wind IDs and splitting        
             child_ids = snapdata["PartType0/ParticleChildIDsNumber"]
             wind_idx1 = np.in1d(ids, wind_ids)
             ids[np.invert(wind_idx1)] = ((child_ids << 32) + ids)[np.invert(wind_idx1)]

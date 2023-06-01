@@ -7,7 +7,7 @@ Options:
     -h --help                  Show this screen.
     --tasks=<task1,task2...>   List of names of the plots you want to make for each snapshot [default: SigmaGas]
     --rmax=<pc>                Maximum radius of plot window; defaults to box size/10. Note that this is FOV/2 in radians if camera_dist is <inf
-    --overwrite                Overwrite existing files if they already exist
+    --no_overwrite             Overwrite existing files if they already exist
     --FOV_plot                 Flag, if enables an image is created for an observer at the coordinates defined by c, looking in direction dir, with FOV of 2*rmax, projection options 'spherical', 'frustum', the default is 'frustum'
     --backend=<b>              matplotlib vs PIL [default: PIL]
     --dir=<x,y,z>              Coordinate direction to orient the image along - x, y, or z. It also accepts vector values [default: z] 
@@ -15,6 +15,7 @@ Options:
     --target_time=<f>          If set to nonzero, SinkVis will try to make a single image by interpolating from the available files [default: 0.0] 
     --c=<cx,cy,cz>             Coordinates of plot window center relative to box center [default: 0.0,0.0,0.0]
     --limits=<min,max>         Dynamic range of surface density colormap
+    --v_limits=<min,max>       Dynamic range of kinematic map in km/s
     --Tlimits=<min,max>        Dynamic range of temperature colormap in K [default: 0,0]
     --SHO_RGB_norm=<f>         Normalization constant for narrow band plot, set automatically by default. If a vector is provided, then each channel is normalized by the correponding component [default: 0.0]
     --camera_distance=<D>      Camera distance if perspective rendering is required [default: inf]
@@ -109,6 +110,10 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
     N_tasks = len(tasks)    
     res = int(arguments["--res"])
     direction = arguments["--dir"]
+    if arguments["--no_overwrite"]:
+        overwrite = False
+    else:
+        overwrite = True
     equal_frame_times = arguments["--equal_frame_times"]
 
     if ',' in arguments["--SHO_RGB_norm"]: #normalization by channel
@@ -128,7 +133,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
             common_params[c] = np.array([float(k) for k in i.split(",")])
         elif i.replace(".","").isnumeric() or i=="inf":
             common_params[c] = float(i)
-    common_params.update({"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": SHO_RGB_norm, "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "extinct_stars": int(input["--extinct_stars"]), "sparse_snaps": input["--sparse_snaps"], "backend": input["--backend"]})
+    common_params.update({"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": SHO_RGB_norm, "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "extinct_stars": int(input["--extinct_stars"]), "sparse_snaps": input["--sparse_snaps"], "backend": input["--backend"], "overwrite": overwrite})
 
 
     if direction=='x':
@@ -142,21 +147,21 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         common_params["rmax"] = None
     else:
         common_params["rmax"] = float(input["--rmax"])
-
-    N_params = len(filenames)*n_interp
-    print(input["<files>"])
+    
+    N_params =  len(filenames) + (n_interp-1) * (len(filenames)-1)
+#    print(input["<files>"])
     snaptime_dict = get_snapshot_time_dict(input["<files>"]) # get times of snapshots
     snaptime_dict_inv = {v:k for v, k in zip(snaptime_dict.values(),snaptime_dict.keys())}
     snaptimes_orig = np.array([snaptime_dict[snapnum_from_path(s)] for s in input["<files>"]])
 
     if n_interp>1: # get times of frames if we're doing an interpolated movie
-        frametimes = np.interp(np.arange(n_interp*len(filenames))/n_interp, np.arange(len(filenames)), snaptimes_orig)
+        frametimes = np.interp(np.arange(N_params)/(N_params-1), np.linspace(0,1,len(snaptimes_orig)), snaptimes_orig)
     else:
         frametimes = snaptimes_orig
 
     if equal_frame_times:
-        frametimes = np.linspace(frametimes.min(),frametimes.max(),len(frametimes))
-    
+        frametimes = np.linspace(frametimes.min(),frametimes.max(),N_params)
+
     p = []
     for i in range(N_params):
         d = common_params.copy()
@@ -168,7 +173,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         if i%n_interp==0 and (input["--freeze_rotation"] is not None):
             if snapnum in [int(f) for f in input["--freeze_rotation"].split(",")]: # add a rotation freeze
                 for k in range(360): # do a pan
-                    print(k)
+#                    print(k)
                     d = p[-1].copy()
                     d["index"] = snapnum * 10 + i%n_interp
                     d["pan"] = k
@@ -185,7 +190,7 @@ def main(input):
     np_render = int(input["--np_render"])
     params = parse_inputs_to_jobparams(input)
     snaps = natsorted(input["<files>"])
-    CrunchSnaps.DoTasksForSimulation(snaps, tasks=tasks, task_params=params,nproc=nproc,nthreads=np_render)
+    CrunchSnaps.DoTasksForSimulation(snaps, task_types=tasks, task_params=params,nproc=nproc,nthreads=np_render)
 
 if __name__ == "__main__":
     arguments = docopt(__doc__)

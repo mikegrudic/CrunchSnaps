@@ -58,4 +58,7 @@ def get_snapshot_time_dict(snaps,save_to_file=False):
     return snaptime_dict
 
 def snapnum_from_path(path):
-    return int(path.split("snapshot_")[1].split("_")[0].split(".")[0])
+    try:
+        return int(path.split("snapshot_")[1].split("_")[0].split(".")[0])
+    except:
+        return 0
