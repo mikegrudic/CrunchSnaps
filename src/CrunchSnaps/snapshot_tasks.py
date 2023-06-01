@@ -371,7 +371,6 @@ class SinkVis(Task):
             star_colors = np.array([[255, 100, 60],[120, 200, 150],[75, 80, 255]]) #alternate colors, red-green-blue, easier to see on a bright color map
         else:
             star_colors = np.array([[255, 203, 132],[255, 243, 233],[155, 176, 255]]) #default colors, reddish for small ones, yellow-white for mid sized and blue for large
-        print(mass_in_msun)
         if mass_in_msun > 1e3: # assume a black hole
             colors = [np.zeros_like(mass_in_msun) for i in range(3)]
         else:
