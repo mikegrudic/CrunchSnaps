@@ -6,3 +6,7 @@ CrunchSnaps is a Python package for performing analysis tasks on GIZMO simulatio
 
 Run the setup.py to install the package:
 ``python setup.py install``
+
+# Examples
+
+Various scripts that call CrunchSnaps routines can be found in `scripts`, including the very flexible script `SinkVis2.py`, which has a command-line interface for generating visualizations from snapshots.
