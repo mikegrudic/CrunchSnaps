@@ -83,6 +83,7 @@ Options:
     --extinct_stars            Flag on whether to extinct stars
     --sparse_snaps             Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
     --equal_frame_times        Ensure frames in render sequence are equally spaced, even if snapshot times are not
+    --outflow_only             Only show gas moving away from the nearest star
 """
 
 #Example
@@ -152,13 +153,14 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
 #    print(input["<files>"])
     snaptime_dict = get_snapshot_time_dict(input["<files>"]) # get times of snapshots
     snaptime_dict_inv = {v:k for v, k in zip(snaptime_dict.values(),snaptime_dict.keys())}
-    snaptimes_orig = np.array([snaptime_dict[snapnum_from_path(s)] for s in input["<files>"]])
-
+    snaptimes_orig = np.array(natsorted([snaptime_dict[snapnum_from_path(s)] for s in input["<files>"]]))
+#    print([snapnum_from_path(s) for s in input["<files>"]])
     if n_interp>1: # get times of frames if we're doing an interpolated movie
         frametimes = np.interp(np.arange(N_params)/(N_params-1), np.linspace(0,1,len(snaptimes_orig)), snaptimes_orig)
     else:
         frametimes = snaptimes_orig
 
+#    print(frametimes)
     if equal_frame_times:
         frametimes = np.linspace(frametimes.min(),frametimes.max(),N_params)
 
@@ -169,7 +171,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         snapnum = snaptime_dict_inv[snaptimes_orig[i//n_interp]]
         d["index"] = snapnum * 10 + i%n_interp
         p.append(d.copy())
-        
+
         if i%n_interp==0 and (input["--freeze_rotation"] is not None):
             if snapnum in [int(f) for f in input["--freeze_rotation"].split(",")]: # add a rotation freeze
                 for k in range(360): # do a pan
@@ -180,6 +182,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
                     d["tilt"] = 10*np.sin(2*np.pi*k/360) # add a bit of tilt for 3D look
                     p.append(d)
 
+#        print(i,d["Time"],d["index"])
     params = N_tasks * [p] # one list of params per task
     return params
     

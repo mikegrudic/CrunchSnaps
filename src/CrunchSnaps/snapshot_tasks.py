@@ -1,6 +1,7 @@
 import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import LightSource
+from scipy.spatial import cKDTree
 from meshoid import GridSurfaceDensity, GridRadTransfer
 import aggdraw
 from skimage.color import rgb2hsv, hsv2rgb
@@ -8,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageChops
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
-#from .amuse_fresco import *
+from .amuse_fresco import *
 from numba import get_num_threads, set_num_threads
 from scipy.interpolate import RectBivariateSpline
 from .misc_functions import *
@@ -123,6 +124,8 @@ class SinkVis(Task):
     def DetermineRequiredSnapdata(self):
         self.RequiredSnapdata = ["PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass",]
         if self.params["fresco_stars"]: self.RequiredSnapdata += ["PartType5/ProtoStellarStage","PartType5/StarLuminosity_Solar"]
+        if self.params["center_on_star"] or self.params["center_on_densest"]: self.RequiredSnapdata += ["PartType0/Density", "PartType0/Coordinates"]
+        if self.params["outflow_only"]: self.RequiredSnapdata += ["PartType0/Velocities", "PartType5/Velocities"]
         # check if we have maps already saved
         self.render_maps = False
         for mapname in self.required_maps:
@@ -198,10 +201,20 @@ class SinkVis(Task):
             
 
     def SetupCoordsAndWeights(self, snapdata):
-        res = self.params["res"]
+        res = self.params["res"]        
         if "PartType0/Coordinates" in snapdata.keys():
             self.pos, self.mass, self.hsml = np.copy(snapdata["PartType0/Coordinates"]), np.copy(snapdata["PartType0/Masses"]), np.copy(snapdata["PartType0/SmoothingLength"]) # copy these because we don't want to modify them
             if self.params["rescale_hsml"]: self.hsml *= self.params["rescale_hsml"]
+
+        if self.params["outflow_only"]:
+            if "PartType5/Coordinates" in snapdata.keys():
+            # find nearest star to each gas cell
+                dist, ngb = cKDTree(snapdata["PartType5/Coordinates"]).query(self.pos)
+                dx = self.pos - snapdata["PartType5/Coordinates"][ngb]
+                dv = snapdata["PartType0/Velocities"] - snapdata["PartType5/Velocities"][ngb]
+                self.mass *= ((dx*dv).sum(1) > 0)
+
+#            dv = self.
 
         # Setting up coordinate basis
         if self.params["camera_dir"] is not None:
@@ -313,6 +326,7 @@ class SinkVis(Task):
         
         if self.params["backend"]=="PIL":
             fname = self.params["filename_incomplete"]
+            print(self.params["fresco_stars"])
             if self.params["fresco_stars"]: # use fresco for stellar images
                 if self.params["camera_distance"] < np.inf:
                     stars_in_view = X_star[:,2]>0
@@ -403,8 +417,9 @@ class SinkVis(Task):
     def DoTask(self, snapdata):
         if self.TaskDone: return 
         self.AssignDefaultParamsFromSnapdata(snapdata)
-        self.SetupCoordsAndWeights(snapdata)
-        self.GenerateMaps(snapdata)
+        if not self.has_required_maps():
+            self.SetupCoordsAndWeights(snapdata)
+            self.GenerateMaps(snapdata)
         self.MakeImages(snapdata)
         return self.maps
         
@@ -435,6 +450,9 @@ class SinkVis(Task):
         #print("Optical depth calculation for %d stars took %g minutes"%( np.sum(stars_to_do), (time.time()-starttime)/60 ))
         self.maps["tau"]=tau
         np.savez_compressed(self.map_files["tau"], tau=self.maps["tau"])
+
+    def has_required_maps(self):
+        return np.all([i in self.maps for i in self.required_maps])
 
 class SinkVisSigmaGas(SinkVis):
     def __init__(self,params):
@@ -538,7 +556,8 @@ class SinkVisCoolMap(SinkVis):
             self.GenerateTauMap(snapdata)
 
     def MakeImages(self,snapdata):
-        if self.params["limits"] is None: # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
+        if self.params["limits"] is None: 
+            # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
             self.params["limits"] = np.interp([0.01,0.99], sigmagas_flat.cumsum()/sigmagas_flat.sum(), sigmagas_flat)
         if self.params["v_limits"] is None:
