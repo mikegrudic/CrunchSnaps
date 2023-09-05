@@ -2,3 +2,7 @@ meshoid>=1.33
 amuse-masc
 amuse-fresco
 meshoid
+amuse-framework
+natsort
+docopt
+aggdraw

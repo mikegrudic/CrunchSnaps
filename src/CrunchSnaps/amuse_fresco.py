@@ -9,8 +9,8 @@ from amuse.datamodel import Particles
 from amuse.units import units, nbody_system
 #from amuse.community.sse.interface import SSE
 #from amuse.ext.masc import make_a_star_cluster
-from amuse.ext import masc
-from amuse.ext.fresco import make_fresco_image
+#from amuse.ext import masc
+from amuse.plot.fresco import make_fresco_image
 import h5py
 from scipy.spatial.distance import pdist,squareform
 from scipy.spatial import cKDTree

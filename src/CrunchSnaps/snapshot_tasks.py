@@ -259,7 +259,10 @@ class SinkVis(Task):
     def AddTimestampToImage(self,header):
         if self.params["no_timestamp"]: return
         fname = self.params["filename_incomplete"]
-        unit_time_in_s = header["UnitLength_In_CGS"]/header["UnitVelocity_In_CGS"]
+        if "UnitLength_In_CGS" in header.keys():
+            unit_time_in_s = header["UnitLength_In_CGS"]/header["UnitVelocity_In_CGS"]
+        else:
+            unit_time_in_s = 3.086e16
         time_Myr = self.params["Time"]*unit_time_in_s / 3.154e13
         if (time_Myr>=1e-2):
             time_text="%3.2gMyr"%(time_Myr)
@@ -290,7 +293,10 @@ class SinkVis(Task):
         draw = ImageDraw.Draw(F)
         gridres = self.params["res"]
         font = ImageFont.truetype("LiberationSans-Regular.ttf", gridres//12)
-        r = self.params["rmax"] *header["UnitLength_In_CGS"] / 3.086e18 # in pc
+        if "UnitLength_In_CGS" in header.keys():
+            r = self.params["rmax"] *header["UnitLength_In_CGS"] / 3.086e18 # in pc
+        else:
+            r = self.params["rmax"]
         if self.params["camera_distance"] < np.inf:
             r = self.params["rmax"] * self.params["camera_distance"] #* self.params["unit_scalefac"]
 #        print("r=%g\n"%r)
