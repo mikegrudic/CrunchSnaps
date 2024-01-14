@@ -1,8 +1,9 @@
 meshoid>=1.33
-amuse-masc
-amuse-fresco
+#amuse-masc
+#amuse-fresco
 meshoid
-amuse-framework
+#amuse-framework
 natsort
 docopt
 aggdraw
+scikit-image
