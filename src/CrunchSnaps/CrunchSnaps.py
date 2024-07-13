@@ -10,7 +10,6 @@ from os.path import isfile
 from numba import vectorize, njit
 from math import copysign
 from copy import copy
-#from charm4py import charm
 
 def DoTasksForSimulation(snaps=[], task_types=[], task_params=[], interp_fac=1, nproc=1, nthreads=1, snaptime_dict=None):
     """

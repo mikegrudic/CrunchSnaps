@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 """
 Usage:
-SinkVis.py <camerafile> <simdir> ... [options]
+make_movie_from_camerafile.py <camerafile> <simdir> ... [options]
 
 Options:
     -h --help              Show this screen.
     --map_type=<type>      Set the type of map to do, available options are SigmaGas,CoolMap and SHOMap [default: CoolMap]
     --fresco_stars         Render stars with Fresco
     --extinct_stars        Calculate the extinction of stars to observers and attenuate their light, used only if --fresco_stars is set. Note: enabling this can make the calculation significantly slower
-    --limits=<min,max>     Surface density limits  [default: 1,3e3]
+    --limits=<min,max>     Surface density limits
     --no_overwrite         Flag, if enabled existing figures are not overwritten
     --res=<N>              Resolution [default: 256]
     --np=<N>               Number of renders to do in parallel [default: 1]
@@ -36,13 +36,15 @@ np_render = int(options["--np_render"])
 if ',' in options["--SHO_RGB_norm"]: #normalization by channel
     SHO_RGB_norm = np.array([float(c) for c in options["--SHO_RGB_norm"].split(',')])
 else: #same normalization constant for each channel
-    SHO_RGB_norm = float(options["--SHO_RGB_norm"]
+    SHO_RGB_norm = float(options["--SHO_RGB_norm"])
 if options["--no_overwrite"]:
     overwrite=False
 else:
     overwrite=True
-
-limits = np.array([float(c) for c in options["--limits"].split(',')])
+if options["--limits"]:
+    limits = np.array([float(c) for c in options["--limits"].split(',')])
+else:
+    limits = None
 
 common_params = {"fresco_stars": options["--fresco_stars"], "res": res, "limits": limits, "no_timestamp": options["--no_timestamp"], "no_size_scale": options["--no_size_scale"], "threads": np_render, "SHO_RGB_norm": SHO_RGB_norm, "extinct_stars": options["--extinct_stars"], 'overwrite': overwrite, "sparse_snaps": options["--sparse_snaps"] }
 
@@ -83,10 +85,10 @@ if camera_data.shape[1] == 4: # columns will be time, distance, pan, tilt
 elif camera_data.shape[1] == 7: # columns will be time, distance, camera_pos, pan, tilt
     time = camera_data[:,0]
     camera_dist = camera_data[:,1]
-    camera_pos = camera_data[:,1:4]
+    camera_pos = camera_data[:,2:5]
     pan, tilt = camera_data[:,-2:].T
     for i in range(len(time)):
-        params.append({"Time": time[i], "center": camera_pos[i], "camera_distance": camera_dist[i], "index": i})
+        params.append({"Time": time[i], "center": camera_pos[i], "camera_distance": camera_dist[i], "index": i, "pan": pan[i], "tilt": tilt[i]})
 elif camera_data.shape[1] == 8: # columns will be time, camera position, camera direction, camera distance
     time = camera_data[:,0]
     camera_pos = camera_data[:,1:4]
@@ -116,4 +118,4 @@ if cubemap:
 
 snaps = natsorted(glob(sim_dir + "/snapshot*.hdf5"))
 
-DoTasksForSimulation(snaps, tasks=tasks, task_params=[params],nproc=nproc,nthreads=np_render)
+DoTasksForSimulation(snaps, task_types=tasks, task_params=[params],nproc=nproc,nthreads=np_render)

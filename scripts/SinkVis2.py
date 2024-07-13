@@ -150,7 +150,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         common_params["rmax"] = float(input["--rmax"])
     
     N_params =  len(filenames) + (n_interp-1) * (len(filenames)-1)
-#    print(input["<files>"])
+    print(input["<files>"])
     snaptime_dict = get_snapshot_time_dict(input["<files>"]) # get times of snapshots
     snaptime_dict_inv = {v:k for v, k in zip(snaptime_dict.values(),snaptime_dict.keys())}
     snaptimes_orig = np.array(natsorted([snaptime_dict[snapnum_from_path(s)] for s in input["<files>"]]))
@@ -173,13 +173,13 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         p.append(d.copy())
 
         if i%n_interp==0 and (input["--freeze_rotation"] is not None):
+            num_rotation_frames = 720
             if snapnum in [int(f) for f in input["--freeze_rotation"].split(",")]: # add a rotation freeze
-                for k in range(360): # do a pan
-#                    print(k)
+                for k in range(num_rotation_frames): # do a pan
                     d = p[-1].copy()
                     d["index"] = snapnum * 10 + i%n_interp
-                    d["pan"] = k
-                    d["tilt"] = 10*np.sin(2*np.pi*k/360) # add a bit of tilt for 3D look
+                    d["pan"] = k * 360 / num_rotation_frames
+                    d["tilt"] = 10*np.sin(2*np.pi*k/num_rotation_frames) # add a bit of tilt for 3D look
                     p.append(d)
 
 #        print(i,d["Time"],d["index"])

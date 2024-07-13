@@ -2,14 +2,14 @@ import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import LightSource
 from scipy.spatial import cKDTree
-from meshoid import GridSurfaceDensity, GridRadTransfer
+from meshoid.grid_deposition import GridSurfaceDensity#, GridRadTransfer
 import aggdraw
 from skimage.color import rgb2hsv, hsv2rgb
 from PIL import Image, ImageDraw, ImageFont, ImageChops
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
-from .amuse_fresco import *
+#from .amuse_fresco import *
 from numba import get_num_threads, set_num_threads
 from scipy.interpolate import RectBivariateSpline
 from .misc_functions import *
@@ -71,7 +71,7 @@ class SinkVis(Task):
                                "fresco_param": 0.001,
                                "fresco_mass_limits": [0,0],
                                "fresco_mass_rescale": 0.3,
-                               "threads": 1,
+                               "threads": -1,
                                "cubemap_dir": "forward",
                                "camera_dir": None,
                                "camera_right": None,
@@ -81,7 +81,8 @@ class SinkVis(Task):
                                "overwrite": True,
                                "unit_scalefac": 1,
                                "outputfolder": ".",
-                               "SHO_RGB_norm": 0
+                               "SHO_RGB_norm": 0,
+                               "outflow_only": False,
         }
 
 
@@ -391,7 +392,7 @@ class SinkVis(Task):
             star_colors = np.array([[255, 100, 60],[120, 200, 150],[75, 80, 255]]) #alternate colors, red-green-blue, easier to see on a bright color map
         else:
             star_colors = np.array([[255, 203, 132],[255, 243, 233],[155, 176, 255]]) #default colors, reddish for small ones, yellow-white for mid sized and blue for large
-        if mass_in_msun > 1e3: # assume a black hole
+        if mass_in_msun > 1e4: # assume a black hole
             colors = [np.zeros_like(mass_in_msun) for i in range(3)]
         else:
             colors = np.int_([np.interp(np.log10(mass_in_msun),[-1,0,1],star_colors[:,i]) for i in range(3)])
