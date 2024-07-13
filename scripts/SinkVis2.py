@@ -8,8 +8,8 @@ Options:
     --tasks=<task1,task2...>   List of names of the plots you want to make for each snapshot [default: SigmaGas]
     --rmax=<pc>                Maximum radius of plot window; defaults to box size/10. Note that this is FOV/2 in radians if camera_dist is <inf
     --no_overwrite             Overwrite existing files if they already exist
-    --FOV_plot                 Flag, if enables an image is created for an observer at the coordinates defined by c, looking in direction dir, with FOV of 2*rmax, projection options 'spherical', 'frustum', the default is 'frustum'
     --backend=<b>              matplotlib vs PIL [default: PIL]
+    --id_mask=<file>          .npy file containing the gas particle IDs to be plotted
     --dir=<x,y,z>              Coordinate direction to orient the image along - x, y, or z. It also accepts vector values [default: z] 
     --full_box                 Sets the plot to the entire box, overrides rmax
     --target_time=<f>          If set to nonzero, SinkVis will try to make a single image by interpolating from the available files [default: 0.0] 
@@ -134,7 +134,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
             common_params[c] = np.array([float(k) for k in i.split(",")])
         elif i.replace(".","").isnumeric() or i=="inf":
             common_params[c] = float(i)
-    common_params.update({"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": SHO_RGB_norm, "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "extinct_stars": int(input["--extinct_stars"]), "sparse_snaps": input["--sparse_snaps"], "backend": input["--backend"], "overwrite": overwrite})
+    common_params.update({"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": SHO_RGB_norm, "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "extinct_stars": int(input["--extinct_stars"]), "sparse_snaps": input["--sparse_snaps"], "backend": input["--backend"], "overwrite": overwrite, "id_mask": input["--id_mask"]})
 
 
     if direction=='x':
@@ -193,7 +193,7 @@ def main(input):
     np_render = int(input["--np_render"])
     params = parse_inputs_to_jobparams(input)
     snaps = natsorted(input["<files>"])
-    CrunchSnaps.DoTasksForSimulation(snaps, task_types=tasks, task_params=params,nproc=nproc,nthreads=np_render)
+    CrunchSnaps.DoTasksForSimulation(snaps, task_types=tasks, task_params=params,nproc=nproc,nthreads=np_render, id_mask=input["--id_mask"])
 
 if __name__ == "__main__":
     arguments = docopt(__doc__)

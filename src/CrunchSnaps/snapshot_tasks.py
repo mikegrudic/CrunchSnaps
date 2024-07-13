@@ -2,14 +2,15 @@ import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import LightSource
 from scipy.spatial import cKDTree
-from meshoid import GridSurfaceDensity, GridRadTransfer
+from meshoid import GridSurfaceDensity
+from meshoid.radiation import radtransfer as GridRadTransfer
 import aggdraw
 from skimage.color import rgb2hsv, hsv2rgb
 from PIL import Image, ImageDraw, ImageFont, ImageChops
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
-from .amuse_fresco import *
+#from .amuse_fresco import *
 from numba import get_num_threads, set_num_threads
 from scipy.interpolate import RectBivariateSpline
 from .misc_functions import *

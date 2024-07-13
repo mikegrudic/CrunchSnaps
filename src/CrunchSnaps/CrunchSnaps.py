@@ -12,7 +12,7 @@ from math import copysign
 from copy import copy
 #from charm4py import charm
 
-def DoTasksForSimulation(snaps=[], task_types=[], task_params=[], interp_fac=1, nproc=1, nthreads=1, snaptime_dict=None):
+def DoTasksForSimulation(snaps=[], task_types=[], task_params=[], interp_fac=1, nproc=1, nthreads=1, snaptime_dict=None,id_mask=None):
     """
     Main CrunchSnaps routine, performs a list of tasks using (possibly interpolated) time series simulation data
     snaps - list of paths of simulation snapshots
@@ -60,11 +60,11 @@ def DoTasksForSimulation(snaps=[], task_types=[], task_params=[], interp_fac=1, 
     index_chunks = np.array_split(np.arange(N_params), nproc)
     chunks=[(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
-        Pool(nproc).map(DoParamsPass, chunks,chunksize=1) # this is where we fork into parallel tasks
+        Pool(nproc).map(DoParamsPass, chunks,chunksize=1, id_mask=id_Mask) # this is where we fork into parallel tasks
     else:
-        [DoParamsPass(c) for c in chunks]
+        [DoParamsPass(c,id_mask=id_mask) for c in chunks]
 
-def DoParamsPass(chunk):
+def DoParamsPass(chunk,id_mask=None):
     process_num, task_chunk_indices, task_types, snaps, task_params, snapdict, snaptimes, snapnums = chunk # unpack chunk data
     N_task_types = len(task_types)
 
@@ -98,7 +98,7 @@ def DoParamsPass(chunk):
         for k in list(snapdata_buffer.keys()):
             if k < t1: del snapdata_buffer[k] # delete if not needed for interpolation (including old interpolants)
         for t in t1, t2:
-            if not t in snapdata_buffer.keys(): snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata,process_num)
+            if not t in snapdata_buffer.keys(): snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata,process_num,id_mask)
         # for t in list(snapdata_buffer.keys()):
         #     missing = [key for key in required_snapdata if not (key in snapdata_buffer[t].keys())]
         #     if len(missing):
@@ -189,13 +189,13 @@ def SnapInterpolate(t,t1,t2,snapdata_buffer, sparse_snaps=False):
     return interpolated_data
         
 
-def GetSnapData(snappath, required_snapdata, process_num):
+def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
     ptypes_toread = set()
     for s in required_snapdata:
         for i in range(6):
             if "PartType%d"%i in s: ptypes_toread.add("PartType%d"%i)
         
-    wind_ids = np.array([1913298393, 1913298394])
+    wind_ids = np.array([1913298393, 1913298394]) # IDs unique to spawned wind cells
     snapdata = {}
     print("%d: opening "%(process_num), snappath)
     with h5py.File(snappath,'r') as F:
@@ -256,6 +256,16 @@ def GetSnapData(snappath, required_snapdata, process_num):
         ptype = field.split("/")[0]
         if len(snapdata[field]):
             snapdata[field] = np.take(snapdata[field], id_order[ptype],axis=0)
+
+    # lastly if we have a particle mask, filter
+    
+    if id_mask:
+        ids = np.load(id_mask)
+        print(len(np.unique(ids)))
+        idx = np.isin(snapdata["PartType0/ParticleIDs"], ids)
+        for f in snapdata:
+            if not "PartType0" in f: continue
+            snapdata[f] = snapdata[f][idx]
     
     return snapdata
         
