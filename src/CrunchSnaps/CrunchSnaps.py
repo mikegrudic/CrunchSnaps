@@ -59,7 +59,7 @@ def DoTasksForSimulation(snaps=[], task_types=[], task_params=[], interp_fac=1, 
     index_chunks = np.array_split(np.arange(N_params), nproc)
     chunks=[(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
-        Pool(nproc).map(DoParamsPass, chunks,chunksize=1, id_mask=id_Mask) # this is where we fork into parallel tasks
+        Pool(nproc).map(DoParamsPass, chunks,chunksize=1, id_mask=id_mask) # this is where we fork into parallel tasks
     else:
         [DoParamsPass(c,id_mask=id_mask) for c in chunks]
 
