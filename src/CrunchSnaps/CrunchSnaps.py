@@ -59,7 +59,7 @@ def DoTasksForSimulation(snaps=[], task_types=[], task_params=[], interp_fac=1, 
     index_chunks = np.array_split(np.arange(N_params), nproc)
     chunks=[(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
-        Pool(nproc).map(DoParamsPass, chunks,chunksize=1, id_mask=id_mask) # this is where we fork into parallel tasks
+        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
     else:
         [DoParamsPass(c,id_mask=id_mask) for c in chunks]
 
@@ -256,15 +256,15 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
         if len(snapdata[field]):
             snapdata[field] = np.take(snapdata[field], id_order[ptype],axis=0)
 
-    # lastly if we have a particle mask, filter
+    # lastly if we have a particle mask, zero out the masked-out entries
     
     if id_mask:
         ids = np.load(id_mask)
-        print(len(np.unique(ids)))
-        idx = np.isin(snapdata["PartType0/ParticleIDs"], ids)
-        for f in snapdata:
-            if not "PartType0" in f: continue
-            snapdata[f] = snapdata[f][idx]
+        print(len(np.unique(ids)))        
+        for f, data in snapdata.items():
+            if "/Masses" in f:
+                idx = np.isin(snapdata[f.replace("Masses","ParticleIDs")], ids)
+                data *= idx
     
     return snapdata
         

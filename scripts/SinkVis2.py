@@ -7,6 +7,7 @@ Options:
     -h --help                  Show this screen.
     --tasks=<task1,task2...>   List of names of the plots you want to make for each snapshot [default: SigmaGas]
     --rmax=<pc>                Maximum radius of plot window; defaults to box size/10. Note that this is FOV/2 in radians if camera_dist is <inf
+    --no_stars                 Hide sink particles
     --no_overwrite             Overwrite existing files if they already exist
     --backend=<b>              matplotlib vs PIL [default: PIL]
     --id_mask=<file>          .npy file containing the gas particle IDs to be plotted
@@ -134,7 +135,7 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
             common_params[c] = np.array([float(k) for k in i.split(",")])
         elif i.replace(".","").isnumeric() or i=="inf":
             common_params[c] = float(i)
-    common_params.update({"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": SHO_RGB_norm, "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "extinct_stars": int(input["--extinct_stars"]), "sparse_snaps": input["--sparse_snaps"], "backend": input["--backend"], "overwrite": overwrite, "id_mask": input["--id_mask"]})
+    common_params.update({"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": SHO_RGB_norm, "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "center_on_ID": int(input["--center_on_ID"]), "extinct_stars": int(input["--extinct_stars"]), "sparse_snaps": input["--sparse_snaps"], "backend": input["--backend"], "overwrite": overwrite, "id_mask": input["--id_mask"], "no_stars": input["--no_stars"]})
 
 
     if direction=='x':

@@ -66,6 +66,7 @@ class SinkVis(Task):
                                "FOV": 90,
                                "camera_distance": np.inf,
                                "center_on_star": False,
+                               "center_on_ID": False,
                                "center_on_densest": False,
                                "fresco_stars": False,
                                "extinct_stars": False,
@@ -126,7 +127,8 @@ class SinkVis(Task):
     def DetermineRequiredSnapdata(self):
         self.RequiredSnapdata = ["PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass",]
         if self.params["fresco_stars"]: self.RequiredSnapdata += ["PartType5/ProtoStellarStage","PartType5/StarLuminosity_Solar"]
-        if self.params["center_on_star"] or self.params["center_on_densest"]: self.RequiredSnapdata += ["PartType0/Density", "PartType0/Coordinates"]
+        if any((self.params[k] for k in ("center_on_star", "center_on_ID", "center_on_ID"))):
+            self.RequiredSnapdata += ["PartType0/Density", "PartType0/Coordinates"]
         if self.params["outflow_only"]: self.RequiredSnapdata += ["PartType0/Velocities", "PartType5/Velocities"]
         # check if we have maps already saved
         self.render_maps = False
@@ -361,6 +363,7 @@ class SinkVis(Task):
                 for j in np.arange(len(X_star)):                    
                     X = X_star[j]
                     ms = m_star[j]
+                    if ms < sink_scale: continue
                     star_size = max(1,gridres * sink_relscale * (np.log10(ms/self.params["sink_scale"]) + 1))
                     if self.params["camera_distance"] < np.inf:
                         # make 100msun ~ 0.03pc, scale down from there
@@ -378,6 +381,7 @@ class SinkVis(Task):
                 F.close()
         elif self.params["backend"]=="matplotlib":
             star_size = np.log10(m_star/self.params["sink_scale"])+2
+            star_size[m_star < self.params["sink_scale"]] = 0
             colors = np.array([self.GetStarColor(m) for m in m_star])/255
  
             self.ax.scatter(X_star[:,0], X_star[:,1],s=star_size*5,edgecolor=self.Star_Edge_Color(),lw=0.1,facecolor=colors,marker='*')
@@ -404,6 +408,16 @@ class SinkVis(Task):
             if self.params["center_on_densest"]:
                 rho = snapdata["PartType0/Masses"]/snapdata["PartType0/SmoothingLength"]**3
                 self.params["center"] = snapdata["PartType0/Coordinates"][rho.argmax()]
+            elif self.params["center_on_ID"]:
+                ids = None
+                for k, data in snapdata.items():
+                    if "IDs" in k:
+                        if self.params["center_on_ID"] in data:
+                            ids = data
+                            break
+                if ids is None:
+                    raise(ValueError("desired center ID not found in snapshot!"))
+                self.params["center"] = snapdata[k.replace("ParticleIDs","Coordinates")][ids==self.params["center_on_ID"]]
             elif self.params["center_on_star"]:
                 if "PartType5/Coordinates" in snapdata.keys():
                     self.params["center"] = snapdata["PartType5/Coordinates"][snapdata["PartType5/BH_Mass"].argsort()[::-1]][self.params["center_on_star"]-1] # center on the n'th most massive star
