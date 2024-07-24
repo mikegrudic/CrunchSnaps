@@ -5,7 +5,7 @@ make_movie_from_camerafile.py <camerafile> <simdir> ... [options]
 
 Options:
     -h --help              Show this screen.
-    --map_type=<type>      Set the type of map to do, available options are SigmaGas,CoolMap and SHOMap [default: CoolMap]
+    --map_type=<type>      Set the type of map to do, available options are SigmaGas,CoolMap and SHOMap [default: SigmaGas]
     --fresco_stars         Render stars with Fresco
     --extinct_stars        Calculate the extinction of stars to observers and attenuate their light, used only if --fresco_stars is set. Note: enabling this can make the calculation significantly slower
     --limits=<min,max>     Surface density limits
@@ -15,9 +15,12 @@ Options:
     --np_render=<N>        Number of cores per process to run rundering calls on [default: 1]
     --cubemap              Render 6 faces of a cubemap surrounding the camera
     --no_timestamp         Don't add timestamp
-    --no_size_scale        Don't draw wsize scale
+    --no_size_scale        Don't draw size scale
     --SHO_RGB_norm=<f>     Normalization constant for narrow band plot, set automatically by default. If a vector is provided, then each channel is normalized by the correponding component [default: 0.0]
     --sparse_snaps         Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
+    --id_mask=<f>          Path of the .npy file containing IDs of the particles to plot
+    --backend=<b>          Backend [default: PIL]
+    --sink_scale=<m>       Minimum sink mass to visualize in msun [default: 1e-3]
 """
 
 from docopt import docopt
@@ -26,7 +29,6 @@ from sys import argv
 from natsort import natsorted
 from CrunchSnaps import *
 from glob import glob
-from scipy.integrate import cumtrapz
 
 options = docopt(__doc__)
 cubemap = options["--cubemap"]
@@ -45,8 +47,10 @@ if options["--limits"]:
     limits = np.array([float(c) for c in options["--limits"].split(',')])
 else:
     limits = None
+id_mask = options["--id_mask"]
+options["--sink_scale"] = float(options["--sink_scale"])
 
-common_params = {"fresco_stars": options["--fresco_stars"], "res": res, "limits": limits, "no_timestamp": options["--no_timestamp"], "no_size_scale": options["--no_size_scale"], "threads": np_render, "SHO_RGB_norm": SHO_RGB_norm, "extinct_stars": options["--extinct_stars"], 'overwrite': overwrite, "sparse_snaps": options["--sparse_snaps"] }
+common_params = {"sink_scale": options["--sink_scale"], "backend": options["--backend"], "fresco_stars": options["--fresco_stars"], "res": res, "limits": limits, "no_timestamp": options["--no_timestamp"], "no_size_scale": options["--no_size_scale"], "threads": np_render, "SHO_RGB_norm": SHO_RGB_norm, "extinct_stars": options["--extinct_stars"], 'overwrite': overwrite, "sparse_snaps": options["--sparse_snaps"] }
 
 camera_data = np.atleast_2d(np.loadtxt(options["<camerafile>"]))
 sim_dir = options["<simdir>"][0] 
@@ -73,37 +77,43 @@ else:
     print("Map type %s not recognized, exiting..."%(options["--map_type"])); exit()
 
 
-
-if camera_data.shape[1] == 1: # just times
-    time = camera_data[:,0]
-    for i in range(len(time)):
-        params.append({"Time": time[i]})
-if camera_data.shape[1] == 4: # columns will be time, distance, pan, tilt
-    time, camera_dist, pan, tilt = camera_data.T
-    for i in range(len(time)):
-        params.append({"Time": time[i], "camera_distance": camera_dist[i], "pan": pan[i], "tilt": tilt[i], "index": i})
-elif camera_data.shape[1] == 7: # columns will be time, distance, camera_pos, pan, tilt
-    time = camera_data[:,0]
-    camera_dist = camera_data[:,1]
-    camera_pos = camera_data[:,2:5]
-    pan, tilt = camera_data[:,-2:].T
-    for i in range(len(time)):
-        params.append({"Time": time[i], "center": camera_pos[i], "camera_distance": camera_dist[i], "index": i, "pan": pan[i], "tilt": tilt[i]})
-elif camera_data.shape[1] == 8: # columns will be time, camera position, camera direction, camera distance
-    time = camera_data[:,0]
-    camera_pos = camera_data[:,1:4]
-    camera_dir = camera_data[:,4:7]
-    camera_dist = camera_data[:,7]
-    for i in range(len(time)):
-        params.append({"Time": time[i], "center": camera_pos[i], "camera_dir": camera_dir[i], "camera_distance": camera_dist[i], "index": i})
-elif camera_data.shape[1] == 11:# full camera data: time, camera position, camera forward vector, camera up vector, camera distance
-    time = camera_data[:,0]
-    camera_pos = camera_data[:,1:4]
-    camera_dir = camera_data[:,4:7]
-    camera_up = camera_data[:,7:10]
-    camera_dist = camera_data[:,10]
-else: 
-    raise("camera file format not implemented :( do you have the right number of columns?")
+match camera_data.shape[1]:
+    case 1: # just times
+        time = camera_data[:,0]
+        for i in range(len(time)):
+            params.append({"Time": time[i]})
+    case 4: # columns will be time, distance, pan, tilt
+        time, camera_dist, pan, tilt = camera_data.T
+        for i in range(len(time)):
+            params.append({"Time": time[i], "camera_distance": camera_dist[i], "pan": pan[i], "tilt": tilt[i], "index": i})
+    case 5: # time, position, rmax
+        time = camera_data[:,0]
+        camera_pos = camera_data[:,1:4]
+        rmax = camera_data[:,4]
+        for i in range(len(time)):
+            params.append({"Time": time[i], "center": camera_pos[i], "rmax": rmax[i],  "index": i})
+    case 7: # columns will be time, distance, camera_pos, pan, tilt
+        time = camera_data[:,0]
+        camera_dist = camera_data[:,1]
+        camera_pos = camera_data[:,2:5]
+        pan, tilt = camera_data[:,-2:].T
+        for i in range(len(time)):
+            params.append({"Time": time[i], "center": camera_pos[i], "camera_distance": camera_dist[i], "index": i, "pan": pan[i], "tilt": tilt[i]})
+    case 8: # columns will be time, camera position, camera direction, camera distance
+        time = camera_data[:,0]
+        camera_pos = camera_data[:,1:4]
+        camera_dir = camera_data[:,4:7]
+        camera_dist = camera_data[:,7]
+        for i in range(len(time)):
+            params.append({"Time": time[i], "center": camera_pos[i], "camera_dir": camera_dir[i], "camera_distance": camera_dist[i], "index": i})
+    case 11:# full camera data: time, camera position, camera forward vector, camera up vector, camera distance
+        time = camera_data[:,0]
+        camera_pos = camera_data[:,1:4]
+        camera_dir = camera_data[:,4:7]
+        camera_up = camera_data[:,7:10]
+        camera_dist = camera_data[:,10]
+    case _:
+        raise("camera file format not implemented :( do you have the right number of columns?")
 
 
 for p in params:
@@ -118,4 +128,4 @@ if cubemap:
 
 snaps = natsorted(glob(sim_dir + "/snapshot*.hdf5"))
 
-DoTasksForSimulation(snaps, task_types=tasks, task_params=[params],nproc=nproc,nthreads=np_render)
+DoTasksForSimulation(snaps, task_types= tasks, task_params=[list(reversed(params))],nproc=nproc,nthreads=np_render,id_mask=options["--id_mask"])

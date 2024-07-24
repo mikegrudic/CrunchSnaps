@@ -7,3 +7,6 @@ natsort
 docopt
 aggdraw
 scikit-image
+matplotlib
+numba
+astropy

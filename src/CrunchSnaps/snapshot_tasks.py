@@ -6,19 +6,17 @@ from meshoid import GridSurfaceDensity
 from meshoid.radiation import radtransfer as GridRadTransfer
 import aggdraw
 from skimage.color import rgb2hsv, hsv2rgb
-from PIL import Image, ImageDraw, ImageFont, ImageChops
+from PIL import Image, ImageDraw, ImageFont
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 #from .amuse_fresco import *
-from numba import get_num_threads, set_num_threads
-from scipy.interpolate import RectBivariateSpline
+from numba import set_num_threads
 from .misc_functions import *
 from os.path import isfile
 import json
 import os
 import sys
-from multiprocessing import Pool
 hashseed = os.getenv('PYTHONHASHSEED')
 if not hashseed:
     os.environ['PYTHONHASHSEED'] = '0'
@@ -60,7 +58,7 @@ class SinkVis(Task):
                                "no_size_scale": False,
                                "filename": None,
                                "sink_scale": 1,
-                               "cmap": "viridis",
+                               "cmap": "magma",
                                "backend": "PIL",
                                "rescale_hsml": False,
                                "FOV": 90,
@@ -127,7 +125,7 @@ class SinkVis(Task):
     def DetermineRequiredSnapdata(self):
         self.RequiredSnapdata = ["PartType5/Coordinates","PartType5/Masses","PartType5/ParticleIDs", "PartType5/BH_Mass",]
         if self.params["fresco_stars"]: self.RequiredSnapdata += ["PartType5/ProtoStellarStage","PartType5/StarLuminosity_Solar"]
-        if any((self.params[k] for k in ("center_on_star", "center_on_ID", "center_on_ID"))):
+        if any((self.params[k] for k in ("center_on_star", "center_on_ID", "center_on_densest"))):
             self.RequiredSnapdata += ["PartType0/Density", "PartType0/Coordinates"]
         if self.params["outflow_only"]: self.RequiredSnapdata += ["PartType0/Velocities", "PartType5/Velocities"]
         # check if we have maps already saved
@@ -249,7 +247,7 @@ class SinkVis(Task):
         if self.params["backend"] == "matplotlib":
             rmax = self.params["rmax"]
             self.ax.set(xlim=[-rmax,rmax],ylim=[-rmax,rmax])
-            plt.savefig(self.params["filename_incomplete"],bbox_inches='tight',dpi=200)            
+            plt.savefig(self.params["filename_incomplete"],bbox_inches='tight',dpi=400)
             plt.close()
         os.rename(self.params["filename_incomplete"], self.params["filename"])            
 
@@ -405,26 +403,23 @@ class SinkVis(Task):
 
     def AssignDefaultParamsFromSnapdata(self,snapdata):
         if self.params["center"] is None:
+            self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"]*0.5,3) # default
+
             if self.params["center_on_densest"]:
                 rho = snapdata["PartType0/Masses"]/snapdata["PartType0/SmoothingLength"]**3
                 self.params["center"] = snapdata["PartType0/Coordinates"][rho.argmax()]
             elif self.params["center_on_ID"]:
-                ids = None
                 for k, data in snapdata.items():
                     if "IDs" in k:
-                        if self.params["center_on_ID"] in data:
-                            ids = data
-                            break
-                if ids is None:
-                    raise(ValueError("desired center ID not found in snapshot!"))
-                self.params["center"] = snapdata[k.replace("ParticleIDs","Coordinates")][ids==self.params["center_on_ID"]]
+                        ids = data
+                        coords= snapdata[k.replace("ParticleIDs","Coordinates")]
+                        if self.params["center_on_ID"] in ids and len(ids)==len(coords):
+                            self.params["center"] = coords[ids==self.params["center_on_ID"]]                
             elif self.params["center_on_star"]:
                 if "PartType5/Coordinates" in snapdata.keys():
                     self.params["center"] = snapdata["PartType5/Coordinates"][snapdata["PartType5/BH_Mass"].argsort()[::-1]][self.params["center_on_star"]-1] # center on the n'th most massive star
                 else: # otherwise center on the densest gas cell
                     self.params["center"] = snapdata["PartType0/Coordinates"][snapdata["PartType0/Density"].argmax()]
-            else:
-                self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"]*0.5,3)
             center = self.params["center"]
         else: center = self.params["center"]
         if self.params["rmax"] is None:
@@ -498,7 +493,9 @@ class SinkVisSigmaGas(SinkVis):
         
     def GenerateMaps(self,snapdata):
         if not "sigma_gas" in self.maps.keys():
-            self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T        
+            self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T
+            # clip so that 0's are just given the min nonzero value
+            self.maps["sigma_gas"] = self.maps["sigma_gas"].clip(self.maps["sigma_gas"][self.maps["sigma_gas"]>0].min())
             np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])        
         if (not ("tau" in self.maps.keys())) and ("tau" in self.required_maps):
             self.GenerateTauMap(snapdata)

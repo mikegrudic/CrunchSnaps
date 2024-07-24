@@ -1,15 +1,9 @@
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool
 from .snapshot_tasks import *
 from .misc_functions import *
 from natsort import natsorted
 import h5py
-import itertools
 import numpy as np
-from functools import partial
-from os.path import isfile
-from numba import vectorize, njit
-from math import copysign
-from copy import copy
 
 def DoTasksForSimulation(snaps=[], task_types=[], task_params=[], interp_fac=1, nproc=1, nthreads=1, snaptime_dict=None,id_mask=None):
     """
