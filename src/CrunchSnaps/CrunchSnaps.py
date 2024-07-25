@@ -88,8 +88,9 @@ def DoParamsPass(chunk,id_mask=None):
             else: t1, t2 = snaptimes[-2:] # else if we have >1 snapshot, let those be the two times we interpolate/extrapolate from
         else: t1=t2=snaptimes[0] # otherwise we have exactly 1 snapshot, so set t1=t2 and ignore all time dependence
         # do a pass to delete anything that will no longer be needed
+        print(f"{t1}, {t2}, {process_num}: ", list(snapdata_buffer.keys()))
         for k in list(snapdata_buffer.keys()):
-            if k < t1: del snapdata_buffer[k] # delete if not needed for interpolation (including old interpolants)
+            if k < min(t1,t2) or k > max(t1,t2): del snapdata_buffer[k] # delete if not needed for interpolation (including old interpolants)
         for t in t1, t2:
             if not t in snapdata_buffer.keys(): snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata,process_num,id_mask)
         # for t in list(snapdata_buffer.keys()):
@@ -105,7 +106,6 @@ def DoParamsPass(chunk,id_mask=None):
 
         ##########################  interpolation #############################################
         # now get the particle data we need for this time, interpolating if needed
-
         if time in snapdata_buffer.keys(): # if we have the data for this exact time in the buffer, no action needed
             print("%d: Data for time %g available in buffer ..."%(process_num, time))
             snapdata_for_thistime = snapdata_buffer[time]

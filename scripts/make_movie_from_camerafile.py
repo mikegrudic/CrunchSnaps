@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python
 """
 Usage:
@@ -128,4 +129,4 @@ if cubemap:
 
 snaps = natsorted(glob(sim_dir + "/snapshot*.hdf5"))
 
-DoTasksForSimulation(snaps, task_types= tasks, task_params=[list(reversed(params))],nproc=nproc,nthreads=np_render,id_mask=options["--id_mask"])
+DoTasksForSimulation(snaps, task_types= tasks, task_params=[params,],nproc=nproc,nthreads=np_render,id_mask=options["--id_mask"])

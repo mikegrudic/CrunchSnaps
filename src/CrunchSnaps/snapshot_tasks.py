@@ -495,7 +495,9 @@ class SinkVisSigmaGas(SinkVis):
         if not "sigma_gas" in self.maps.keys():
             self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T
             # clip so that 0's are just given the min nonzero value
-            self.maps["sigma_gas"] = self.maps["sigma_gas"].clip(self.maps["sigma_gas"][self.maps["sigma_gas"]>0].min())
+            nonzero = self.maps["sigma_gas"] > 0
+            if np.any(nonzero):
+                self.maps["sigma_gas"] = self.maps["sigma_gas"].clip(self.maps["sigma_gas"][nonzero].min())
             np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])        
         if (not ("tau" in self.maps.keys())) and ("tau" in self.required_maps):
             self.GenerateTauMap(snapdata)
