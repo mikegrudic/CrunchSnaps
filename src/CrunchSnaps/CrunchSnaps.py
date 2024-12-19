@@ -254,10 +254,12 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
     
     if id_mask:
         ids = np.load(id_mask)
-        print(len(np.unique(ids)))        
         for f, data in snapdata.items():
             if "/Masses" in f:
                 idx = np.isin(snapdata[f.replace("Masses","ParticleIDs")], ids)
+                data *= idx
+            if "/BH_Mass" in f:
+                idx = np.isin(snapdata[f.replace("BH_Mass","ParticleIDs")], ids)
                 data *= idx
     
     return snapdata
