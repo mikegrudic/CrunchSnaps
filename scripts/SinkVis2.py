@@ -12,7 +12,6 @@ Options:
     --backend=<b>              matplotlib vs PIL [default: PIL]
     --id_mask=<file>          .npy file containing the gas particle IDs to be plotted
     --dir=<x,y,z>              Coordinate direction to orient the image along - x, y, or z. It also accepts vector values [default: z] 
-    --full_box                 Sets the plot to the entire box, overrides rmax
     --target_time=<f>          If set to nonzero, SinkVis will try to make a single image by interpolating from the available files [default: 0.0] 
     --c=<cx,cy,cz>             Coordinates of plot window center relative to box center [default: 0.0,0.0,0.0]
     --limits=<min,max>         Dynamic range of surface density colormap
