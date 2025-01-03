@@ -86,7 +86,7 @@ Options:
     --outflow_only             Only show gas moving away from the nearest star
 """
 
-#Example
+# Example
 # python SinkVis.py /panfs/ds08/hopkins/guszejnov/GMC_sim/Tests/200msun/MHD_isoT_2e6/output/snapshot*.hdf5 --np=24 --keep_only_movie --movie_name=200msun_MHD_isoT_2e6
 
 from docopt import docopt
@@ -98,17 +98,21 @@ import h5py
 from os.path import exists, abspath
 from glob import glob
 
-taskdict = {"SigmaGas": CrunchSnaps.SinkVisSigmaGas, "HubbleSHO": CrunchSnaps.SinkVisNarrowbandComposite, "CoolMap": CrunchSnaps.SinkVisCoolMap}
+taskdict = {
+    "SigmaGas": CrunchSnaps.SinkVisSigmaGas,
+    "HubbleSHO": CrunchSnaps.SinkVisNarrowbandComposite,
+    "CoolMap": CrunchSnaps.SinkVisCoolMap,
+}
 
 
-def parse_inputs_to_jobparams(input): # parse input parameters to generate a list of job parameters
-    arguments=input
+def parse_inputs_to_jobparams(input):  # parse input parameters to generate a list of job parameters
+    arguments = input
     filenames = natsorted(arguments["<files>"])
     nproc = int(arguments["--np"])
     np_render = int(arguments["--np_render"])
     n_interp = int(arguments["--interp_fac"])
     tasks = arguments["--tasks"].split(",")
-    N_tasks = len(tasks)    
+    N_tasks = len(tasks)
     res = int(arguments["--res"])
     direction = arguments["--dir"]
     if arguments["--no_overwrite"]:
@@ -117,75 +121,97 @@ def parse_inputs_to_jobparams(input): # parse input parameters to generate a lis
         overwrite = True
     equal_frame_times = arguments["--equal_frame_times"]
 
-    if ',' in arguments["--SHO_RGB_norm"]: #normalization by channel
-        SHO_RGB_norm = np.array([float(c) for c in arguments["--SHO_RGB_norm"].split(',')])
-    else: #same normalization constant for each channel
+    if "," in arguments["--SHO_RGB_norm"]:  # normalization by channel
+        SHO_RGB_norm = np.array([float(c) for c in arguments["--SHO_RGB_norm"].split(",")])
+    else:  # same normalization constant for each channel
         SHO_RGB_norm = float(arguments["--SHO_RGB_norm"])
-        
+
     if arguments["--limits"]:
-        limits = np.array([float(c) for c in arguments["--limits"].split(',')])
+        limits = np.array([float(c) for c in arguments["--limits"].split(",")])
 
     # parameters that every single task will have in common
-    common_params = {i.replace("--",""): input[i] for i in input}
+    common_params = {i.replace("--", ""): input[i] for i in input}
     del common_params["<files>"]
     for c, i in common_params.items():
-        if type(i) != str: continue
+        if type(i) != str:
+            continue
         if "," in i and c != "tasks":
             common_params[c] = np.array([float(k) for k in i.split(",")])
-        elif i.replace(".","").isnumeric() or i=="inf":
+        elif i.replace(".", "").isnumeric() or i == "inf":
             common_params[c] = float(i)
-    common_params.update({"fresco_stars": input["--plot_fresco_stars"], "res": int(input["--res"]), "limits": (limits if arguments["--limits"] else None), "no_timestamp": input["--no_timestamp"], "threads": np_render, "outputfolder": input["--outputfolder"], "SHO_RGB_norm": SHO_RGB_norm, "cool_cmap": input["--cool_cmap"], "center_on_star": int(input["--center_on_star"]), "center_on_ID": int(input["--center_on_ID"]), "extinct_stars": int(input["--extinct_stars"]), "sparse_snaps": input["--sparse_snaps"], "backend": input["--backend"], "overwrite": overwrite, "id_mask": input["--id_mask"], "no_stars": input["--no_stars"]})
+    common_params.update(
+        {
+            "fresco_stars": input["--plot_fresco_stars"],
+            "res": int(input["--res"]),
+            "limits": (limits if arguments["--limits"] else None),
+            "no_timestamp": input["--no_timestamp"],
+            "threads": np_render,
+            "outputfolder": input["--outputfolder"],
+            "SHO_RGB_norm": SHO_RGB_norm,
+            "cool_cmap": input["--cool_cmap"],
+            "center_on_star": int(input["--center_on_star"]),
+            "center_on_ID": int(input["--center_on_ID"]),
+            "extinct_stars": int(input["--extinct_stars"]),
+            "sparse_snaps": input["--sparse_snaps"],
+            "backend": input["--backend"],
+            "overwrite": overwrite,
+            "id_mask": input["--id_mask"],
+            "no_stars": input["--no_stars"],
+        }
+    )
 
-
-    if direction=='x':
-        common_params["camera_dir"] = np.array([1.,0,0])
-        common_params["camera_up"] = np.array([0,0,1.])
-    elif direction=='y':
-        common_params["camera_dir"] = np.array([0,1.,0])
-        common_params["camera_up"] = np.array([0,0,1.])
+    if direction == "x":
+        common_params["camera_dir"] = np.array([1.0, 0, 0])
+        common_params["camera_up"] = np.array([0, 0, 1.0])
+    elif direction == "y":
+        common_params["camera_dir"] = np.array([0, 1.0, 0])
+        common_params["camera_up"] = np.array([0, 0, 1.0])
 
     if input["--rmax"] is None:
         common_params["rmax"] = None
     else:
         common_params["rmax"] = float(input["--rmax"])
-    
-    N_params =  len(filenames) + (n_interp-1) * (len(filenames)-1)
+
+    N_params = len(filenames) + (n_interp - 1) * (len(filenames) - 1)
     print(input["<files>"])
-    snaptime_dict = get_snapshot_time_dict(input["<files>"]) # get times of snapshots
-    snaptime_dict_inv = {v:k for v, k in zip(snaptime_dict.values(),snaptime_dict.keys())}
+    snaptime_dict = get_snapshot_time_dict(input["<files>"])  # get times of snapshots
+    snaptime_dict_inv = {v: k for v, k in zip(snaptime_dict.values(), snaptime_dict.keys())}
     snaptimes_orig = np.array(natsorted([snaptime_dict[snapnum_from_path(s)] for s in input["<files>"]]))
-#    print([snapnum_from_path(s) for s in input["<files>"]])
-    if n_interp>1: # get times of frames if we're doing an interpolated movie
-        frametimes = np.interp(np.arange(N_params)/(N_params-1), np.linspace(0,1,len(snaptimes_orig)), snaptimes_orig)
+    #    print([snapnum_from_path(s) for s in input["<files>"]])
+    if n_interp > 1:  # get times of frames if we're doing an interpolated movie
+        frametimes = np.interp(
+            np.arange(N_params) / (N_params - 1), np.linspace(0, 1, len(snaptimes_orig)), snaptimes_orig
+        )
     else:
         frametimes = snaptimes_orig
 
-#    print(frametimes)
+    #    print(frametimes)
     if equal_frame_times:
-        frametimes = np.linspace(frametimes.min(),frametimes.max(),N_params)
+        frametimes = np.linspace(frametimes.min(), frametimes.max(), N_params)
 
     p = []
     for i in range(N_params):
         d = common_params.copy()
         d["Time"] = frametimes[i]
-        snapnum = snaptime_dict_inv[snaptimes_orig[i//n_interp]]
-        d["index"] = snapnum * 10 + i%n_interp
+        snapnum = snaptime_dict_inv[snaptimes_orig[i // n_interp]]
+        d["index"] = snapnum * 10 + i % n_interp
         p.append(d.copy())
 
-        if i%n_interp==0 and (input["--freeze_rotation"] is not None):
+        if i % n_interp == 0 and (input["--freeze_rotation"] is not None):
             num_rotation_frames = 720
-            if snapnum in [int(f) for f in input["--freeze_rotation"].split(",")]: # add a rotation freeze
-                for k in range(num_rotation_frames): # do a pan
+            if snapnum in [int(f) for f in input["--freeze_rotation"].split(",")]:  # add a rotation freeze
+                for k in range(num_rotation_frames):  # do a pan
                     d = p[-1].copy()
-                    d["index"] = snapnum * 10 + i%n_interp
+                    d["index"] = snapnum * 10 + i % n_interp
                     d["pan"] = k * 360 / num_rotation_frames
-                    d["tilt"] = 10*np.sin(2*np.pi*k/num_rotation_frames) # add a bit of tilt for 3D look
+                    d["tilt"] = 10 * np.sin(2 * np.pi * k / num_rotation_frames)  # add a bit of tilt for 3D look
                     p.append(d)
 
-#        print(i,d["Time"],d["index"])
-    params = N_tasks * [p] # one list of params per task
+    #        print(i,d["Time"],d["index"])
+    params = N_tasks * [p]  # one list of params per task
     return params
-    
+
+
 def main(input):
     tasks = input["--tasks"].split(",")
     tasks = [taskdict[t] for t in tasks]
@@ -193,9 +219,11 @@ def main(input):
     np_render = int(input["--np_render"])
     params = parse_inputs_to_jobparams(input)
     snaps = natsorted(input["<files>"])
-    CrunchSnaps.DoTasksForSimulation(snaps, task_types=tasks, task_params=params,nproc=nproc,nthreads=np_render, id_mask=input["--id_mask"])
+    CrunchSnaps.DoTasksForSimulation(
+        snaps, task_types=tasks, task_params=params, nproc=nproc, nthreads=np_render, id_mask=input["--id_mask"]
+    )
+
 
 if __name__ == "__main__":
     arguments = docopt(__doc__)
     main(arguments)
-    
