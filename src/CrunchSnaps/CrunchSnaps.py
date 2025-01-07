@@ -68,8 +68,8 @@ def DoTasksForSimulation(
         (i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)
     ]
     if nproc > 1:
-#        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
-        Parallel(n_jobs=nproc)(delayed(DoParamsPass)(c,id_mask=id_mask) for c in chunks)
+        #        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
+        Parallel(n_jobs=nproc)(delayed(DoParamsPass)(c, id_mask=id_mask) for c in chunks)
     else:
         [DoParamsPass(c, id_mask=id_mask) for c in chunks]
 
@@ -129,7 +129,7 @@ def DoParamsPass(chunk, id_mask=None):
         else:
             t1 = t2 = snaptimes[0]  # otherwise we have exactly 1 snapshot, so set t1=t2 and ignore all time dependence
         # do a pass to delete anything that will no longer be needed
-#        print(f"{t1}, {t2}, {process_num}: ", list(snapdata_buffer.keys()))
+        #        print(f"{t1}, {t2}, {process_num}: ", list(snapdata_buffer.keys()))
         for k in list(snapdata_buffer.keys()):
             if k < min(t1, t2) or k > max(t1, t2):
                 del snapdata_buffer[k]  # delete if not needed for interpolation (including old interpolants)
@@ -172,6 +172,7 @@ def DoParamsPass(chunk, id_mask=None):
         ################# task execution  ####################################################
         # actually do the task - each method can optionally return data to be compiled in the pass through the snapshots
         data = [t.DoTask(snapdata_for_thistime) for t in task_instances]
+
 
 def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
     stuff_to_skip = [
@@ -349,7 +350,7 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
 
     if id_mask:
         ids = np.load(id_mask)
-        ids = ids.clip(0,wind_ids.min())
+        ids = ids.clip(0, wind_ids.min())
 
         for f, data in snapdata.items():
             if "/Masses" in f:
