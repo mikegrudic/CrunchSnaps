@@ -4,8 +4,8 @@ CrunchSnaps is a Python package for performing analysis tasks on GIZMO simulatio
 
 # Installation
 
-Run the setup.py to install the package:
-``python setup.py install``
+Install with pip from the repo direcory:
+``pip install .``
 
 # Examples
 
