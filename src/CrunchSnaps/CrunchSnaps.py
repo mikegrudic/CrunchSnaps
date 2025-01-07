@@ -170,10 +170,6 @@ def DoParamsPass(chunk, id_mask=None):
         ################# task execution  ####################################################
         # actually do the task - each method can optionally return data to be compiled in the pass through the snapshots
         data = [t.DoTask(snapdata_for_thistime) for t in task_instances]
-<<<<<<< HEAD
-=======
-
->>>>>>> be1999539fa40def064f446310093ee21b70e9ff
 
 def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
     stuff_to_skip = [
