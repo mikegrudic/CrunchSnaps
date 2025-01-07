@@ -361,7 +361,7 @@ class SinkVis(Task):
                 for j in np.arange(len(X_star)):                    
                     X = X_star[j]
                     ms = m_star[j]
-                    if ms < sink_scale: continue
+                    if ms < self.params["sink_scale"]: continue
                     star_size = max(1,gridres * sink_relscale * (np.log10(ms/self.params["sink_scale"]) + 1))
                     if self.params["camera_distance"] < np.inf:
                         # make 100msun ~ 0.03pc, scale down from there

@@ -1,4 +1,5 @@
 from multiprocessing import Pool
+from joblib import Parallel, delayed
 from .snapshot_tasks import *
 from .misc_functions import *
 from natsort import natsorted
@@ -21,15 +22,7 @@ def DoTasksForSimulation(snaps=[], task_types=[], task_params=[], interp_fac=1, 
     snaps = natsorted(snaps)
         
     N_task_types = len(task_types)
-    # broadcast task params across the different tasks if necessary
-#    if len(task_types) > 1 and task_params: # if we are doing more than one type of task and have given parameters
-#        for i in range(len(task_params)): # loop over parameters list
-#            if type(task_types[i]) == dict: # if we have a list of dicts
-#                task_types[i] = [task_types[i], task_types[i]]
-#            elif type(task_types[i]) == list: # if we have a list of lists
-#                if len(task_types[i]) < N_tasks: 
-#                    task_types[i] = [task_types[0], task_types[0]]
-        
+
     if snaptime_dict is None:
         snaptime_dict = get_snapshot_time_dict(snaps)
 
@@ -53,7 +46,8 @@ def DoTasksForSimulation(snaps=[], task_types=[], task_params=[], interp_fac=1, 
     index_chunks = np.array_split(np.arange(N_params), nproc)
     chunks=[(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
-        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
+#        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
+        Parallel(n_jobs=nproc)(delayed(DoParamsPass)(c,id_mask=id_mask) for c in chunks)
     else:
         [DoParamsPass(c,id_mask=id_mask) for c in chunks]
 
@@ -88,7 +82,7 @@ def DoParamsPass(chunk,id_mask=None):
             else: t1, t2 = snaptimes[-2:] # else if we have >1 snapshot, let those be the two times we interpolate/extrapolate from
         else: t1=t2=snaptimes[0] # otherwise we have exactly 1 snapshot, so set t1=t2 and ignore all time dependence
         # do a pass to delete anything that will no longer be needed
-        print(f"{t1}, {t2}, {process_num}: ", list(snapdata_buffer.keys()))
+#        print(f"{t1}, {t2}, {process_num}: ", list(snapdata_buffer.keys()))
         for k in list(snapdata_buffer.keys()):
             if k < min(t1,t2) or k > max(t1,t2): del snapdata_buffer[k] # delete if not needed for interpolation (including old interpolants)
         for t in t1, t2:
@@ -120,7 +114,7 @@ def DoParamsPass(chunk,id_mask=None):
 
         ################# task execution  ####################################################
         # actually do the task - each method can optionally return data to be compiled in the pass through the snapshots
-        data = [t.DoTask(snapdata_for_thistime) for t in task_instances]    
+        data = [t.DoTask(snapdata_for_thistime) for t in task_instances]
 
 
 def SnapInterpolate(t,t1,t2,snapdata_buffer, sparse_snaps=False):
@@ -254,6 +248,7 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
     
     if id_mask:
         ids = np.load(id_mask)
+        ids = ids.clip(0,wind_ids.min())
         print(len(np.unique(ids)))        
         for f, data in snapdata.items():
             if "/Masses" in f:
