@@ -349,11 +349,8 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
 
     if id_mask:
         ids = np.load(id_mask)
-<<<<<<< HEAD
         ids = ids.clip(0,wind_ids.min())
-        print(len(np.unique(ids)))        
-=======
->>>>>>> be1999539fa40def064f446310093ee21b70e9ff
+
         for f, data in snapdata.items():
             if "/Masses" in f:
                 idx = np.isin(snapdata[f.replace("Masses", "ParticleIDs")], ids)
