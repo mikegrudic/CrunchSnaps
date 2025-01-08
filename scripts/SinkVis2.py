@@ -26,11 +26,7 @@ Options:
     --res=<N>                  Image resolution [default: 1024]
     --center_on_star           Center image on the Nth most-massive sink particle
     --center_on_ID=<ID>        Center image on sink particle with specific ID, does not center if zero [default: 0]
-    --plot_cool_map            Plots cool map that looks cool
-    --realistic_stars        Plots surface density map with Hubble-like PSFs for the stars
-    --fresco_param=<f>         Parameter that sets the vmax parameter of amuse-fresco, the larger the value the more extended stellar PSFs are [default: 0.002]
-    --fresco_mass_limits=<min,max>  Parameter that determines how masses are rescaled for fresco. Stellar masses are roughly clipped between min and max values, useful to define a max as massive stars are extremely luminous and dominate the image [default: 0,0]
-    --fresco_mass_rescale=<f>  Rescale masses plugged into Fresco mass-luminosity relation by raising masses to this power [default: 0.3]
+    --plot_cool_map            Plots surface density+kinematics map that looks cool
     --outputfolder=<name>      Specifies the folder to save the images and movies to [default: .]
     --no_timestamp             Flag, if set no timestamp will be put on the images
     --no_size_scale            Flag, if set no size scale will be put on the images
