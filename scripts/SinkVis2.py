@@ -36,6 +36,7 @@ Options:
     --sparse_snaps             Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
     --equal_frame_times        Ensure frames in render sequence are equally spaced, even if snapshot times are not
     --outflow_only             Only show gas moving away from the nearest star
+    --realistic_stars          Use amuse-fresco package to generate realistic stellar image
 """
 
 from docopt import docopt

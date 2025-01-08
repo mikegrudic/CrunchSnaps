@@ -10,3 +10,4 @@ scikit-image
 matplotlib
 numba
 astropy
+h5py
