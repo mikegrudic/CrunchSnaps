@@ -113,7 +113,9 @@ def make_stars_image_fullRT(snapdata, lum_max_solar=1e3, IMG_RES: int = 2048, IM
     return image_rgb
 
 
-def make_stars_image_starsonly(snapdata, lum_max_solar=1e3, IMG_RES: int = 2048, IMG_SIZE: float = 10.0, verbose=False):
+def make_stars_image_starsonly(
+    snapdata, lum_max_solar=1e3, IMG_RES: int = 2048, IMG_SIZE: float = 10.0, verbose=False
+):
     PIXEL_SIZE = IMG_SIZE / IMG_RES
     xstar = snapdata["PartType5/Coordinates"]
     Lstar = snapdata["PartType5/StarLuminosity_Solar"]
