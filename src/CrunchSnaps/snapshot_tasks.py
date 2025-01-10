@@ -12,7 +12,6 @@ import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 
-# from .amuse_fresco import *
 from numba import set_num_threads
 from .misc_functions import *
 from os.path import isfile
@@ -135,9 +134,8 @@ class SinkVis(Task):
 
         if self.params["threads"] != 1:
             self.parallel = True
-            if (
-                self.params["threads"] > 0
-            ):  # if negative, just use all available threads, otherwise set to desired value
+            # if negative, just use all available threads, otherwise set to desired value
+            if self.params["threads"] > 0:
                 set_num_threads(self.params["threads"])
         else:
             self.parallel = False
@@ -189,14 +187,13 @@ class SinkVis(Task):
             self.params["cubemap_dir"],
         )
 
-    def CoordinateTransform(self, x, m=None, h=None, contravariant=False, update_r=True):
+    def DoCoordinateTransform(self, x, m=None, h=None, contravariant=False, update_r=True):
         # center on the designated center coordinate
         if not contravariant:
             x[:] -= self.params["center"]
 
-        if (
-            self.params["camera_dir"] is None
-        ):  # without a specified camera direction, we just use a simple tilt/pan scheme
+        # without a specified camera direction, we just use a simple tilt/pan scheme
+        if self.params["camera_dir"] is None:
             tilt, pan = self.params["tilt"], self.params["pan"]
             if contravariant:
                 tilt, pan = -tilt, -pan
@@ -295,15 +292,13 @@ class SinkVis(Task):
             # now get the "right" vector as the cross product of forward x up. this will be normalized to machine precision
             self.camera_right = np.cross(self.camera_up, self.camera_dir)
 
-            self.camera_matrix = np.c_[
-                self.camera_right, self.camera_up, self.camera_dir
-            ].T  # matrix of coordinate vectors - operate this on coordinates to apply transformation - operates on COORDINATES not vectors
-            self.camera_matrix_vectors = (
-                self.camera_matrix.T
-            )  # since vector fields are contravariant, this is the operator for transforming v and B (note that this is an orthogonal matrix so the transpose is the inverse)
+            # matrix of coordinate vectors - operate this on coordinates to apply transformation - operates on COORDINATES not vectors
+            self.camera_matrix = np.c_[self.camera_right, self.camera_up, self.camera_dir].T
+            # since vector fields are contravariant, this is the operator for transforming v and B (note that this is an orthogonal matrix so the transpose is the inverse)
+            self.camera_matrix_vectors = self.camera_matrix.T
 
         if "PartType0/Coordinates" in snapdata.keys():
-            self.CoordinateTransform(self.pos, self.mass, self.hsml)
+            self.DoCoordinateTransform(self.pos, self.mass, self.hsml)
             self.hsml = np.clip(self.hsml, 2 * self.params["rmax"] / res, 1e100)
 
     def GenerateMaps(self, snapdata):
@@ -402,7 +397,7 @@ class SinkVis(Task):
             lum = None
             stage = None
 
-        self.CoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))
+        self.DoCoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))
 
         if self.params["backend"] == "PIL":
             fname = self.params["filename_incomplete"]
@@ -446,8 +441,8 @@ class SinkVis(Task):
                 for j in np.arange(len(X_star)):
                     X = X_star[j]
                     ms = m_star[j]
-                    if ms < self.params["sink_scale"]:
-                        continue
+                    # if ms < self.params["sink_scale"]:
+                    #  continue
                     star_size = max(1, gridres * sink_relscale * (np.log10(ms / self.params["sink_scale"]) + 1))
                     if self.params["camera_distance"] < np.inf:
                         # make 100msun ~ 0.03pc, scale down from there
@@ -552,7 +547,7 @@ class SinkVis(Task):
         if len(snapdata["PartType5/Masses"]) == 0:
             return
         X_star = np.copy(snapdata["PartType5/Coordinates"])
-        self.CoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)), update_r=False)
+        self.DoCoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)), update_r=False)
         if self.params["camera_distance"] < np.inf:
             x_camera = np.array([0, 0, 0])  # coordinate system centered on camera
             # Find stars in view
@@ -649,9 +644,7 @@ class SinkVisSigmaGas(SinkVis):
             self.params["limits"] is None
         ):  # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp(
-                [0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat
-            )
+            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
 
         vmin, vmax = self.params["limits"]
         f = (np.log10(self.maps["sigma_gas"]) - np.log10(vmin)) / (np.log10(vmax) - np.log10(vmin))
@@ -736,7 +729,7 @@ class SinkVisCoolMap(SinkVis):
         if not "sigma_1D" in self.maps.keys():
             # need to apply coordinate transforms to z-velocity
             v = np.copy(snapdata["PartType0/Velocities"])
-            self.CoordinateTransform(v, contravariant=True)
+            self.DoCoordinateTransform(v, contravariant=True)
             sigma_1D = (
                 GridSurfaceDensity(
                     self.mass * v[:, 2] ** 2,
@@ -770,9 +763,7 @@ class SinkVisCoolMap(SinkVis):
         if self.params["limits"] is None:
             # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp(
-                [0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat
-            )
+            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
         if self.params["v_limits"] is None:
             #            Ekin_flat = np.sort((self.maps["sigma_gas"]*self.maps["sigma_1D"]**2).flatten()[self.maps["sigma_1D"].flatten().argsort()])
             self.params["v_limits"] = np.percentile(
@@ -959,20 +950,3 @@ class SinkVisNarrowbandComposite(SinkVis):
             self.params["filename_incomplete"], self.maps["SHO_RGB"][::-1]
         )  # NOTE - we invert this to get the coordinate system right
         super().MakeImages(snapdata)
-        # self.AddStarsToImage(snapdata)
-
-
-#        self.AddSizeScaleToImage()
-#        self.AddTimestampToImage()
-
-
-# class SinkVisSigmaGasStars(SinkVisSigmaGas):
-#     def __init__(self, params):
-#         super().__init__(self,params)
-#         self.required_maps += ["sigma_star"]
-
-#     def GenerateMaps(self,snapdata):
-#         super().GenerateMaps(self,snapdata)
-#         if not "sigma_star" in self.maps.keys():
-#             self.maps["sigma_gas"] = GridSurfaceDensity(self.mass, self.pos, self.hsml, np.zeros(3), 2*self.params["rmax"], res=self.params["res"],parallel=self.parallel).T
-#            np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])
