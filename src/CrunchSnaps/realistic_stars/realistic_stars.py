@@ -2,7 +2,7 @@
 
 Most credit goes to Pelupessy & Riedier, authors of the AMUSE fresco package. 
 
-Ported here to avoid an AMUSE dependency (no offense <3)
+Ported here to avoid an AMUSE dependency
 
 See https://github.com/rieder/amuse-fresco for the original, much more feature-rich code.
 """
@@ -16,6 +16,7 @@ from meshoid.radiation import dust_ext_opacity, radtransfer
 from scipy.signal import convolve
 from matplotlib import pyplot as plt
 from starforge_tools import star_gas_columns
+from starforge_tools.special_functions import planck_wavelength_integral
 
 
 FILTER_WAVELENGTHS_NM = {"u": 365, "b": 445, "v": 551, "r": 658, "i": 806}
@@ -44,7 +45,7 @@ def get_psf(instrument="WFPC_II_WFC3", sample_fac: int = 1) -> dict:
 
     NUM_FILTER_PSFS = 4
 
-    for band in "ubvri":
+    for band in FILTER_WAVELENGTHS_NM.keys():
         psf[band] = 0
         for i in range(NUM_FILTER_PSFS):
             psf_filename = datadir + band + "%2.2i.fits" % i
@@ -52,6 +53,10 @@ def get_psf(instrument="WFPC_II_WFC3", sample_fac: int = 1) -> dict:
             psf[band + str(i)] = np.array(f[0].data[::sample_fac, ::sample_fac])
             psf[band] += psf[band + str(i)] / NUM_FILTER_PSFS
     return psf
+
+
+def lum_radius_to_Teff(lum, radius):
+    return 5770 * np.sqrt(np.sqrt((lum / radius**2)))
 
 
 def make_stars_image_fullRT(snapdata, lum_max_solar=1e3, IMG_RES: int = 2048, IMG_SIZE: float = 10.0, verbose=False):
@@ -66,9 +71,10 @@ def make_stars_image_fullRT(snapdata, lum_max_solar=1e3, IMG_RES: int = 2048, IM
     mgas = snapdata["PartType0/Masses"]
     hgas = snapdata["PartType0/SmoothingLength"]
 
-    Teff = 5800 * (Lstar / Rstar**2) ** 0.25
+    Teff = lum_radius_to_Teff(Lstar, Rstar)
+    Lband = get_stellar_lum_in_bands(Lstar.clip(0, lum_max_solar), Teff)
 
-    num_wavelengths = len(FILTER_WAVELENGTHS_NM.values())
+    num_wavelengths = len(FILTER_WAVELENGTHS_NM)
 
     # dust opacity in cgs converted to solar - evaluated at 555nm
     wavelengths_um = np.array([l / 1e3 for l in FILTER_WAVELENGTHS_NM.values()])
@@ -80,7 +86,8 @@ def make_stars_image_fullRT(snapdata, lum_max_solar=1e3, IMG_RES: int = 2048, IM
     xstar = xstar  # (load_from_snapshot("Coordinates", 4, ".", 600) - center) @ coordinate_basis
     h_star = np.repeat(PIXEL_SIZE, num_stars)
     j_star = np.ones((num_stars, num_wavelengths))
-    j_star *= (Lstar.clip(0, lum_max_solar) / mstar)[:, None]
+    for i, band in enumerate(FILTER_WAVELENGTHS_NM.keys()):
+        j_star[:, i] = Lband[band] / mstar
     kappa_stars = np.zeros_like(j_star)
 
     # now combine all emissivities, opacities, masses, kernel lengths
@@ -98,18 +105,16 @@ def make_stars_image_fullRT(snapdata, lum_max_solar=1e3, IMG_RES: int = 2048, IM
     image = {}
     psfs = get_psf()
 
-    for i, band in enumerate("ubvri"):
+    for i, band in enumerate(FILTER_WAVELENGTHS_NM.keys()):
         image[band] = convolve(I[:, ::-1, i].T, psfs[band], mode="same")
 
     image_rgb = np.empty((IMG_RES, IMG_RES, 3))
     image_rgb[:, :, 0] = image["r"]
     image_rgb[:, :, 1] = image["v"]
     image_rgb[:, :, 2] = image["b"]
-    image_rgb /= (
-        image_rgb.mean() * 10
-    )  # np.interp(0.01, image_rgb.sum(-1).flatten()/image_rgb.sum(), image_rgb.sum(-1).flatten())  # Lstar.max() * 1e-5/PIXEL_SIZE
+    image_rgb /= image_rgb.mean() * 10
     image_rgb = image_rgb.clip(0, 1)
-    plt.imsave("light_ext.png", image_rgb)
+    plt.imsave("light_fullRT.png", image_rgb)
     return image_rgb
 
 
@@ -125,9 +130,7 @@ def make_stars_image_starsonly(snapdata, lum_max_solar=1e3, IMG_RES: int = 2048,
     mgas = snapdata["PartType0/Masses"]
     hgas = snapdata["PartType0/SmoothingLength"]
 
-    Teff = 5800 * (Lstar / Rstar**2) ** 0.25
-
-    num_wavelengths = len(FILTER_WAVELENGTHS_NM.values())
+    Teff = lum_radius_to_Teff(Lstar, Rstar)
 
     # dust opacity in cgs converted to solar - evaluated at 555nm
     wavelengths_um = np.array([l / 1e3 for l in FILTER_WAVELENGTHS_NM.values()])
@@ -135,13 +138,25 @@ def make_stars_image_starsonly(snapdata, lum_max_solar=1e3, IMG_RES: int = 2048,
 
     star_columns = star_gas_columns(xstar, xgas, mgas, hgas)
 
-    with Meshoid(xstar, m=Lstar.clip(0, lum_max_solar), h=np.repeat(PIXEL_SIZE, num_stars)) as M:
-        I = M.SurfaceDensity(center=np.zeros(3) + boxsize / 2, conservative=True, size=IMG_SIZE, res=IMG_RES)
+    tau_dust = kappa_dust_codeunits * star_columns[:, None]
+
+    Lstar_in_bands = get_stellar_lum_in_bands(Lstar.clip(0, lum_max_solar), Teff)
+    attenuation = np.exp(-tau_dust)
+
+    M = Meshoid(xstar, kernel_radius=np.repeat(PIXEL_SIZE, num_stars))  # , n_jobs=1)
+
     image = {}
     psfs = get_psf()
 
-    for i, band in enumerate("ubvri"):
-        image[band] = convolve(I[:, ::-1, i].T, psfs[band], mode="same")
+    for i, band in enumerate(FILTER_WAVELENGTHS_NM.keys()):
+        I = M.SurfaceDensity(
+            Lstar_in_bands[band] * attenuation[:, i],
+            center=np.zeros(3) + boxsize / 2,
+            conservative=False,
+            size=IMG_SIZE,
+            res=IMG_RES,
+        )
+        image[band] = convolve(I[:, ::-1].T, psfs[band], mode="same")
 
     image_rgb = np.empty((IMG_RES, IMG_RES, 3))
     image_rgb[:, :, 0] = image["r"]
@@ -149,5 +164,17 @@ def make_stars_image_starsonly(snapdata, lum_max_solar=1e3, IMG_RES: int = 2048,
     image_rgb[:, :, 2] = image["b"]
     image_rgb /= image_rgb.mean() * 10
     image_rgb = image_rgb.clip(0, 1)
-    plt.imsave("light_ext.png", image_rgb)
+    plt.imsave("light_stars.png", image_rgb)
     return image_rgb
+
+
+def get_stellar_lum_in_bands(Lstar, Teff):
+    lum_band = {}
+    for band, wavelength in FILTER_WAVELENGTHS_NM.items():
+        bandwidth = FILTER_WIDTHS_NM[band]
+        wavelength_min = max(wavelength - 0.5 * bandwidth, 0)
+        wavelength_max = wavelength + 0.5 * bandwidth
+        frac = planck_wavelength_integral(wavelength_min / 1e3, wavelength_max / 1e3, Teff)
+        lum_band[band] = frac * Lstar
+
+    return lum_band
