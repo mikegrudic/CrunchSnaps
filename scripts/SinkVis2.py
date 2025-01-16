@@ -78,7 +78,6 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
 
     # parameters that every single task will have in common
     common_params = {i.replace("--", ""): input[i] for i in input}
-    print(common_params["realstars_max_lum"], common_params["realstars_lum_exp"])
     del common_params["<files>"]
     for c, i in common_params.items():
         if not isinstance(i, str):
@@ -88,7 +87,6 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
         elif i.replace(".", "").replace("e", "").isnumeric() or i == "inf":
             common_params[c] = float(i)
 
-    print(common_params["realstars_max_lum"], common_params["realstars_lum_exp"])
     common_params.update(
         {
             "res": int(input["--res"]),
