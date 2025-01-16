@@ -64,12 +64,10 @@ def DoTasksForSimulation(
     # note that params must be sorted by time!
 
     index_chunks = np.array_split(np.arange(N_params), nproc)
-    chunks = [
-        (i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)
-    ]
+    chunks = [(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
         #        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
-        Parallel(n_jobs=nproc)(delayed(DoParamsPass)(c, id_mask=id_mask) for c in chunks)
+        Parallel(n_jobs=nproc, backend="loky")(delayed(DoParamsPass)(c, id_mask=id_mask) for c in chunks)
     else:
         [DoParamsPass(c, id_mask=id_mask) for c in chunks]
 
@@ -79,11 +77,11 @@ def DoParamsPass(chunk, id_mask=None):
         process_num,
         task_chunk_indices,
         task_types,
-        snaps,
+        _,
         task_params,
         snapdict,
         snaptimes,
-        snapnums,
+        _,
     ) = chunk  # unpack chunk data
     N_task_types = len(task_types)
 
@@ -233,7 +231,7 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
                 interpolated_data[field][ind2] = f2[ind2]
             else:
                 if field in stuff_to_interp_log:
-                    positive_ind = (f1 > 0) & (f2 > 0)
+                    positive = (f1 > 0) & (f2 > 0)
 
                     if sparse_snaps:
                         # Since the snapshots are too sparse to interpolate quantities, we need to be a bit more celver in interpolating, espacially the fast changing quantitiews.
@@ -245,12 +243,11 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
                         # wt1 = (t2 - t)/(t2 - t1)* np.ones_like(f1)
                         # wt2 = 1.0 - wt1
 
-                    if np.any(
-                        ~positive_ind
-                    ):  # we interpolate linearily for cells where the value in either snapashots is non-positive, log for the rest
+                    # we interpolate linearily for cells where the value in either snapashots is non-positive, log for the rest
+                    if np.any(~positive):
                         interpolated_data[field] = f1 * wt1 + f2 * wt2
-                        interpolated_data[field][positive_ind] = np.exp(
-                            np.log(f1[positive_ind]) * wt1[positive_ind] + np.log(f2[positive_ind]) * wt2[positive_ind]
+                        interpolated_data[field][positive] = np.exp(
+                            np.log(f1[positive]) * wt1[positive] + np.log(f2[positive]) * wt2[positive]
                         )
                     else:
                         interpolated_data[field] = np.exp(np.log(f1) * wt1 + np.log(f2) * wt2)

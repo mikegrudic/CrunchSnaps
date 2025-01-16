@@ -4,39 +4,41 @@ Usage:
 SinkVis2.py <files> ... [options]
 
 Options:
-    -h --help                  Show this screen.
-    --tasks=<task1,task2...>   List of types of the plots you want to make for each frame [default: SigmaGas]
-    --rmax=<pc>                Maximum radius of plot window; defaults to box size/10. Note that this is FOV/2 in radians if camera_dist is <inf
-    --no_stars                 Hide sink particles
-    --no_overwrite             Overwrite existing files if they already exist
-    --backend=<b>              matplotlib vs PIL [default: PIL]
-    --id_mask=<file>          .npy file containing the gas particle IDs to be plotted
-    --dir=<x,y,z>              Coordinate direction to orient the image along - x, y, or z. It also accepts vector values [default: z] 
-    --target_time=<f>          If set to nonzero, SinkVis will try to make a single image by interpolating from the available files [default: 0.0] 
-    --limits=<min,max>         Dynamic range of surface density colormap
-    --v_limits=<min,max>       Dynamic range of kinematic map in km/s
-    --SHO_RGB_norm=<f>         Normalization constant for narrow band plot, set automatically by default. If a vector is provided, then each channel is normalized by the correponding component [default: 0.0]
-    --camera_distance=<D>      Camera distance if perspective rendering is required [default: inf]
+    -h --help                    Show this screen.
+    --tasks=<task1,task2...>     List of types of the plots you want to make for each frame [default: SigmaGas]
+    --rmax=<pc>                  Maximum radius of plot window; defaults to box size/10. Note that this is FOV/2 in radians if camera_dist is <inf
+    --no_stars                   Hide sink particles
+    --no_overwrite               Overwrite existing files if they already exist
+    --backend=<b>                matplotlib vs PIL [default: PIL]
+    --id_mask=<file>            .npy file containing the gas particle IDs to be plotted
+    --dir=<x,y,z>                Coordinate direction to orient the image along - x, y, or z. It also accepts vector values [default: z] 
+    --target_time=<f>            If set to nonzero, SinkVis will try to make a single image by interpolating from the available files [default: 0.0] 
+    --limits=<min,max>           Dynamic range of surface density colormap
+    --v_limits=<min,max>         Dynamic range of kinematic map in km/s
+    --SHO_RGB_norm=<f>           Normalization constant for narrow band plot, set automatically by default. If a vector is provided, then each channel is normalized by the correponding component [default: 0.0]
+    --camera_distance=<D>        Camera distance if perspective rendering is required [default: inf]
     --freeze_rotation=<num1,num2,...> Snapshot numbers at which to add a freeze-frame rotation [default: None]
-    --cmap=<name>              Name of colormap to use [default: viridis]
-    --cool_cmap=<name>         Name of colormap to use for plot_cool_map, defaults to same as cmap [default: magma]
-    --interp_fac=<N>           Number of interpolating frames per snapshot [default: 1]
-    --np=<N>                   Number of processors to run on [default: 1]
-    --np_render=<N>            Number of openMP threads to run rendering on (-1 uses all available cores divided by --np) [default: 1]
-    --res=<N>                  Image resolution [default: 1024]
-    --center_on_star           Center image on the Nth most-massive sink particle
-    --center_on_ID=<ID>        Center image on sink particle with specific ID, does not center if zero [default: 0]
-    --plot_cool_map            Plots surface density+kinematics map that looks cool
-    --outputfolder=<name>      Specifies the folder to save the images and movies to [default: .]
-    --no_timestamp             Flag, if set no timestamp will be put on the images
-    --no_size_scale            Flag, if set no size scale will be put on the images
-    --rescale_hsml=<f>         Factor by which the smoothing lengths of the particles are rescaled [default: 1]
-    --highlight_wind=<f>       Factor by which to increase wind particle masses if you want to highlight them [default: 1]
-    --extinct_stars            Flag on whether to extinct stars
-    --sparse_snaps             Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
-    --equal_frame_times        Ensure frames in render sequence are equally spaced, even if snapshot times are not
-    --outflow_only             Only show gas moving away from the nearest star
-    --realistic_stars          Use amuse-fresco package to generate realistic stellar image
+    --cmap=<name>                Name of colormap to use [default: viridis]
+    --cool_cmap=<name>           Name of colormap to use for plot_cool_map, defaults to same as cmap [default: magma]
+    --interp_fac=<N>             Number of interpolating frames per snapshot [default: 1]
+    --np=<N>                     Number of processors to run on [default: 1]
+    --np_render=<N>              Number of openMP threads to run rendering on (-1 uses all available cores divided by --np) [default: 1]
+    --res=<N>                    Image resolution [default: 1024]
+    --center_on_star             Center image on the Nth most-massive sink particle
+    --center_on_ID=<ID>          Center image on sink particle with specific ID, does not center if zero [default: 0]
+    --plot_cool_map              Plots surface density+kinematics map that looks cool
+    --outputfolder=<name>        Specifies the folder to save the images and movies to [default: .]
+    --no_timestamp               Flag, if set no timestamp will be put on the images
+    --no_size_scale              Flag, if set no size scale will be put on the images
+    --rescale_hsml=<f>           Factor by which the smoothing lengths of the particles are rescaled [default: 1]
+    --highlight_wind=<f>         Factor by which to increase wind particle masses if you want to highlight them [default: 1]
+    --sparse_snaps               Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
+    --equal_frame_times          Ensure frames in render sequence are equally spaced, even if snapshot times are not
+    --outflow_only               Only show gas moving away from the nearest star
+    --realstars                  Use realistic PSFs for stars
+    --realstars_lum_exp=<f>      Exponent p such that luminosities are rescaled by raising to that power [default: 1.0]
+    --realstars_max_lum=<f>      Maximum stellar luminosity in realistic PSF rendering [default: 1.0e3]
+
 """
 
 from docopt import docopt
@@ -44,9 +46,6 @@ from natsort import natsorted
 import numpy as np
 import CrunchSnaps
 from CrunchSnaps.misc_functions import *
-import h5py
-from os.path import exists, abspath
-from glob import glob
 
 taskdict = {
     "SigmaGas": CrunchSnaps.SinkVisSigmaGas,
@@ -58,12 +57,10 @@ taskdict = {
 def parse_inputs_to_jobparams(input):  # parse input parameters to generate a list of job parameters
     arguments = input
     filenames = natsorted(arguments["<files>"])
-    nproc = int(arguments["--np"])
     np_render = int(arguments["--np_render"])
     n_interp = int(arguments["--interp_fac"])
     tasks = arguments["--tasks"].split(",")
     N_tasks = len(tasks)
-    res = int(arguments["--res"])
     direction = arguments["--dir"]
     if arguments["--no_overwrite"]:
         overwrite = False
@@ -81,17 +78,19 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
 
     # parameters that every single task will have in common
     common_params = {i.replace("--", ""): input[i] for i in input}
+    print(common_params["realstars_max_lum"], common_params["realstars_lum_exp"])
     del common_params["<files>"]
     for c, i in common_params.items():
-        if type(i) != str:
+        if not isinstance(i, str):
             continue
         if "," in i and c != "tasks":
             common_params[c] = np.array([float(k) for k in i.split(",")])
-        elif i.replace(".", "").isnumeric() or i == "inf":
+        elif i.replace(".", "").replace("e", "").isnumeric() or i == "inf":
             common_params[c] = float(i)
+
+    print(common_params["realstars_max_lum"], common_params["realstars_lum_exp"])
     common_params.update(
         {
-            "fresco_stars": input["--realistic_stars"],
             "res": int(input["--res"]),
             "limits": (limits if arguments["--limits"] else None),
             "no_timestamp": input["--no_timestamp"],
@@ -101,7 +100,6 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
             "cool_cmap": input["--cool_cmap"],
             "center_on_star": int(input["--center_on_star"]),
             "center_on_ID": int(input["--center_on_ID"]),
-            "extinct_stars": int(input["--extinct_stars"]),
             "sparse_snaps": input["--sparse_snaps"],
             "backend": input["--backend"],
             "overwrite": overwrite,

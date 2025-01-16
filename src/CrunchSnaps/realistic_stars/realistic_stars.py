@@ -1,8 +1,8 @@
 """Routines for rendering stars with realistic Hubble PSFs
 
-Most credit goes to Pelupessy & Riedier, authors of the AMUSE fresco package. 
+Most credit goes to Pelupessy & Rieder, authors of the AMUSE fresco package. 
 
-Ported here to avoid an AMUSE dependency
+Ported here to avoid an external dependency
 
 See https://github.com/rieder/amuse-fresco for the original, much more feature-rich code.
 """
@@ -14,7 +14,6 @@ import numpy as np
 from meshoid import Meshoid
 from meshoid.radiation import dust_ext_opacity, radtransfer
 from scipy.signal import convolve
-from matplotlib import pyplot as plt
 from starforge_tools import star_gas_columns
 from starforge_tools.special_functions import planck_wavelength_integral
 
@@ -59,31 +58,51 @@ def lum_radius_to_Teff(lum, radius):
     return 5770 * np.sqrt(np.sqrt((lum / radius**2)))
 
 
-def make_stars_image_fullRT(snapdata, lum_max_solar=1e3, IMG_RES: int = 2048, IMG_SIZE: float = 10.0, verbose=False):
+def make_stars_image_fullRT(
+    framedata,
+    snapdata,
+    lum_max_solar=1e3,
+    lum_renorm_exponent=1.0,
+    IMG_RES: int = 2048,
+    IMG_SIZE: float = 10.0,
+    extinction=True,
+    I_background=np.zeros(3),
+):
+    xgas, mgas, hgas = framedata.pos, framedata.mass, framedata.hsml
     PIXEL_SIZE = IMG_SIZE / IMG_RES
-    xstar = snapdata["PartType5/Coordinates"]
-    Lstar = snapdata["PartType5/StarLuminosity_Solar"]
-    mstar = snapdata["PartType5/BH_Mass"]
-    num_stars = mstar.shape[0]
-    boxsize = snapdata["BoxSize"]
-    Rstar = snapdata["PartType5/ProtoStellarRadius_inSolar"]
-    xgas = snapdata["PartType0/Coordinates"]
-    mgas = snapdata["PartType0/Masses"]
-    hgas = snapdata["PartType0/SmoothingLength"]
+
+    xstar = snapdata["PartType5/Coordinates"].copy()
+    framedata.DoCoordinateTransform(xstar, np.ones(xstar.shape[0]), np.ones(xstar.shape[0]))
+    if framedata.params["camera_distance"] < np.inf:
+        mask = xstar[:, 2] < 0
+    else:
+        mask = np.ones(xstar.shape[0], dtype=np.bool)
+
+    if not np.any(mask):
+        return np.zeros((IMG_RES, IMG_RES, 3))
+
+    xstar = xstar[mask]
+    mstar = snapdata["PartType5/BH_Mass"][mask]
+    Lstar = snapdata["PartType5/StarLuminosity_Solar"][mask]
+    Rstar = snapdata["PartType5/ProtoStellarRadius_inSolar"][mask]
+    num_stars = xstar.shape[0]
 
     Teff = lum_radius_to_Teff(Lstar, Rstar)
+    Lstar = Lstar**lum_renorm_exponent
     Lband = get_stellar_lum_in_bands(Lstar.clip(0, lum_max_solar), Teff)
 
     num_wavelengths = len(FILTER_WAVELENGTHS_NM)
 
     # dust opacity in cgs converted to solar - evaluated at 555nm
     wavelengths_um = np.array([l / 1e3 for l in FILTER_WAVELENGTHS_NM.values()])
-    kappa_dust_codeunits = dust_ext_opacity(wavelengths_um).to(u.pc**2 / c.M_sun).value
-    kappa_gas = np.array(len(mgas) * [kappa_dust_codeunits])
+    if extinction:
+        kappa_dust_codeunits = dust_ext_opacity(wavelengths_um).to(u.pc**2 / c.M_sun).value
+        kappa_gas = np.array(len(mgas) * [kappa_dust_codeunits])
+    else:
+        kappa_gas = np.zeros_like(mgas)
     j_gas = np.zeros_like(kappa_gas)  # assume dust does not emit
 
     # have to get the star properties now
-    xstar = xstar  # (load_from_snapshot("Coordinates", 4, ".", 600) - center) @ coordinate_basis
     h_star = np.repeat(PIXEL_SIZE, num_stars)
     j_star = np.ones((num_stars, num_wavelengths))
     for i, band in enumerate(FILTER_WAVELENGTHS_NM.keys()):
@@ -97,16 +116,12 @@ def make_stars_image_fullRT(snapdata, lum_max_solar=1e3, IMG_RES: int = 2048, IM
     h_all = np.concatenate([hgas, h_star])
     m_all = np.concatenate([mgas, mstar])
     x_all = np.concatenate([xgas, xstar], axis=0)
-    if verbose:
-        print("raytracing...")
-    I = radtransfer(j_all, m_all, kappa_all, x_all, h_all, IMG_RES, IMG_SIZE, center=np.zeros(3) + 0.5 * boxsize)
-    if verbose:
-        print("done!")
+    intensity = radtransfer(j_all, m_all, kappa_all, x_all, h_all, IMG_RES, IMG_SIZE, i0=I_background)
     image = {}
     psfs = get_psf()
 
     for i, band in enumerate(FILTER_WAVELENGTHS_NM.keys()):
-        image[band] = convolve(I[:, ::-1, i].T, psfs[band], mode="same")
+        image[band] = convolve(intensity[:, ::-1, i].T, psfs[band], mode="same")
 
     image_rgb = np.empty((IMG_RES, IMG_RES, 3))
     image_rgb[:, :, 0] = image["r"]
@@ -114,51 +129,64 @@ def make_stars_image_fullRT(snapdata, lum_max_solar=1e3, IMG_RES: int = 2048, IM
     image_rgb[:, :, 2] = image["b"]
     image_rgb /= image_rgb.mean() * 10
     image_rgb = image_rgb.clip(0, 1)
-    plt.imsave("light_fullRT.png", image_rgb)
+    # plt.imsave("light_fullRT.png", image_rgb)
     return image_rgb
 
 
 def make_stars_image_starsonly(
-    snapdata, lum_max_solar=1e3, IMG_RES: int = 2048, IMG_SIZE: float = 10.0, verbose=False
+    framedata,
+    snapdata,
+    lum_max_solar=1e3,
+    lum_renorm_exponent=1.0,
+    IMG_RES: int = 2048,
+    IMG_SIZE: float = 10.0,
+    extinction=True,
 ):
+    xgas, mgas, hgas = framedata.pos, framedata.mass, framedata.hsml
     PIXEL_SIZE = IMG_SIZE / IMG_RES
-    xstar = snapdata["PartType5/Coordinates"]
-    Lstar = snapdata["PartType5/StarLuminosity_Solar"]
-    mstar = snapdata["PartType5/BH_Mass"]
-    num_stars = mstar.shape[0]
-    boxsize = snapdata["BoxSize"]
-    Rstar = snapdata["PartType5/ProtoStellarRadius_inSolar"]
-    xgas = snapdata["PartType0/Coordinates"]
-    mgas = snapdata["PartType0/Masses"]
-    hgas = snapdata["PartType0/SmoothingLength"]
+    xstar = snapdata["PartType5/Coordinates"].copy()
+    framedata.DoCoordinateTransform(xstar, np.ones(xstar.shape[0]), np.ones(xstar.shape[0]))
+
+    if framedata.params["camera_distance"] < np.inf:
+        mask = xstar[:, 2] < 0
+    else:
+        mask = np.ones(xstar.shape[0], dtype=np.bool)
+
+    if not np.any(mask):
+        return np.zeros((IMG_RES, IMG_RES, 3))
+
+    xstar = xstar[mask]
+    Lstar = snapdata["PartType5/StarLuminosity_Solar"][mask]
+    Rstar = snapdata["PartType5/ProtoStellarRadius_inSolar"][mask]
+    num_stars = xstar.shape[0]
 
     Teff = lum_radius_to_Teff(Lstar, Rstar)
+    Lstar = Lstar**lum_renorm_exponent
 
     # dust opacity in cgs converted to solar - evaluated at 555nm
     wavelengths_um = np.array([l / 1e3 for l in FILTER_WAVELENGTHS_NM.values()])
-    kappa_dust_codeunits = dust_ext_opacity(wavelengths_um).to(u.pc**2 / c.M_sun).value
-
+    if extinction:
+        kappa_dust_codeunits = dust_ext_opacity(wavelengths_um).to(u.pc**2 / c.M_sun).value
+    else:
+        kappa_dust_codeunits = np.zeros_like(wavelengths_um)
     star_columns = star_gas_columns(xstar, xgas, mgas, hgas)
-
-    tau_dust = kappa_dust_codeunits * star_columns[:, None]
-
+    optical_depth = kappa_dust_codeunits * star_columns[:, None]
     Lstar_in_bands = get_stellar_lum_in_bands(Lstar.clip(0, lum_max_solar), Teff)
-    attenuation = np.exp(-tau_dust)
+    attenuation = np.exp(-optical_depth)
 
-    M = Meshoid(xstar, kernel_radius=np.repeat(PIXEL_SIZE, num_stars))  # , n_jobs=1)
+    M = Meshoid(xstar, kernel_radius=np.repeat(PIXEL_SIZE, num_stars))
 
     image = {}
     psfs = get_psf()
-
     for i, band in enumerate(FILTER_WAVELENGTHS_NM.keys()):
-        I = M.SurfaceDensity(
+        intensity = M.SurfaceDensity(
             Lstar_in_bands[band] * attenuation[:, i],
-            center=np.zeros(3) + boxsize / 2,
+            center=np.zeros(3),  # + boxsize / 2,
             conservative=False,
             size=IMG_SIZE,
             res=IMG_RES,
         )
-        image[band] = convolve(I[:, ::-1].T, psfs[band], mode="same")
+        image[band] = convolve(intensity[:, ::-1].T, psfs[band], mode="same")
 
     image_rgb = np.empty((IMG_RES, IMG_RES, 3))
     image_rgb[:, :, 0] = image["r"]
@@ -166,7 +194,7 @@ def make_stars_image_starsonly(
     image_rgb[:, :, 2] = image["b"]
     image_rgb /= image_rgb.mean() * 10
     image_rgb = image_rgb.clip(0, 1)
-    plt.imsave("light_stars.png", image_rgb)
+    # plt.imsave("light_stars.png", image_rgb)
     return image_rgb
 
 
@@ -180,3 +208,22 @@ def get_stellar_lum_in_bands(Lstar, Teff):
         lum_band[band] = frac * Lstar
 
     return lum_band
+
+
+def make_stars_image(
+    framedata,
+    snapdata,
+    lum_max_solar=1e3,
+    lum_renorm_exponent=1.0,
+    IMG_RES: int = 2048,
+    IMG_SIZE: float = 10.0,
+    extinction=True,
+    I_background=None,
+):
+    if I_background is None or np.all(I_background == 0):
+        return make_stars_image_starsonly(
+            framedata, snapdata, lum_max_solar, lum_renorm_exponent, IMG_RES, IMG_SIZE, extinction
+        )
+    return make_stars_image_fullRT(
+        framedata, snapdata, lum_max_solar, lum_renorm_exponent, IMG_RES, IMG_SIZE, extinction, I_background
+    )

@@ -15,12 +15,10 @@ setup(
     name="CrunchSnaps",
     version="0.1",
     description="Package for running efficient passes on GIZMO simulation data",
-    #      long_description=long_description,
     url="http://github.com/mikegrudic/CrunchSnaps",
     author="Mike Grudić",
     author_email="mike.grudich@gmail.com",
     license="MIT",
-    #      packages=['meshoid'],
     project_urls={
         "Bug Tracker": "https://github.com/mikegrudic/CrunchSnaps",
     },
@@ -34,4 +32,5 @@ setup(
     python_requires=">=3.6",
     zip_safe=False,
     install_requires=install_requires,
+    include_package_data=True
 )
