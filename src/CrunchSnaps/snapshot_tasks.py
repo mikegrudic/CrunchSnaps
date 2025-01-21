@@ -126,7 +126,7 @@ class SinkVis(Task):
                 os.mkdir(mapdir)
             except Exception as e:
                 print(f"Exception when loading map: {e}")
-                continue        
+                continue
 
         if self.params["realstars"]:
             self.required_maps.add("realstars")
@@ -142,7 +142,6 @@ class SinkVis(Task):
                 set_num_threads(self.params["threads"])
         else:
             self.parallel = False
-        
 
         if isfile(self.params["filename"]) and not self.params["overwrite"]:
             self.RequiredSnapdata = []
@@ -161,7 +160,13 @@ class SinkVis(Task):
         ]
 
         if self.params["realstars"]:
-            self.RequiredSnapdata += ["PartType5/ProtoStellarRadius_inSolar", "PartType5/StarLuminosity_Solar", "PartType0/Masses", "PartType0/Coordinates", "PartType0/SmoothingLength"]
+            self.RequiredSnapdata += [
+                "PartType5/ProtoStellarRadius_inSolar",
+                "PartType5/StarLuminosity_Solar",
+                "PartType0/Masses",
+                "PartType0/Coordinates",
+                "PartType0/SmoothingLength",
+            ]
         if any((self.params[k] for k in ("center_on_star", "center_on_ID", "center_on_densest"))):
             self.RequiredSnapdata += ["PartType0/Density", "PartType0/Coordinates"]
         if self.params["outflow_only"]:
@@ -411,7 +416,7 @@ class SinkVis(Task):
                         IMG_SIZE=2 * self.params["rmax"],
                         extinction=self.params["realstars_extinction"],
                         I_background=self.params["realstars_background"],
-                        threads=self.params["threads"]
+                        threads=self.params["threads"],
                     )
                 np.savez_compressed(self.map_files["realstars"], realstars=self.maps["realstars"])
                 img = plt.imread(fname)
@@ -619,7 +624,9 @@ class SinkVisSigmaGas(SinkVis):
 
 class SinkVisCoolMap(SinkVis):
     def __init__(self, params):
-        self.required_maps = set(["sigma_gas", "sigma_1D"])  # physical rendered quantities that can get saved and reused
+        self.required_maps = set(
+            ["sigma_gas", "sigma_1D"]
+        )  # physical rendered quantities that can get saved and reused
         super().__init__(params)
         if self.TaskDone:
             return
