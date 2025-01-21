@@ -141,7 +141,7 @@ def make_stars_image_starsonly(
     IMG_RES: int = 2048,
     IMG_SIZE: float = 10.0,
     extinction=True,
-    threads=-1
+    threads=-1,
 ):
     xgas, mgas, hgas = framedata.pos, framedata.mass, framedata.hsml
     PIXEL_SIZE = IMG_SIZE / IMG_RES
@@ -220,11 +220,11 @@ def make_stars_image(
     IMG_SIZE: float = 10.0,
     extinction=True,
     I_background=None,
-    threads=-1
+    threads=-1,
 ):
     if I_background is None or np.all(I_background == 0):
         return make_stars_image_starsonly(
-            framedata, snapdata, lum_max_solar, lum_renorm_exponent, IMG_RES, IMG_SIZE, extinction,threads=threads
+            framedata, snapdata, lum_max_solar, lum_renorm_exponent, IMG_RES, IMG_SIZE, extinction, threads=threads
         )
     return make_stars_image_fullRT(
         framedata, snapdata, lum_max_solar, lum_renorm_exponent, IMG_RES, IMG_SIZE, extinction, I_background
