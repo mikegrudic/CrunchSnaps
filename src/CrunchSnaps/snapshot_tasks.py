@@ -126,7 +126,10 @@ class SinkVis(Task):
                 os.mkdir(mapdir)
             except Exception as e:
                 print(f"Exception when loading map: {e}")
-                continue
+                continue        
+
+        if self.params["realstars"]:
+            self.required_maps.add("realstars")
 
         # filename for the saved maps will by MAPNAME_(hash # of input params)
         self.map_files = dict([(m, mapdir + "/" + m + "_" + self.params_hash) for m in self.required_maps])
@@ -139,6 +142,7 @@ class SinkVis(Task):
                 set_num_threads(self.params["threads"])
         else:
             self.parallel = False
+        
 
         if isfile(self.params["filename"]) and not self.params["overwrite"]:
             self.RequiredSnapdata = []
@@ -157,7 +161,7 @@ class SinkVis(Task):
         ]
 
         if self.params["realstars"]:
-            self.RequiredSnapdata += ["PartType5/ProtoStellarRadius_inSolar", "PartType5/StarLuminosity_Solar"]
+            self.RequiredSnapdata += ["PartType5/ProtoStellarRadius_inSolar", "PartType5/StarLuminosity_Solar", "PartType0/Masses", "PartType0/Coordinates", "PartType0/SmoothingLength"]
         if any((self.params[k] for k in ("center_on_star", "center_on_ID", "center_on_densest"))):
             self.RequiredSnapdata += ["PartType0/Density", "PartType0/Coordinates"]
         if self.params["outflow_only"]:
@@ -171,7 +175,7 @@ class SinkVis(Task):
                 print("Loading %s map from %s" % (mapname, self.map_files[mapname]))
                 try:
                     self.maps[mapname] = np.load(self.map_files[mapname] + ".npz")[mapname]
-                except:
+                except Exception as e:
                     print(
                         "Error when loading file %s! Removing potentially corrupted file..." % self.map_files[mapname]
                     )
@@ -397,18 +401,22 @@ class SinkVis(Task):
         if self.params["backend"] == "PIL":
             fname = self.params["filename_incomplete"]
             if self.params["realstars"]:  # use realstars for stellar images
-                realstars_image = make_stars_image(
-                    self,
-                    snapdata,
-                    lum_max_solar=self.params["realstars_max_lum"],
-                    lum_renorm_exponent=self.params["realstars_lum_exponent"],
-                    IMG_RES=self.params["res"],
-                    IMG_SIZE=2 * self.params["rmax"],
-                    extinction=self.params["realstars_extinction"],
-                    I_background=self.params["realstars_background"],  # 1e-1 * np.ones(5),
-                )
+                if not "realstars" in self.maps:
+                    self.maps["realstars"] = make_stars_image(
+                        self,
+                        snapdata,
+                        lum_max_solar=self.params["realstars_max_lum"],
+                        lum_renorm_exponent=self.params["realstars_lum_exponent"],
+                        IMG_RES=self.params["res"],
+                        IMG_SIZE=2 * self.params["rmax"],
+                        extinction=self.params["realstars_extinction"],
+                        I_background=self.params["realstars_background"],
+                        threads=self.params["threads"]
+                    )
+                np.savez_compressed(self.map_files["realstars"], realstars=self.maps["realstars"])
                 img = plt.imread(fname)
-                plt.imsave(fname, np.clip(img[:, :, :3] + realstars_image, 0, 1))
+                plt.imsave(fname, np.clip(img[:, :, :3] + self.maps["realstars"], 0, 1))
+
             else:  # use derpy PIL circles
                 self.DoCoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))
                 F = Image.open(fname)
@@ -524,7 +532,7 @@ class SinkVis(Task):
 
 class SinkVisSigmaGas(SinkVis):
     def __init__(self, params):
-        self.required_maps = ["sigma_gas"]
+        self.required_maps = set(["sigma_gas"])
         super().__init__(params)
         if self.TaskDone:
             return
@@ -611,7 +619,7 @@ class SinkVisSigmaGas(SinkVis):
 
 class SinkVisCoolMap(SinkVis):
     def __init__(self, params):
-        self.required_maps = ["sigma_gas", "sigma_1D"]  # physical rendered quantities that can get saved and reused
+        self.required_maps = set(["sigma_gas", "sigma_1D"])  # physical rendered quantities that can get saved and reused
         super().__init__(params)
         if self.TaskDone:
             return
@@ -718,7 +726,7 @@ class SinkVisCoolMap(SinkVis):
 
 class SinkVisNarrowbandComposite(SinkVis):
     def __init__(self, params):
-        self.required_maps = ["SHO_RGB"]  # RGB map of SII, Halpha, and OIII
+        self.required_maps = set(["SHO_RGB"])  # RGB map of SII, Halpha, and OIII
         super().__init__(params)
         if self.TaskDone:
             return
