@@ -434,7 +434,7 @@ class SinkVis(Task):
                 for j in np.arange(len(X_star)):
                     X = X_star[j]
                     ms = m_star[j]
-                    if ms==0:
+                    if ms == 0:
                         continue
                     # if ms < self.params["sink_scale"]:
                     #  continue
