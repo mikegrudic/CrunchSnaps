@@ -24,9 +24,6 @@ def DoTasksForSimulation(
         return  # no work to do so just quit
 
     snaps = natsorted(snaps)
-
-    N_task_types = len(task_types)
-
     if snaptime_dict is None:
         snaptime_dict = get_snapshot_time_dict(snaps)
 
@@ -64,9 +61,7 @@ def DoTasksForSimulation(
     # note that params must be sorted by time!
 
     index_chunks = np.array_split(np.arange(N_params), nproc)
-    chunks = [
-        (i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)
-    ]
+    chunks = [(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
         #        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
         Parallel(n_jobs=nproc, backend="loky")(delayed(DoParamsPass)(c, id_mask=id_mask) for c in chunks)
@@ -235,16 +230,6 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
                 if field in stuff_to_interp_log:
                     positive = (f1 > 0) & (f2 > 0)
 
-                    if sparse_snaps:
-                        # Since the snapshots are too sparse to interpolate quantities, we need to be a bit more celver in interpolating, espacially the fast changing quantitiews.
-                        pass
-                        ##Example, where we just use the geometric mean of the quantities in neighboring snapshots without any interpolation. An alternative is to add them to stuff_to_leave_as_is
-                        # if (field in stuff_to_keep_lowest):
-                        # wt1 = 0.5 * np.ones_like(wt1)
-                        # else:
-                        # wt1 = (t2 - t)/(t2 - t1)* np.ones_like(f1)
-                        # wt2 = 1.0 - wt1
-
                     # we interpolate linearily for cells where the value in either snapashots is non-positive, log for the rest
                     if np.any(~positive):
                         interpolated_data[field] = f1 * wt1 + f2 * wt2
@@ -287,10 +272,8 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
         # attempt to guess if this is a cosmological simulation from the agreement or lack thereof between time and redshift. note at t=1,z=0, even if non-cosmological, this won't do any harm
         if np.abs(time * (1.0 + z) - 1.0) < 1.0e-6:
             cosmological = True
-            ascale = time
         else:
             cosmological = False
-            ascale = 1
 
         for field in required_snapdata:
             if field in F.keys():
@@ -299,17 +282,15 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
                     snapdata[field] = np.int_(snapdata[field])  # cast to int for things that should be signed integers
 
                 if cosmological:
+                    ascale = time
                     if "Coordinates" in field or "SmoothingLength" in field:
-                        snapdata[field] *= time / hubble
+                        snapdata[field] *= ascale / hubble
                     if "Mass" in field:
                         snapdata[field] /= hubble
                     if "Velocities" in field:
-                        snapdata[field] *= time**0.5
+                        snapdata[field] *= ascale**0.5
                     if "Density" in field or "Pressure" in field:
-                        snapdata[field] *= 1 / hubble / (time / hubble) ** 3
-    #            else: #data missing from snapshot
-    #                print("%d: %s missing in snapshot %s"%(process_num, field, snappath))
-    #                snapdata[field] = np.array([])
+                        snapdata[field] *= 1 / hubble / (ascale / hubble) ** 3
 
     id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
     for ptype in ptypes_toread:
@@ -348,15 +329,19 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
     # lastly if we have a particle mask, zero out the masked-out entries
 
     if id_mask:
-        ids = np.load(id_mask)
-        ids = ids.clip(0, wind_ids.min())
+        mask_ids = np.load(id_mask)
+        mask_ids = mask_ids.clip(0, wind_ids.min())
 
-        for f, data in snapdata.items():
-            if "/Masses" in f:
-                idx = np.isin(snapdata[f.replace("Masses", "ParticleIDs")], ids)
-                data *= idx
-            if "/BH_Mass" in f:
-                idx = np.isin(snapdata[f.replace("BH_Mass", "ParticleIDs")], ids)
-                data *= idx
+        for field in snapdata.keys():
+            if field == "Header" or "ParticleIDs" in field:
+                continue
+            ptype = field.split("/")[0]
+            index_tokeep = np.isin(snapdata[ptype + "/ParticleIDs"], mask_ids)
+            # print(index_tokeep.shape[0], snapdata[])
+            if snapdata[field].shape[0] > 0:
+                snapdata[field] = snapdata[field][index_tokeep]
+        for field in snapdata.keys():
+            if "ParticleIDs" in field:
+                snapdata[field] = snapdata[field][np.isin(snapdata[field], mask_ids)]
 
     return snapdata

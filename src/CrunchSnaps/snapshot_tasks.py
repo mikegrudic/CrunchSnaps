@@ -74,8 +74,8 @@ class SinkVis(Task):
             "center_on_densest": False,
             "realstars": True,
             "realstars_extinction": True,
-            "realstars_max_lum": 1e3,
-            "realstars_lum_exponent": 1.0,
+            "realstars_max_lum": 1e7,
+            "realstars_lum_exp": 1.0,
             "realstars_background": 0,
             "threads": -1,
             "cubemap_dir": "forward",
@@ -111,6 +111,8 @@ class SinkVis(Task):
             "camera_up",
             "rescale_hsml",
             "res",
+            "realstars_max_lum",
+            "realstars_lum_exp",
         ]
         dump = {}
         for k in self.params_that_affect_maps:
@@ -411,7 +413,7 @@ class SinkVis(Task):
                         self,
                         snapdata,
                         lum_max_solar=self.params["realstars_max_lum"],
-                        lum_renorm_exponent=self.params["realstars_lum_exponent"],
+                        lum_renorm_exponent=self.params["realstars_lum_exp"],
                         IMG_RES=self.params["res"],
                         IMG_SIZE=2 * self.params["rmax"],
                         extinction=self.params["realstars_extinction"],
@@ -575,11 +577,8 @@ class SinkVisSigmaGas(SinkVis):
                 2 * self.params["rmax"],
                 res=self.params["res"],
                 parallel=self.parallel,
-            ).T
-            # clip so that 0's are just given the min nonzero value
-            nonzero = self.maps["sigma_gas"] > 0
-            if np.any(nonzero):
-                self.maps["sigma_gas"] = self.maps["sigma_gas"].clip(self.maps["sigma_gas"][nonzero].min())
+            ).T.clip(1e-100)
+            # self.maps["sigma_gas"] = self.maps["sigma_gas"]
             np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])
 
     def MakeImages(self, snapdata):
@@ -587,12 +586,16 @@ class SinkVisSigmaGas(SinkVis):
             self.params["limits"] is None
         ):  # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp(
-                [0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat
-            )
+            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
+            # self.params["limits"][1] = max(self.params["limits"][0])
+        #            else:
+        # self.params["limits"] = 1e100, 1.1e100
 
         vmin, vmax = self.params["limits"]
-        f = (np.log10(self.maps["sigma_gas"]) - np.log10(vmin)) / (np.log10(vmax) - np.log10(vmin))
+        if vmax > vmin:
+            f = (np.log10(self.maps["sigma_gas"]) - np.log10(vmin)) / (np.log10(vmax) - np.log10(vmin))
+        else:
+            f = np.zeros_like(self.maps["sigma_gas"])
 
         if self.params["backend"] == "PIL":
             plt.imsave(
@@ -705,9 +708,7 @@ class SinkVisCoolMap(SinkVis):
         if self.params["limits"] is None:
             # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp(
-                [0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat
-            )
+            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
         if self.params["v_limits"] is None:
             #            Ekin_flat = np.sort((self.maps["sigma_gas"]*self.maps["sigma_1D"]**2).flatten()[self.maps["sigma_1D"].flatten().argsort()])
             self.params["v_limits"] = np.percentile(
