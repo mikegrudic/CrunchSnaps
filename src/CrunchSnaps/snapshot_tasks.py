@@ -586,7 +586,9 @@ class SinkVisSigmaGas(SinkVis):
             self.params["limits"] is None
         ):  # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
+            self.params["limits"] = np.interp(
+                [0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat
+            )
             # self.params["limits"][1] = max(self.params["limits"][0])
         #            else:
         # self.params["limits"] = 1e100, 1.1e100
@@ -708,7 +710,9 @@ class SinkVisCoolMap(SinkVis):
         if self.params["limits"] is None:
             # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
+            self.params["limits"] = np.interp(
+                [0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat
+            )
         if self.params["v_limits"] is None:
             #            Ekin_flat = np.sort((self.maps["sigma_gas"]*self.maps["sigma_1D"]**2).flatten()[self.maps["sigma_1D"].flatten().argsort()])
             self.params["v_limits"] = np.percentile(
