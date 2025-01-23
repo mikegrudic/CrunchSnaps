@@ -60,7 +60,9 @@ def DoTasksForSimulation(
     # note that params must be sorted by time!
 
     index_chunks = np.array_split(np.arange(N_params), nproc)
-    chunks = [(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
+    chunks = [
+        (i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)
+    ]
     if nproc > 1:
         #        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
         Parallel(n_jobs=nproc, backend="loky")(delayed(DoParamsPass)(c, id_mask=id_mask) for c in chunks)
