@@ -77,5 +77,6 @@ def get_snapshot_time_dict(snaps, save_to_file=False):
 def snapnum_from_path(path):
     try:
         return int(path.split("snapshot_")[1].split("_")[0].split(".")[0])
-    except:
+    except Exception as e:
+        print(f"Exception {f} when reading {path}")
         return 0
