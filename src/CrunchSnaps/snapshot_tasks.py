@@ -208,10 +208,12 @@ class SinkVis(Task):
                 tilt, pan = -tilt, -pan
             # first pan
             cosphi, sinphi = np.cos(np.pi * pan / 180), np.sin(np.pi * pan / 180)
-            x[:] = np.stack([cosphi * x[:, 0] + sinphi * x[:, 2], x[:, 1], -sinphi * x[:, 0] + cosphi * x[:, 2]],1)
+            x[:] = np.stack([cosphi * x[:, 0] + sinphi * x[:, 2], x[:, 1], -sinphi * x[:, 0] + cosphi * x[:, 2]], 1)
             # then tilt
             costheta, sintheta = np.cos(np.pi * tilt / 180), np.sin(np.pi * tilt / 180)
-            x[:] = np.stack([x[:, 0], costheta * x[:, 1] + sintheta * x[:, 2], -sintheta * x[:, 1] + costheta * x[:, 2]],1)
+            x[:] = np.stack(
+                [x[:, 0], costheta * x[:, 1] + sintheta * x[:, 2], -sintheta * x[:, 1] + costheta * x[:, 2]], 1
+            )
         else:  # we have a camera position and coordinate basis
             if contravariant:
                 x[:] = (self.camera_matrix_vectors @ x.T).T  # note that @ performs matrix multiplication
