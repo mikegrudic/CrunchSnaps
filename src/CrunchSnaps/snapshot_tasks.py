@@ -208,10 +208,12 @@ class SinkVis(Task):
                 tilt, pan = -tilt, -pan
             # first pan
             cosphi, sinphi = np.cos(np.pi * pan / 180), np.sin(np.pi * pan / 180)
-            x[:] = np.stack([cosphi * x[:, 0] + sinphi * x[:, 2], x[:, 1], -sinphi * x[:, 0] + cosphi * x[:, 2]],1)
+            x[:] = np.stack([cosphi * x[:, 0] + sinphi * x[:, 2], x[:, 1], -sinphi * x[:, 0] + cosphi * x[:, 2]], 1)
             # then tilt
             costheta, sintheta = np.cos(np.pi * tilt / 180), np.sin(np.pi * tilt / 180)
-            x[:] = np.stack([x[:, 0], costheta * x[:, 1] + sintheta * x[:, 2], -sintheta * x[:, 1] + costheta * x[:, 2]],1)
+            x[:] = np.stack(
+                [x[:, 0], costheta * x[:, 1] + sintheta * x[:, 2], -sintheta * x[:, 1] + costheta * x[:, 2]], 1
+            )
         else:  # we have a camera position and coordinate basis
             if contravariant:
                 x[:] = (self.camera_matrix_vectors @ x.T).T  # note that @ performs matrix multiplication
@@ -575,9 +577,7 @@ class SinkVisSigmaGas(SinkVis):
             self.params["limits"] is None
         ):  # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp(
-                [0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat
-            )
+            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
             # self.params["limits"][1] = max(self.params["limits"][0])
         #            else:
         # self.params["limits"] = 1e100, 1.1e100
@@ -700,9 +700,7 @@ class SinkVisCoolMap(SinkVis):
         if self.params["limits"] is None:
             # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp(
-                [0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat
-            )
+            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
         if self.params["v_limits"] is None:
             #            Ekin_flat = np.sort((self.maps["sigma_gas"]*self.maps["sigma_1D"]**2).flatten()[self.maps["sigma_1D"].flatten().argsort()])
             self.params["v_limits"] = np.percentile(
