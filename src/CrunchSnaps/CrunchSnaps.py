@@ -1,4 +1,3 @@
-from multiprocessing import Pool
 from joblib import Parallel, delayed
 from .snapshot_tasks import *
 from .misc_functions import *
@@ -169,7 +168,7 @@ def DoParamsPass(chunk, id_mask=None):
         data = [t.DoTask(snapdata_for_thistime) for t in task_instances]
 
 
-def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
+def SnapInterpolate(t, t1, t2, snapdata_buffer):
     stuff_to_skip = [
         "Header",
         "PartType0/ParticleIDs",

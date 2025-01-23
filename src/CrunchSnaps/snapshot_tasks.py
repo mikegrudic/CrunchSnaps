@@ -7,9 +7,6 @@ from meshoid.radiation import radtransfer
 import aggdraw
 from skimage.color import rgb2hsv, hsv2rgb
 from PIL import Image, ImageDraw, ImageFont
-import matplotlib
-
-matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 from .realistic_stars import make_stars_image
 from numba import set_num_threads
@@ -18,6 +15,7 @@ from os.path import isfile
 import json
 import os
 import sys
+import matplotlib
 
 hashseed = os.getenv("PYTHONHASHSEED")
 if not hashseed:
@@ -136,7 +134,6 @@ class SinkVis(Task):
         # filename for the saved maps will by MAPNAME_(hash # of input params)
         self.map_files = dict([(m, mapdir + "/" + m + "_" + self.params_hash) for m in self.required_maps])
         self.maps = {}
-
         if self.params["threads"] != 1:
             self.parallel = True
             # if negative, just use all available threads, otherwise set to desired value
@@ -211,10 +208,10 @@ class SinkVis(Task):
                 tilt, pan = -tilt, -pan
             # first pan
             cosphi, sinphi = np.cos(np.pi * pan / 180), np.sin(np.pi * pan / 180)
-            x[:] = np.c_[cosphi * x[:, 0] + sinphi * x[:, 2], x[:, 1], -sinphi * x[:, 0] + cosphi * x[:, 2]]
+            x[:] = np.stack([cosphi * x[:, 0] + sinphi * x[:, 2], x[:, 1], -sinphi * x[:, 0] + cosphi * x[:, 2]],1)
             # then tilt
             costheta, sintheta = np.cos(np.pi * tilt / 180), np.sin(np.pi * tilt / 180)
-            x[:] = np.c_[x[:, 0], costheta * x[:, 1] + sintheta * x[:, 2], -sintheta * x[:, 1] + costheta * x[:, 2]]
+            x[:] = np.stack([x[:, 0], costheta * x[:, 1] + sintheta * x[:, 2], -sintheta * x[:, 1] + costheta * x[:, 2]],1)
         else:  # we have a camera position and coordinate basis
             if contravariant:
                 x[:] = (self.camera_matrix_vectors @ x.T).T  # note that @ performs matrix multiplication
@@ -277,12 +274,10 @@ class SinkVis(Task):
         if self.params["outflow_only"]:
             if "PartType5/Coordinates" in snapdata.keys():
                 # find nearest star to each gas cell
-                dist, ngb = KDTree(snapdata["PartType5/Coordinates"]).query(self.pos)
+                _, ngb = KDTree(snapdata["PartType5/Coordinates"]).query(self.pos)
                 dx = self.pos - snapdata["PartType5/Coordinates"][ngb]
                 dv = snapdata["PartType0/Velocities"] - snapdata["PartType5/Velocities"][ngb]
                 self.mass *= (dx * dv).sum(1) > 0
-
-        #            dv = self.
 
         # Setting up coordinate basis
         if self.params["camera_dir"] is not None:
@@ -399,12 +394,7 @@ class SinkVis(Task):
             return
         X_star = np.copy(snapdata["PartType5/Coordinates"])
         m_star = snapdata["PartType5/BH_Mass"]
-        if ("PartType5/StarLuminosity_Solar" in snapdata.keys()) and len(snapdata["PartType5/StarLuminosity_Solar"]):
-            lum = snapdata["PartType5/StarLuminosity_Solar"]
-        # stage = snapdata["PartType5/ProtoStellarStage"]
-        else:
-            lum = None
-            # stage = None
+
         if self.params["backend"] == "PIL":
             fname = self.params["filename_incomplete"]
             if self.params["realstars"]:  # use realstars for stellar images
@@ -524,7 +514,6 @@ class SinkVis(Task):
 
     #            if self.params["camera_distance"] < np.inf and self.params["FOV"] is None:
     #                self.params["rmax"] /= self.params["camera_distance"] # convert to angular assuming rmax is real-space half-width at the focal distance
-
     def DoTask(self, snapdata):
         if self.TaskDone:
             return
@@ -602,6 +591,7 @@ class SinkVisSigmaGas(SinkVis):
                 self.params["filename_incomplete"], plt.get_cmap(self.params["cmap"])(np.flipud(f))
             )  # NOTE - we invert this to get the coordinate system right
         elif self.params["backend"] == "matplotlib":
+            matplotlib.use("Agg")
             self.fig, self.ax = plt.subplots(figsize=(4, 4))
             X = Y = np.linspace(-self.params["rmax"], self.params["rmax"], self.params["res"])
             X, Y = np.meshgrid(X, Y)
@@ -720,7 +710,6 @@ class SinkVisCoolMap(SinkVis):
         fgas = np.clip(fgas, 0, 1)
         ls = LightSource(azdeg=315, altdeg=45)
         # lightness = ls.hillshade(z, vert_exag=4)
-        # print(self.params["v_limits"])
         mapcolor = plt.get_cmap(self.params["cool_cmap"])(
             np.log10(self.maps["sigma_1D"] / self.params["v_limits"][0])
             / np.log10(self.params["v_limits"][1] / self.params["v_limits"][0])
