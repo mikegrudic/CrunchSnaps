@@ -71,7 +71,7 @@ class SinkVis(Task):
             "center_on_ID": False,
             "center_on_densest": False,
             "realstars": True,
-            "realstars_extinction": True,
+            "realstars_opacity": 1.0,
             "realstars_max_lum": 1e7,
             "realstars_lum_exp": 1.0,
             "realstars_background": 0,
@@ -111,6 +111,7 @@ class SinkVis(Task):
             "res",
             "realstars_max_lum",
             "realstars_lum_exp",
+            "realstars_opacity",
         ]
         dump = {}
         for k in self.params_that_affect_maps:
@@ -390,7 +391,7 @@ class SinkVis(Task):
         F.close()
 
     def AddStarsToImage(self, snapdata):
-        if not "PartType5/Coordinates" in snapdata.keys():
+        if "PartType5/Coordinates" not in snapdata.keys():
             return
         if not len(snapdata["PartType5/Coordinates"]):
             return
@@ -400,7 +401,7 @@ class SinkVis(Task):
         if self.params["backend"] == "PIL":
             fname = self.params["filename_incomplete"]
             if self.params["realstars"]:  # use realstars for stellar images
-                if not "realstars" in self.maps:
+                if "realstars" not in self.maps:
                     self.maps["realstars"] = make_stars_image(
                         self,
                         snapdata,
@@ -408,7 +409,7 @@ class SinkVis(Task):
                         lum_renorm_exponent=self.params["realstars_lum_exp"],
                         IMG_RES=self.params["res"],
                         IMG_SIZE=2 * self.params["rmax"],
-                        extinction=self.params["realstars_extinction"],
+                        opacity_scalefac=self.params["realstars_opacity"],
                         I_background=self.params["realstars_background"],
                         threads=self.params["threads"],
                     )

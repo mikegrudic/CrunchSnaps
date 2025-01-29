@@ -38,7 +38,7 @@ Options:
     --realstars                  Use realistic PSFs for stars
     --realstars_lum_exp=<f>      Exponent p such that luminosities are rescaled by raising to that power [default: 1.0]
     --realstars_max_lum=<f>      Maximum stellar luminosity in realistic PSF rendering [default: 1.0e3]
-
+    --realstars_opacity=<f>      Opacity scaling factor for realstars [default: 1.0]
 """
 
 from docopt import docopt
@@ -102,7 +102,7 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
             "backend": input["--backend"],
             "overwrite": overwrite,
             "id_mask": input["--id_mask"],
-            "no_stars": input["--no_stars"],
+            "no_stars": input["--no_stars"]
         }
     )
 

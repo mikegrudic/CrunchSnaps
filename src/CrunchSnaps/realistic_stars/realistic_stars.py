@@ -65,7 +65,7 @@ def make_stars_image_fullRT(
     lum_renorm_exponent=1.0,
     IMG_RES: int = 2048,
     IMG_SIZE: float = 10.0,
-    extinction=True,
+    opacity_scalefac=1.0,
     I_background=np.zeros(3),
 ):
     xgas, mgas, hgas = framedata.pos, framedata.mass, framedata.hsml
@@ -95,8 +95,8 @@ def make_stars_image_fullRT(
 
     # dust opacity in cgs converted to solar - evaluated at 555nm
     wavelengths_um = np.array([l / 1e3 for l in FILTER_WAVELENGTHS_NM.values()])
-    if extinction:
-        kappa_dust_codeunits = dust_ext_opacity(wavelengths_um).to(u.pc**2 / c.M_sun).value
+    if opacity_scalefac > 0:
+        kappa_dust_codeunits = opacity_scalefac * dust_ext_opacity(wavelengths_um).to(u.pc**2 / c.M_sun).value
         kappa_gas = np.array(len(mgas) * [kappa_dust_codeunits])
     else:
         kappa_gas = np.zeros_like(mgas)
@@ -140,7 +140,7 @@ def make_stars_image_starsonly(
     lum_renorm_exponent=1.0,
     IMG_RES: int = 2048,
     IMG_SIZE: float = 10.0,
-    extinction=True,
+    opacity_scalefac=1.0,
     threads=-1,
 ):
     xgas, mgas, hgas = framedata.pos, framedata.mass, framedata.hsml
@@ -166,8 +166,8 @@ def make_stars_image_starsonly(
 
     # dust opacity in cgs converted to solar - evaluated at 555nm
     wavelengths_um = np.array([l / 1e3 for l in FILTER_WAVELENGTHS_NM.values()])
-    if extinction:
-        kappa_dust_codeunits = dust_ext_opacity(wavelengths_um).to(u.pc**2 / c.M_sun).value
+    if opacity_scalefac > 0:
+        kappa_dust_codeunits = opacity_scalefac * dust_ext_opacity(wavelengths_um).to(u.pc**2 / c.M_sun).value
     else:
         kappa_dust_codeunits = np.zeros_like(wavelengths_um)
     star_columns = star_gas_columns(xstar, xgas, mgas, hgas, threads=threads)
@@ -218,14 +218,21 @@ def make_stars_image(
     lum_renorm_exponent=1.0,
     IMG_RES: int = 2048,
     IMG_SIZE: float = 10.0,
-    extinction=True,
+    opacity_scalefac=1.0,
     I_background=None,
     threads=-1,
 ):
     if I_background is None or np.all(I_background == 0):
         return make_stars_image_starsonly(
-            framedata, snapdata, lum_max_solar, lum_renorm_exponent, IMG_RES, IMG_SIZE, extinction, threads=threads
+            framedata,
+            snapdata,
+            lum_max_solar,
+            lum_renorm_exponent,
+            IMG_RES,
+            IMG_SIZE,
+            opacity_scalefac,
+            threads=threads,
         )
     return make_stars_image_fullRT(
-        framedata, snapdata, lum_max_solar, lum_renorm_exponent, IMG_RES, IMG_SIZE, extinction, I_background
+        framedata, snapdata, lum_max_solar, lum_renorm_exponent, IMG_RES, IMG_SIZE, opacity_scalefac, I_background
     )
