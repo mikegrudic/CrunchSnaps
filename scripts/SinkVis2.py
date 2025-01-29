@@ -102,7 +102,7 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
             "backend": input["--backend"],
             "overwrite": overwrite,
             "id_mask": input["--id_mask"],
-            "no_stars": input["--no_stars"]
+            "no_stars": input["--no_stars"],
         }
     )
 
