@@ -13,7 +13,7 @@ if os.path.isfile(requirementPath):
 
 setup(
     name="CrunchSnaps",
-    version="0.1",
+    version="0.11",
     description="Package for running efficient passes on GIZMO simulation data",
     url="http://github.com/mikegrudic/CrunchSnaps",
     author="Mike Grudić",
