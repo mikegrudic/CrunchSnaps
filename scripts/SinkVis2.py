@@ -11,8 +11,8 @@ Options:
     --no_overwrite               Overwrite existing files if they already exist
     --backend=<b>                matplotlib vs PIL [default: PIL]
     --id_mask=<file>            .npy file containing the gas particle IDs to be plotted
-    --dir=<x,y,z>                Coordinate direction to orient the image along - x, y, or z. It also accepts vector values [default: z] 
-    --target_time=<f>            If set to nonzero, SinkVis will try to make a single image by interpolating from the available files [default: 0.0] 
+    --dir=<x,y,z>                Coordinate direction to orient the image along - x, y, or z. It also accepts vector values [default: z]
+    --target_time=<f>            If set to nonzero, SinkVis will try to make a single image by interpolating from the available files [default: 0.0]
     --limits=<min,max>           Dynamic range of surface density colormap
     --v_limits=<min,max>         Dynamic range of kinematic map in km/s
     --SHO_RGB_norm=<f>           Normalization constant for narrow band plot, set automatically by default. If a vector is provided, then each channel is normalized by the correponding component [default: 0.0]
@@ -24,8 +24,9 @@ Options:
     --np=<N>                     Number of processors to run on [default: 1]
     --np_render=<N>              Number of openMP threads to run rendering on (-1 uses all available cores divided by --np) [default: 1]
     --res=<N>                    Image resolution [default: 1024]
-    --center_on_star             Center image on the Nth most-massive sink particle
-    --center_on_ID=<ID>          Center image on sink particle with specific ID, does not center if zero [default: 0]
+    --center=<s>                 Center of the image. Argument can include 3D comma-separated coordinates, a particle
+                                 ID, 'densest' to center on the densest gas, 'median' to center on the median gas cell
+                                 position, or 'massive' to center on the most-massive star [default: None]
     --plot_cool_map              Plots surface density+kinematics map that looks cool
     --outputfolder=<name>        Specifies the folder to save the images and movies to [default: .]
     --no_timestamp               Flag, if set no timestamp will be put on the images
@@ -96,8 +97,7 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
             "outputfolder": input["--outputfolder"],
             "SHO_RGB_norm": SHO_RGB_norm,
             "cool_cmap": input["--cool_cmap"],
-            "center_on_star": int(input["--center_on_star"]),
-            "center_on_ID": int(input["--center_on_ID"]),
+            "center": input["--center"],
             "sparse_snaps": input["--sparse_snaps"],
             "backend": input["--backend"],
             "overwrite": overwrite,

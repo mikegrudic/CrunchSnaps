@@ -30,8 +30,8 @@ def DoTasksForSimulation(
     snaptimes = np.array([snaptime_dict[snapnum_from_path(s)] for s in snaps])
     snapdict = dict(zip(snaptimes, snaps))
 
-    if (not task_params) or (
-        type(task_params) == dict
+    if (not task_params) or isinstance(
+        task_params, dict
     ):  # if task_params is empty or a single dict that we must broadcast
         N_params = (
             len(snaps) * interp_fac
@@ -60,9 +60,7 @@ def DoTasksForSimulation(
     # note that params must be sorted by time!
 
     index_chunks = np.array_split(np.arange(N_params), nproc)
-    chunks = [
-        (i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)
-    ]
+    chunks = [(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
         #        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
         Parallel(n_jobs=nproc, backend="loky")(delayed(DoParamsPass)(c, id_mask=id_mask) for c in chunks)

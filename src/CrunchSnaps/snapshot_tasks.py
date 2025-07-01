@@ -101,6 +101,7 @@ class SinkVis(Task):
             "tilt",
             "FOV",
             "camera_distance",
+            "center",
             "center_on_star",
             "center_on_densest",
             "cubemap_dir",
@@ -167,7 +168,7 @@ class SinkVis(Task):
                 "PartType0/Coordinates",
                 "PartType0/SmoothingLength",
             ]
-        if any((self.params[k] for k in ("center_on_star", "center_on_ID", "center_on_densest"))):
+        if any((self.params[k] for k in ("center", "center_on_star", "center_on_ID", "center_on_densest"))):
             self.RequiredSnapdata += ["PartType0/Density", "PartType0/Coordinates"]
         if self.params["outflow_only"]:
             self.RequiredSnapdata += ["PartType0/Velocities", "PartType5/Velocities"]
@@ -483,32 +484,52 @@ class SinkVis(Task):
             colors = np.int_([np.interp(np.log10(mass_in_msun), [-1, 0, 1], star_colors[:, i]) for i in range(3)])
         return (colors[0], colors[1], colors[2])  # if len(colors)==1 else colors)
 
-    def AssignDefaultParamsFromSnapdata(self, snapdata):
-        if self.params["center"] is None:
-            self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"] * 0.5, 3)  # default
+    def assign_center(self, snapdata):
+        """Assign the center of the image"""
 
-            if self.params["center_on_densest"]:
+        if isinstance(self.params["center"], np.ndarray):
+            if len(self.params["center"]) == 3:
+                return
+
+        match self.params["center"]:
+            case "densest":
                 rho = snapdata["PartType0/Masses"] / snapdata["PartType0/SmoothingLength"] ** 3
                 self.params["center"] = snapdata["PartType0/Coordinates"][rho.argmax()]
-            elif self.params["center_on_ID"]:
+            case "median":
+                self.params["center"] = np.median(snapdata["PartType0/Coordinates"], axis=0)
+            case x if "massive" in x:
+                if "PartType5/Coordinates" in snapdata.keys():
+                    if "=" in self.params["center"]:
+                        num = int(self.params["center"].split("=")[1])
+                    else:
+                        num = 1
+                    self.params["center"] = snapdata["PartType5/Coordinates"][
+                        snapdata["PartType5/BH_Mass"].argsort()[::-1]
+                    ][num - 1]
+                else:
+                    rho = snapdata["PartType0/Masses"] / snapdata["PartType0/SmoothingLength"] ** 3
+                    self.params["center"] = snapdata["PartType0/Coordinates"][rho.argmax()]
+            case x if "ID" in x:
+                if "=" in self.params["center"]:
+                    id = int(self.params["center"].split("=")[1])
+                else:
+                    raise ValueError("Must specify particle ID for center as 'ID=value'")
                 for k, data in snapdata.items():
                     if "IDs" in k:
                         ids = data
                         coords = snapdata[k.replace("ParticleIDs", "Coordinates")]
-                        if self.params["center_on_ID"] in ids and len(ids) == len(coords):
-                            self.params["center"] = coords[ids == self.params["center_on_ID"]]
-            elif self.params["center_on_star"]:
-                if "PartType5/Coordinates" in snapdata.keys():
-                    self.params["center"] = snapdata["PartType5/Coordinates"][
-                        snapdata["PartType5/BH_Mass"].argsort()[::-1]
-                    ][
-                        self.params["center_on_star"] - 1
-                    ]  # center on the n'th most massive star
-                else:  # otherwise center on the densest gas cell
-                    self.params["center"] = snapdata["PartType0/Coordinates"][snapdata["PartType0/Density"].argmax()]
-            # center = self.params["center"]
-        # else:
-        #  center = self.params["center"]
+                        if id in ids:
+                            self.params["center"] = coords[ids == id]
+
+            case x if "," in x:
+                self.params["center"] = np.array([float(s) for s in self.params["center"].split(",")])
+        #            case _:
+
+        if not isinstance(self.params["center"], np.ndarray):
+            self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"] * 0.5, 3)  # default
+
+    def AssignDefaultParamsFromSnapdata(self, snapdata):
+        self.assign_center(snapdata)
         if self.params["rmax"] is None:
             if self.params["camera_distance"] < np.inf:
                 self.params["rmax"] = self.params["FOV"] / 90  # angular width
@@ -578,9 +599,7 @@ class SinkVisSigmaGas(SinkVis):
             self.params["limits"] is None
         ):  # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp(
-                [0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat
-            )
+            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
             # self.params["limits"][1] = max(self.params["limits"][0])
         #            else:
         # self.params["limits"] = 1e100, 1.1e100
@@ -703,9 +722,7 @@ class SinkVisCoolMap(SinkVis):
         if self.params["limits"] is None:
             # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp(
-                [0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat
-            )
+            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
         if self.params["v_limits"] is None:
             #            Ekin_flat = np.sort((self.maps["sigma_gas"]*self.maps["sigma_1D"]**2).flatten()[self.maps["sigma_1D"].flatten().argsort()])
             self.params["v_limits"] = np.percentile(
