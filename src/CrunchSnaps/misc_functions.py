@@ -29,8 +29,11 @@ def NormalizeVector(v):
 
 
 @vectorize
-def NearestImage(x, boxsize):
-    if abs(x) > boxsize / 2:
+def NearestImage(dx, boxsize):
+    """
+    Given a coordinate difference dx, return the *nearest* coordinate difference of the periodic image
+    """
+    if abs(dx) > boxsize / 2:
         return -copysign(boxsize - abs(x), x)
     else:
         return x
