@@ -268,7 +268,9 @@ class SinkVis(Task):
         res = self.params["res"]
         if "PartType0/Coordinates" in snapdata.keys():
             if "PartType0/SmoothingLength" not in snapdata:
-                snapdata["PartType0/SmoothingLength"] = Meshoid(snapdata["PartType0/Coordinates"],boxsize=snapdata["Header"]["BoxSize"]).SmoothingLength()
+                snapdata["PartType0/SmoothingLength"] = Meshoid(
+                    snapdata["PartType0/Coordinates"], boxsize=snapdata["Header"]["BoxSize"]
+                ).SmoothingLength()
             self.pos, self.mass, self.hsml = (
                 np.copy(snapdata["PartType0/Coordinates"]),
                 np.copy(snapdata["PartType0/Masses"]),
