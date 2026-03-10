@@ -2,7 +2,7 @@ import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import LightSource
 from scipy.spatial import KDTree
-from meshoid import GridSurfaceDensity
+from meshoid import GridSurfaceDensity, Meshoid
 from meshoid.radiation import radtransfer
 import aggdraw
 from skimage.color import rgb2hsv, hsv2rgb
@@ -267,6 +267,8 @@ class SinkVis(Task):
     def SetupCoordsAndWeights(self, snapdata):
         res = self.params["res"]
         if "PartType0/Coordinates" in snapdata.keys():
+            if "PartType0/SmoothingLength" not in snapdata:
+                snapdata["PartType0/SmoothingLength"] = Meshoid(snapdata["PartType0/Coordinates"],boxsize=snapdata["Header"]["BoxSize"]).SmoothingLength()
             self.pos, self.mass, self.hsml = (
                 np.copy(snapdata["PartType0/Coordinates"]),
                 np.copy(snapdata["PartType0/Masses"]),
