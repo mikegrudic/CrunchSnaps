@@ -60,7 +60,9 @@ def DoTasksForSimulation(
     # note that params must be sorted by time!
 
     index_chunks = np.array_split(np.arange(N_params), nproc)
-    chunks = [(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
+    chunks = [
+        (i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)
+    ]
     if nproc > 1:
         #        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
         Parallel(n_jobs=nproc, backend="loky")(delayed(DoParamsPass)(c, id_mask=id_mask) for c in chunks)
@@ -208,8 +210,8 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer):
         else:
             id2 = np.array([])
         common_ids = np.intersect1d(id1, id2)
-        idx1[ptype] = np.in1d(np.sort(id1), common_ids)
-        idx2[ptype] = np.in1d(np.sort(id2), common_ids)
+        idx1[ptype] = np.isin(np.sort(id1), common_ids)
+        idx2[ptype] = np.isin(np.sort(id2), common_ids)
 
     for field in snapdata_buffer[t1].keys():
         if not (field in stuff_to_skip):
@@ -302,7 +304,7 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
             ptype == "PartType0" and "PartType0/ParticleChildIDsNumber" in snapdata.keys()
         ):  # if we have to worry about wind IDs and splitting
             child_ids = snapdata["PartType0/ParticleChildIDsNumber"]
-            wind_idx1 = np.in1d(ids, wind_ids)
+            wind_idx1 = np.isin(ids, wind_ids)
             ids[np.invert(wind_idx1)] = ((child_ids << 32) + ids)[np.invert(wind_idx1)]
             if np.any(wind_idx1):
                 progenitor_ids = snapdata["PartType0/ParticleIDGenerationNumber"][wind_idx1]
@@ -314,7 +316,7 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
 
         unique, counts = np.unique(ids, return_counts=True)
         doubles = unique[counts > 1]
-        ids[np.in1d(ids, doubles)] = -1
+        ids[np.isin(ids, doubles)] = -1
 
         id_order[ptype] = ids.argsort()
 
