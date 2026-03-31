@@ -81,6 +81,10 @@ def DoTasksForSimulation(
     index_chunks = np.array_split(np.arange(N_params), nproc)
     chunks = [(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
+        # Set thread limits in env before pool creation — forkserver workers inherit these
+        _t = str(nthreads)
+        for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMBA_NUM_THREADS"):
+            os.environ[var] = _t
         with ProcessPoolExecutor(max_workers=nproc, mp_context=_mp_context) as pool:
             futures = {pool.submit(DoParamsPass, c, id_mask=id_mask): i for i, c in enumerate(chunks)}
             for f in as_completed(futures):
