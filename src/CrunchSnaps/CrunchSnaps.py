@@ -81,10 +81,9 @@ def DoTasksForSimulation(
     index_chunks = np.array_split(np.arange(N_params), nproc)
     chunks = [(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
-        # Set thread limits in env before pool creation — forkserver workers inherit these
-        _t = str(nthreads)
-        for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMBA_NUM_THREADS"):
-            os.environ[var] = _t
+        # Set thread limits in parent env so forkserver workers inherit them;
+        # workers also call _limit_threads() themselves as a fallback
+        _limit_threads(nthreads)
         with ProcessPoolExecutor(max_workers=nproc, mp_context=_mp_context) as pool:
             futures = {pool.submit(DoParamsPass, c, id_mask=id_mask): i for i, c in enumerate(chunks)}
             for f in as_completed(futures):
@@ -108,6 +107,18 @@ def _bounding_snaptimes(time, snaptimes):
     return t1, t2
 
 
+def _limit_threads(n):
+    """Limit all threading backends to n threads. Must be called before any computation."""
+    t = str(n)
+    for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMBA_NUM_THREADS"):
+        os.environ[var] = t
+    try:
+        from numba import set_num_threads
+        set_num_threads(n)
+    except Exception:
+        pass
+
+
 def DoParamsPass(chunk, id_mask=None):
     (
         process_num,
@@ -120,6 +131,11 @@ def DoParamsPass(chunk, id_mask=None):
         _,
     ) = chunk  # unpack chunk data
     N_task_types = len(task_types)
+
+    # Limit threads in this worker before any computation
+    nthreads = task_params[0][task_chunk_indices[0]].get("threads", 1)
+    if nthreads > 0:
+        _limit_threads(nthreads)
 
     snapdata_buffer = {}  # should store data from at most 2 snapshots
     prefetch_executor = ThreadPoolExecutor(max_workers=1)
