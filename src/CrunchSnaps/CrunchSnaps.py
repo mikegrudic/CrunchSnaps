@@ -5,6 +5,7 @@ from .misc_functions import *
 from natsort import natsorted
 import h5py
 import numpy as np
+import os
 
 
 def DoTasksForSimulation(
@@ -22,6 +23,10 @@ def DoTasksForSimulation(
     ####################################################################################################
     if len(snaps) == 0 or len(task_types) == 0:
         return  # no work to do so just quit
+
+    # Resolve threads=-1 to an actual count: total cores / nproc
+    if nthreads < 0:
+        nthreads = max(1, (os.cpu_count() or 1) // nproc)
 
     snaps = natsorted(snaps)
     if snaptime_dict is None:
@@ -58,6 +63,11 @@ def DoTasksForSimulation(
             ]  # add the other defaults
     else:
         N_params = len(task_params[0])
+        # resolve threads=-1 in pre-built params
+        for task_list in task_params:
+            for p in task_list:
+                if p.get("threads", 1) < 0:
+                    p["threads"] = nthreads
     # note that params must be sorted by time!
 
     index_chunks = np.array_split(np.arange(N_params), nproc)
