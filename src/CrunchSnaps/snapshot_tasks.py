@@ -288,7 +288,9 @@ class SinkVis(Task):
         res = self.params["res"]
         if "PartType0/Coordinates" in snapdata.keys():
             if "PartType0/SmoothingLength" not in snapdata:
-                snapdata["PartType0/SmoothingLength"] = Meshoid(snapdata["PartType0/Coordinates"],boxsize=snapdata["Header"]["BoxSize"]).SmoothingLength()
+                snapdata["PartType0/SmoothingLength"] = Meshoid(
+                    snapdata["PartType0/Coordinates"], boxsize=snapdata["Header"]["BoxSize"]
+                ).SmoothingLength()
             self.pos, self.mass, self.hsml = (
                 np.copy(snapdata["PartType0/Coordinates"]),
                 np.copy(snapdata["PartType0/Masses"]),
@@ -620,10 +622,20 @@ class SinkVisSigmaGas(SinkVis):
     def _render_latex_label(text, fontsize, color, rotation=0, dpi=200):
         """Render a LaTeX string via matplotlib and return as a RGBA PIL Image."""
         import io
+
         matplotlib.use("Agg")
         tmp_fig = plt.figure(figsize=(0.01, 0.01), dpi=dpi)
-        tmp_fig.text(0, 0, text, fontsize=fontsize, color=color,
-                     ha="left", va="bottom", rotation=rotation, rotation_mode="anchor")
+        tmp_fig.text(
+            0,
+            0,
+            text,
+            fontsize=fontsize,
+            color=color,
+            ha="left",
+            va="bottom",
+            rotation=rotation,
+            rotation_mode="anchor",
+        )
         buf = io.BytesIO()
         tmp_fig.savefig(buf, format="png", bbox_inches="tight", transparent=True, pad_inches=0.01, dpi=dpi)
         plt.close(tmp_fig)
@@ -647,8 +659,7 @@ class SinkVisSigmaGas(SinkVis):
         bar_y2 = bar_y1 + bar_h
 
         # sample image brightness in the colorbar region to pick contrasting color
-        crop = (max(0, bar_x1 - int(W * 0.15)), max(0, bar_y1),
-                min(W, bar_x2), min(H, bar_y2))
+        crop = (max(0, bar_x1 - int(W * 0.15)), max(0, bar_y1), min(W, bar_x2), min(H, bar_y2))
         region = np.array(img.crop(crop))
         luminance = 0.299 * region[:, :, 0] + 0.587 * region[:, :, 1] + 0.114 * region[:, :, 2]
         text_color = "#FFFFFF" if luminance.mean() < 140 else "#000000"

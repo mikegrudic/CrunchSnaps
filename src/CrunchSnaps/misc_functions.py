@@ -34,9 +34,9 @@ def NearestImage(dx, boxsize):
     Given a coordinate difference dx, return the *nearest* coordinate difference of the periodic image
     """
     if abs(dx) > boxsize / 2:
-        return -copysign(boxsize - abs(x), x)
+        return -copysign(boxsize - abs(dx), dx)
     else:
-        return x
+        return dx
 
 
 def get_snapshot_time_dict(snaps, save_to_file=False):
