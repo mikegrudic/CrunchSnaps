@@ -7,8 +7,12 @@ import h5py
 import numpy as np
 import os
 
-# Use fork context to avoid spawn-related pickling issues and __main__ guard requirements
-_mp_context = multiprocessing.get_context("fork")
+# Use forkserver to avoid unsafe fork-after-OpenMP-init (GNU OpenMP crashes on fork).
+# Falls back to fork on systems where forkserver is unavailable.
+try:
+    _mp_context = multiprocessing.get_context("forkserver")
+except ValueError:
+    _mp_context = multiprocessing.get_context("fork")
 
 
 
