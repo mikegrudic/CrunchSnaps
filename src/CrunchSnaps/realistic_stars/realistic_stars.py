@@ -1,6 +1,6 @@
 """Routines for rendering stars with realistic Hubble PSFs
 
-Most credit goes to Pelupessy & Rieder, authors of the AMUSE fresco package. 
+Most credit goes to Pelupessy & Rieder, authors of the AMUSE fresco package.
 
 Ported here to avoid an external dependency
 
@@ -82,7 +82,7 @@ def make_stars_image_fullRT(
         return np.zeros((IMG_RES, IMG_RES, 3))
 
     xstar = xstar[mask]
-    mstar = snapdata["PartType5/BH_Mass"][mask]
+    mstar = snapdata["PartType5/Sink_Mass"][mask]
     Lstar = snapdata["PartType5/StarLuminosity_Solar"][mask]
     Rstar = snapdata["PartType5/ProtoStellarRadius_inSolar"][mask]
     num_stars = xstar.shape[0]

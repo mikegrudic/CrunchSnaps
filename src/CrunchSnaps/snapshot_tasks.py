@@ -16,11 +16,30 @@ import json
 import os
 import sys
 import matplotlib
+import matplotlib.font_manager as fm
 
 hashseed = os.getenv("PYTHONHASHSEED")
 if not hashseed:
     os.environ["PYTHONHASHSEED"] = "0"
     os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
+def _get_font(size):
+    """Get a PIL ImageFont at the requested pixel size, with robust fallbacks."""
+    # Try matplotlib's font manager to find a sans-serif system font
+    try:
+        font_path = fm.findfont(fm.FontProperties(family="sans-serif"))
+        if font_path and os.path.isfile(font_path):
+            return ImageFont.truetype(font_path, size)
+    except Exception:
+        pass
+    # Try Pillow >= 10.1 load_default with size
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        pass
+    # Last resort: unsized default bitmap font
+    return ImageFont.load_default()
 
 
 class Task:
@@ -87,6 +106,7 @@ class SinkVis(Task):
             "outputfolder": ".",
             "SHO_RGB_norm": 0,
             "outflow_only": False,
+            "no_colorbar": False,
         }
 
         self.AssignDefaultParams()
@@ -157,7 +177,7 @@ class SinkVis(Task):
             "PartType5/Coordinates",
             "PartType5/Masses",
             "PartType5/ParticleIDs",
-            "PartType5/BH_Mass",
+            "PartType5/Sink_Mass",
         ]
 
         if self.params["realstars"]:
@@ -166,7 +186,7 @@ class SinkVis(Task):
                 "PartType5/StarLuminosity_Solar",
                 "PartType0/Masses",
                 "PartType0/Coordinates",
-                "PartType0/SmoothingLength",
+                "PartType0/KernelMaxRadius",
             ]
         if any((self.params[k] for k in ("center", "center_on_star", "center_on_ID", "center_on_densest"))):
             self.RequiredSnapdata += ["PartType0/Density", "PartType0/Coordinates"]
@@ -270,7 +290,7 @@ class SinkVis(Task):
             self.pos, self.mass, self.hsml = (
                 np.copy(snapdata["PartType0/Coordinates"]),
                 np.copy(snapdata["PartType0/Masses"]),
-                np.copy(snapdata["PartType0/SmoothingLength"]),
+                np.copy(snapdata["PartType0/KernelMaxRadius"]),
             )  # copy these because we don't want to modify them
             if self.params["rescale_hsml"]:
                 self.hsml *= self.params["rescale_hsml"]
@@ -348,7 +368,7 @@ class SinkVis(Task):
             F = Image.open(fname)
             gridres = F.size[0]
             draw = ImageDraw.Draw(F)
-            font = ImageFont.truetype("LiberationSans-Regular.ttf", gridres // 12)
+            font = _get_font(gridres // 12)
             draw.text((gridres / 16, gridres / 24), time_text, font=font)
             F.save(fname)
             F.close()
@@ -366,7 +386,7 @@ class SinkVis(Task):
         F = Image.open(fname)
         draw = ImageDraw.Draw(F)
         gridres = self.params["res"]
-        font = ImageFont.truetype("LiberationSans-Regular.ttf", gridres // 12)
+        font = _get_font(gridres // 12)
         if "UnitLength_In_CGS" in header.keys():
             r = self.params["rmax"] * header["UnitLength_In_CGS"] / 3.086e18  # in pc
         else:
@@ -397,7 +417,7 @@ class SinkVis(Task):
         if not len(snapdata["PartType5/Coordinates"]):
             return
         X_star = np.copy(snapdata["PartType5/Coordinates"])
-        m_star = snapdata["PartType5/BH_Mass"]
+        m_star = snapdata["PartType5/Sink_Mass"]
 
         if self.params["backend"] == "PIL":
             fname = self.params["filename_incomplete"]
@@ -493,7 +513,7 @@ class SinkVis(Task):
 
         match self.params["center"]:
             case "densest":
-                rho = snapdata["PartType0/Masses"] / snapdata["PartType0/SmoothingLength"] ** 3
+                rho = snapdata["PartType0/Masses"] / snapdata["PartType0/KernelMaxRadius"] ** 3
                 self.params["center"] = snapdata["PartType0/Coordinates"][rho.argmax()]
             case "median":
                 self.params["center"] = np.median(snapdata["PartType0/Coordinates"], axis=0)
@@ -504,10 +524,10 @@ class SinkVis(Task):
                     else:
                         num = 1
                     self.params["center"] = snapdata["PartType5/Coordinates"][
-                        snapdata["PartType5/BH_Mass"].argsort()[::-1]
+                        snapdata["PartType5/Sink_Mass"].argsort()[::-1]
                     ][num - 1]
                 else:
-                    rho = snapdata["PartType0/Masses"] / snapdata["PartType0/SmoothingLength"] ** 3
+                    rho = snapdata["PartType0/Masses"] / snapdata["PartType0/KernelMaxRadius"] ** 3
                     self.params["center"] = snapdata["PartType0/Coordinates"][rho.argmax()]
             case x if "ID" in x:
                 if "=" in self.params["center"]:
@@ -575,7 +595,7 @@ class SinkVisSigmaGas(SinkVis):
                 "PartType0/Coordinates",
                 "PartType0/Masses",
                 "PartType0/ParticleIDs",
-                "PartType0/SmoothingLength",
+                "PartType0/KernelMaxRadius",
                 "PartType0/ParticleChildIDsNumber",
                 "PartType0/ParticleIDGenerationNumber",
             ]
@@ -594,14 +614,104 @@ class SinkVisSigmaGas(SinkVis):
             # self.maps["sigma_gas"] = self.maps["sigma_gas"]
             np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])
 
+    @staticmethod
+    def _render_latex_label(text, fontsize, color, rotation=0, dpi=200):
+        """Render a LaTeX string via matplotlib and return as a RGBA PIL Image."""
+        import io
+        matplotlib.use("Agg")
+        tmp_fig = plt.figure(figsize=(0.01, 0.01), dpi=dpi)
+        tmp_fig.text(0, 0, text, fontsize=fontsize, color=color,
+                     ha="left", va="bottom", rotation=rotation, rotation_mode="anchor")
+        buf = io.BytesIO()
+        tmp_fig.savefig(buf, format="png", bbox_inches="tight", transparent=True, pad_inches=0.01, dpi=dpi)
+        plt.close(tmp_fig)
+        buf.seek(0)
+        return Image.open(buf).convert("RGBA")
+
+    def _add_colorbar_to_image(self, vmin, vmax):
+        """Overlay a vertical logarithmic colorbar on the top-right of the saved PIL image."""
+        fname = self.params["filename_incomplete"]
+        img = Image.open(fname).convert("RGBA")
+        W, H = img.size
+        cmap = plt.get_cmap(self.params["cmap"])
+
+        # vertical colorbar geometry — right side, top-aligned, with room for tick labels
+        margin = int(W * 0.08)
+        bar_w = max(int(W * 0.025), 6)
+        bar_h = int(H * 0.45)
+        bar_x1 = W - margin - bar_w
+        bar_y1 = margin
+        bar_x2 = bar_x1 + bar_w
+        bar_y2 = bar_y1 + bar_h
+
+        # sample image brightness in the colorbar region to pick contrasting color
+        crop = (max(0, bar_x1 - int(W * 0.15)), max(0, bar_y1),
+                min(W, bar_x2), min(H, bar_y2))
+        region = np.array(img.crop(crop))
+        luminance = 0.299 * region[:, :, 0] + 0.587 * region[:, :, 1] + 0.114 * region[:, :, 2]
+        text_color = "#FFFFFF" if luminance.mean() < 140 else "#000000"
+
+        # draw the vertical color gradient bar (top = vmax, bottom = vmin)
+        gradient = cmap(np.linspace(0, 1, bar_h))[::-1, :3]  # flip so top=vmax
+        gradient_col = (gradient * 255).astype(np.uint8)[:, None, :]  # (bar_h, 1, 3)
+        bar_arr = np.tile(gradient_col, (1, bar_w, 1))  # (bar_h, bar_w, 3)
+        bar_img = Image.fromarray(bar_arr, "RGB").convert("RGBA")
+        img.paste(bar_img, (bar_x1, bar_y1))
+
+        # draw border
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], outline=text_color, width=1)
+
+        # tick labels to the right of the bar, 2 significant figures
+        font_size = max(8, W // 55)
+        log_vmin, log_vmax = np.log10(vmin), np.log10(vmax)
+        # place ticks at vmin and vmax
+        tick_values = [vmin, vmax]
+        # also add integer powers of 10 that fall strictly between them
+        tick_exp_min = int(np.ceil(log_vmin))
+        tick_exp_max = int(np.floor(log_vmax))
+        for e in range(tick_exp_min, tick_exp_max + 1):
+            tv = 10.0**e
+            if tv > vmin * 1.1 and tv < vmax * 0.9:
+                tick_values.append(tv)
+        tick_values.sort()
+
+        for tv in tick_values:
+            frac = (np.log10(tv) - log_vmin) / (log_vmax - log_vmin)
+            frac = np.clip(frac, 0, 1)
+            tick_y = bar_y2 - int(frac * bar_h)
+            # tick mark to the right of the bar
+            draw.line([(bar_x2, tick_y), (bar_x2 + 3, tick_y)], fill=text_color, width=1)
+            # 2 significant figures
+            label = r"$%.2g$" % tv
+            tick_img = self._render_latex_label(label, font_size, text_color)
+            tw, th = tick_img.size
+            paste_x = bar_x2 + 5
+            paste_y = tick_y - th // 2
+            img.paste(tick_img, (paste_x, paste_y), tick_img)
+
+        # title label — rendered sideways (rotated 90°) to the left of the bar
+        title_fontsize = max(6, W // 75)
+        title_latex = r"$\Sigma_{\rm gas}\,\left(M_\odot\,\rm pc^{-2}\right)$"
+        label_img = self._render_latex_label(title_latex, title_fontsize, text_color, rotation=90)
+        lw, lh = label_img.size
+        if lh > bar_h:
+            lw = int(lw * bar_h / lh)
+            lh = bar_h
+            label_img = label_img.resize((lw, lh), Image.LANCZOS)
+        # place directly to the left of the bar, vertically centered
+        label_x = bar_x1 - lw - 3
+        label_y = bar_y1 + bar_h // 2 - lh // 2
+        img.paste(label_img, (label_x, label_y), label_img)
+
+        img.convert("RGB").save(fname)
+
     def MakeImages(self, snapdata):
         if (
             self.params["limits"] is None
         ):  # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp(
-                [0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat
-            )
+            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
             # self.params["limits"][1] = max(self.params["limits"][0])
         #            else:
         # self.params["limits"] = 1e100, 1.1e100
@@ -615,7 +725,9 @@ class SinkVisSigmaGas(SinkVis):
         if self.params["backend"] == "PIL":
             plt.imsave(
                 self.params["filename_incomplete"], plt.get_cmap(self.params["cmap"])(np.flipud(f))
-            )  # NOTE - we invert this to get the coordinate system right
+            )  # save base image
+            if not self.params["no_colorbar"]:
+                self._add_colorbar_to_image(vmin, vmax)
         elif self.params["backend"] == "matplotlib":
             matplotlib.use("Agg")
             self.fig, self.ax = plt.subplots(figsize=(4, 4))
@@ -663,7 +775,7 @@ class SinkVisCoolMap(SinkVis):
                 "PartType0/Coordinates",
                 "PartType0/Masses",
                 "PartType0/ParticleIDs",
-                "PartType0/SmoothingLength",
+                "PartType0/KernelMaxRadius",
                 "PartType0/ParticleChildIDsNumber",
                 "PartType0/ParticleIDGenerationNumber",
             ]
@@ -724,9 +836,7 @@ class SinkVisCoolMap(SinkVis):
         if self.params["limits"] is None:
             # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
             sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp(
-                [0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat
-            )
+            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
         if self.params["v_limits"] is None:
             #            Ekin_flat = np.sort((self.maps["sigma_gas"]*self.maps["sigma_1D"]**2).flatten()[self.maps["sigma_1D"].flatten().argsort()])
             self.params["v_limits"] = np.percentile(
@@ -768,7 +878,7 @@ class SinkVisNarrowbandComposite(SinkVis):
                 "PartType0/ParticleIDs",
                 "PartType0/Temperature",
                 "PartType0/ElectronAbundance",
-                "PartType0/SmoothingLength",
+                "PartType0/KernelMaxRadius",
                 "PartType0/ParticleChildIDsNumber",
                 "PartType0/ParticleIDGenerationNumber",
                 "PartType0/Density",

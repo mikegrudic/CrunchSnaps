@@ -60,9 +60,7 @@ def DoTasksForSimulation(
     # note that params must be sorted by time!
 
     index_chunks = np.array_split(np.arange(N_params), nproc)
-    chunks = [
-        (i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)
-    ]
+    chunks = [(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
         #        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
         Parallel(n_jobs=nproc, backend="loky")(delayed(DoParamsPass)(c, id_mask=id_mask) for c in chunks)
@@ -179,13 +177,14 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer):
         "PartType0/ParticleChildIDsNumber",
     ]  # stuff we throw away
     stuff_to_interp_log = [
+        "PartType0/KernelMaxRadius",
         "PartType0/SmoothingLength",
         "PartType0/InternalEnergy",
         "PartType0/Pressure",
         "PartType0/SoundSpeed",
         "PartType0/Density",
         "PartType5/Masses",
-        "PartType5/BH_Mass",
+        "PartType5/Sink_Mass",
         "PartType0/Masses",
         "PartType0/ElectronAbundance",
         "PartType0/HII",
@@ -250,6 +249,39 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer):
     return interpolated_data
 
 
+def _field_fallback_name(field, F):
+    """Check for legacy HDF5 field names when the current name is not found.
+
+    Handles two naming transitions in GIZMO snapshots:
+      - KernelMaxRadius (new) <-> SmoothingLength (old)
+      - Sink* / Sink_* (new) <-> BH* / BH_* (old)
+    Returns the fallback field path if found, otherwise None.
+    """
+    ptype, fname = field.split("/", 1)
+
+    # KernelMaxRadius <-> SmoothingLength
+    if fname == "KernelMaxRadius":
+        alt = ptype + "/SmoothingLength"
+        if alt in F.keys():
+            return alt
+    elif fname == "SmoothingLength":
+        alt = ptype + "/KernelMaxRadius"
+        if alt in F.keys():
+            return alt
+
+    # Sink* <-> BH* (handles both Sink_Mass/BH_Mass and SinkRadius/BHRadius style)
+    if fname.startswith("Sink"):
+        alt = ptype + "/" + "BH" + fname[4:]
+        if alt in F.keys():
+            return alt
+    elif fname.startswith("BH"):
+        alt = ptype + "/" + "Sink" + fname[2:]
+        if alt in F.keys():
+            return alt
+
+    return None
+
+
 def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
     ptypes_toread = set()
     for s in required_snapdata:
@@ -277,21 +309,27 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
             cosmological = False
 
         for field in required_snapdata:
-            if field in F.keys():
-                snapdata[field] = F[field][:]
-                if "ID" in field:
-                    snapdata[field] = np.int_(snapdata[field])  # cast to int for things that should be signed integers
+            read_field = field
+            if field not in F.keys():
+                alt = _field_fallback_name(field, F)
+                if alt is not None:
+                    read_field = alt
+                else:
+                    continue
+            snapdata[field] = F[read_field][:]
+            if "ID" in field:
+                snapdata[field] = np.int_(snapdata[field])  # cast to int for things that should be signed integers
 
-                if cosmological:
-                    ascale = time
-                    if "Coordinates" in field or "SmoothingLength" in field:
-                        snapdata[field] *= ascale / hubble
-                    if "Mass" in field:
-                        snapdata[field] /= hubble
-                    if "Velocities" in field:
-                        snapdata[field] *= ascale**0.5
-                    if "Density" in field or "Pressure" in field:
-                        snapdata[field] *= 1 / hubble / (ascale / hubble) ** 3
+            if cosmological:
+                ascale = time
+                if "Coordinates" in field or "KernelMaxRadius" in field or "SmoothingLength" in field:
+                    snapdata[field] *= ascale / hubble
+                if "Mass" in field:
+                    snapdata[field] /= hubble
+                if "Velocities" in field:
+                    snapdata[field] *= ascale**0.5
+                if "Density" in field or "Pressure" in field:
+                    snapdata[field] *= 1 / hubble / (ascale / hubble) ** 3
 
     id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
     for ptype in ptypes_toread:

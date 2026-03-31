@@ -18,7 +18,7 @@ def cubemapify(params):
     return new_params
 
 
-@njit
+@njit(cache=True)
 def NormalizeVector(v):
     norm = 0
     for k in range(v.shape[0]):
@@ -28,7 +28,7 @@ def NormalizeVector(v):
         v[k] *= norm
 
 
-@vectorize
+@vectorize(cache=True)
 def NearestImage(dx, boxsize):
     """
     Given a coordinate difference dx, return the *nearest* coordinate difference of the periodic image

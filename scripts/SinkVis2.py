@@ -31,6 +31,7 @@ Options:
     --outputfolder=<name>        Specifies the folder to save the images and movies to [default: .]
     --no_timestamp               Flag, if set no timestamp will be put on the images
     --no_size_scale              Flag, if set no size scale will be put on the images
+    --no_colorbar                Flag, if set no colorbar will be put on surface density images
     --rescale_hsml=<f>           Factor by which the smoothing lengths of the particles are rescaled [default: 1]
     --highlight_wind=<f>         Factor by which to increase wind particle masses if you want to highlight them [default: 1]
     --sparse_snaps               Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
@@ -103,6 +104,7 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
             "overwrite": overwrite,
             "id_mask": input["--id_mask"],
             "no_stars": input["--no_stars"],
+            "no_colorbar": input["--no_colorbar"],
         }
     )
 
