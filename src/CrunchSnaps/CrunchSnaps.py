@@ -78,18 +78,38 @@ def DoTasksForSimulation(
                     p["threads"] = nthreads
     # note that params must be sorted by time!
 
-    index_chunks = np.array_split(np.arange(N_params), nproc)
-    chunks = [(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
+    # Group frames into small batches that share the same bounding snapshot pair,
+    # so each worker can reuse its snapshot buffer within a batch.
+    frame_batches = []
+    current_batch = []
+    current_bounds = None
+    for i in range(N_params):
+        time_i = task_params[0][i]["Time"]
+        bounds = _bounding_snaptimes(time_i, snaptimes)
+        if bounds != current_bounds and current_batch:
+            frame_batches.append(current_batch)
+            current_batch = []
+        current_bounds = bounds
+        current_batch.append(i)
+    if current_batch:
+        frame_batches.append(current_batch)
+
     if nproc > 1:
         # Set thread limits in parent env so forkserver workers inherit them;
         # workers also call _limit_threads() themselves as a fallback
         _limit_threads(nthreads)
+        worker_id = 0
         with ProcessPoolExecutor(max_workers=nproc, mp_context=_mp_context) as pool:
-            futures = {pool.submit(DoParamsPass, c, id_mask=id_mask): i for i, c in enumerate(chunks)}
+            futures = {}
+            for batch in frame_batches:
+                chunk = (worker_id % nproc, np.array(batch), task_types, snaps, task_params, snapdict, snaptimes, snapnums)
+                futures[pool.submit(DoParamsPass, chunk, id_mask=id_mask)] = batch
+                worker_id += 1
             for f in as_completed(futures):
                 f.result()  # propagate exceptions
     else:
-        [DoParamsPass(c, id_mask=id_mask) for c in chunks]
+        chunk = (0, np.arange(N_params), task_types, snaps, task_params, snapdict, snaptimes, snapnums)
+        DoParamsPass(chunk, id_mask=id_mask)
 
 
 def _bounding_snaptimes(time, snaptimes):
