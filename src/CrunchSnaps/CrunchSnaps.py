@@ -1,11 +1,15 @@
-from joblib import Parallel, delayed
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+import multiprocessing
 from .snapshot_tasks import *
 from .misc_functions import *
 from natsort import natsorted
 import h5py
 import numpy as np
 import os
+
+# Use fork context to avoid spawn-related pickling issues and __main__ guard requirements
+_mp_context = multiprocessing.get_context("fork")
+
 
 
 def DoTasksForSimulation(
@@ -73,8 +77,10 @@ def DoTasksForSimulation(
     index_chunks = np.array_split(np.arange(N_params), nproc)
     chunks = [(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
     if nproc > 1:
-        #        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
-        Parallel(n_jobs=nproc, backend="loky")(delayed(DoParamsPass)(c, id_mask=id_mask) for c in chunks)
+        with ProcessPoolExecutor(max_workers=nproc, mp_context=_mp_context) as pool:
+            futures = {pool.submit(DoParamsPass, c, id_mask=id_mask): i for i, c in enumerate(chunks)}
+            for f in as_completed(futures):
+                f.result()  # propagate exceptions
     else:
         [DoParamsPass(c, id_mask=id_mask) for c in chunks]
 
