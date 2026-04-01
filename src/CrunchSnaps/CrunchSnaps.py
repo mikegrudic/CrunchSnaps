@@ -1,9 +1,11 @@
 from joblib import Parallel, delayed
+from concurrent.futures import ThreadPoolExecutor
 from .snapshot_tasks import *
 from .misc_functions import *
 from natsort import natsorted
 import h5py
 import numpy as np
+import os
 
 
 def DoTasksForSimulation(
@@ -21,6 +23,10 @@ def DoTasksForSimulation(
     ####################################################################################################
     if len(snaps) == 0 or len(task_types) == 0:
         return  # no work to do so just quit
+
+    # Resolve threads=-1 to an actual count: total cores / nproc
+    if nthreads < 0:
+        nthreads = max(1, (os.cpu_count() or 1) // nproc)
 
     snaps = natsorted(snaps)
     if snaptime_dict is None:
@@ -57,15 +63,37 @@ def DoTasksForSimulation(
             ]  # add the other defaults
     else:
         N_params = len(task_params[0])
+        # resolve threads=-1 in pre-built params
+        for task_list in task_params:
+            for p in task_list:
+                if p.get("threads", 1) < 0:
+                    p["threads"] = nthreads
     # note that params must be sorted by time!
 
     index_chunks = np.array_split(np.arange(N_params), nproc)
-    chunks = [(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
+    chunks = [
+        (i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)
+    ]
     if nproc > 1:
         #        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
         Parallel(n_jobs=nproc, backend="loky")(delayed(DoParamsPass)(c, id_mask=id_mask) for c in chunks)
     else:
         [DoParamsPass(c, id_mask=id_mask) for c in chunks]
+
+
+def _bounding_snaptimes(time, snaptimes):
+    """Return the (t1, t2) bounding snapshot times needed to interpolate at a given time."""
+    if len(snaptimes) >= 2:
+        if time < snaptimes.max():
+            t1, t2 = (
+                snaptimes[snaptimes <= time][-1],
+                snaptimes[snaptimes >= time][0],
+            )
+        else:
+            t1, t2 = snaptimes[-2:]
+    else:
+        t1 = t2 = snaptimes[0]
+    return t1, t2
 
 
 def DoParamsPass(chunk, id_mask=None):
@@ -82,7 +110,10 @@ def DoParamsPass(chunk, id_mask=None):
     N_task_types = len(task_types)
 
     snapdata_buffer = {}  # should store data from at most 2 snapshots
-    for i in task_chunk_indices:
+    prefetch_executor = ThreadPoolExecutor(max_workers=1)
+    prefetch_futures = {}  # snap_time -> Future
+
+    for i_idx, i in enumerate(task_chunk_indices):
         ######################### initialization  ############################################
         # initialize the task objects and figure out what data the tasks need
         task_instances = [
@@ -110,39 +141,41 @@ def DoParamsPass(chunk, id_mask=None):
 
         ############################ IO ######################################################
         # OK now we do file I/O if we don't find what we need in the buffer
-        if len(snaptimes) >= 2:
-            if time < snaptimes.max():
-                t1, t2 = (
-                    snaptimes[snaptimes <= time][-1],
-                    snaptimes[snaptimes >= time][0],
-                )  # if the time is within our timeline
-            else:
-                t1, t2 = snaptimes[
-                    -2:
-                ]  # else if we have >1 snapshot, let those be the two times we interpolate/extrapolate from
-        else:
-            t1 = t2 = snaptimes[0]  # otherwise we have exactly 1 snapshot, so set t1=t2 and ignore all time dependence
+        t1, t2 = _bounding_snaptimes(time, snaptimes)
+
+        # collect any completed prefetch results before evicting
+        for pt in list(prefetch_futures.keys()):
+            if prefetch_futures[pt].done():
+                snapdata_buffer[pt] = prefetch_futures.pop(pt).result()
+
         # do a pass to delete anything that will no longer be needed
-        #        print(f"{t1}, {t2}, {process_num}: ", list(snapdata_buffer.keys()))
         for k in list(snapdata_buffer.keys()):
             if k < min(t1, t2) or k > max(t1, t2):
                 del snapdata_buffer[k]  # delete if not needed for interpolation (including old interpolants)
+        # also cancel prefetches that are no longer relevant
+        for pt in list(prefetch_futures.keys()):
+            if pt < min(t1, t2) or pt > max(t1, t2):
+                prefetch_futures.pop(pt)  # future will complete but result is discarded
+
         for t in t1, t2:
-            if not t in snapdata_buffer.keys():
+            if t in snapdata_buffer:
+                # check if buffered entry is missing fields we now need; reload if so
+                missing = [k for k in required_snapdata if k not in snapdata_buffer[t]]
+                if missing:
+                    snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num, id_mask)
+            elif t in prefetch_futures:
+                # wait for the in-flight prefetch
+                snapdata_buffer[t] = prefetch_futures.pop(t).result()
+            else:
                 snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num, id_mask)
-        # for t in list(snapdata_buffer.keys()):
-        #     missing = [key for key in required_snapdata if not (key in snapdata_buffer[t].keys())]
-        #     if len(missing):
-        #         print("\n%d: For time %s missing data in buffer: "%(process_num,t), missing)
-        #         if t in [t1, t2]:
-        #             print("%d: Loading missing data for time %s from snapshot file..."%(process_num,t))
-        #             snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num)
-        #         else: #means it is interpolated data
-        #             print("%d: Deleting interpolated buffer entry %s, we will redo the interpolation..."%(process_num, t))
-        #             del snapdata_buffer[t] #we have to redo the interpolation for this one
 
         ##########################  interpolation #############################################
         # now get the particle data we need for this time, interpolating if needed
+        # if we have a cached interpolated entry but it's missing fields, discard it
+        if time in snapdata_buffer and time != t1 and time != t2:
+            missing = [k for k in required_snapdata if k not in snapdata_buffer[time]]
+            if missing:
+                del snapdata_buffer[time]
         if time in snapdata_buffer.keys():  # if we have the data for this exact time in the buffer, no action needed
             print("%d: Data for time %g available in buffer ..." % (process_num, time))
             snapdata_for_thistime = snapdata_buffer[time]
@@ -163,12 +196,25 @@ def DoParamsPass(chunk, id_mask=None):
                 snapdata_for_thistime = snapdata_buffer[t1]
             snapdata_buffer[time] = snapdata_for_thistime
 
+        ################# prefetch next snapshot while we render #############################
+        if i_idx + 1 < len(task_chunk_indices):
+            next_i = task_chunk_indices[i_idx + 1]
+            next_time = task_params[0][next_i]["Time"]
+            next_t1, next_t2 = _bounding_snaptimes(next_time, snaptimes)
+            for nt in (next_t1, next_t2):
+                if nt not in snapdata_buffer and nt not in prefetch_futures:
+                    prefetch_futures[nt] = prefetch_executor.submit(
+                        GetSnapData, snapdict[nt], required_snapdata, process_num, id_mask
+                    )
+
         ################# task execution  ####################################################
         # actually do the task - each method can optionally return data to be compiled in the pass through the snapshots
         data = [t.DoTask(snapdata_for_thistime) for t in task_instances]
 
+    prefetch_executor.shutdown(wait=False)
 
-def SnapInterpolate(t, t1, t2, snapdata_buffer):
+
+def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
     stuff_to_skip = [
         "Header",
         "PartType0/ParticleIDs",
@@ -213,38 +259,41 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer):
         idx2[ptype] = np.isin(np.sort(id2), common_ids)
 
     for field in snapdata_buffer[t1].keys():
-        if not (field in stuff_to_skip):
-            ptype = field.split("/")[0]
-            f1, f2 = snapdata_buffer[t1][field][idx1[ptype]], snapdata_buffer[t2][field][idx2[ptype]]
-            wt1 = (
-                (t2 - t) / (t2 - t1) * np.ones_like(f1)
-            )  # relative weights, can be set individually for each cell, for now we just use the same time linear weight for all cells
-            wt2 = 1.0 - wt1
-            if field in stuff_to_leave_as_is:
-                interpolated_data[field] = f1.copy()
-            elif field in stuff_to_keep_lowest:
-                interpolated_data[field] = f1.copy()
-                ind2 = np.abs(f1) > np.abs(f2)
-                interpolated_data[field][ind2] = f2[ind2]
-            else:
-                if field in stuff_to_interp_log:
-                    positive = (f1 > 0) & (f2 > 0)
+        if field in stuff_to_skip or field not in snapdata_buffer[t2]:
+            continue
+        ptype = field.split("/")[0]
+        if ptype not in idx1 or ptype not in idx2:
+            continue
+        f1, f2 = snapdata_buffer[t1][field][idx1[ptype]], snapdata_buffer[t2][field][idx2[ptype]]
+        wt1 = (
+            (t2 - t) / (t2 - t1) * np.ones_like(f1)
+        )  # relative weights, can be set individually for each cell, for now we just use the same time linear weight for all cells
+        wt2 = 1.0 - wt1
+        if field in stuff_to_leave_as_is:
+            interpolated_data[field] = f1.copy()
+        elif field in stuff_to_keep_lowest:
+            interpolated_data[field] = f1.copy()
+            ind2 = np.abs(f1) > np.abs(f2)
+            interpolated_data[field][ind2] = f2[ind2]
+        else:
+            if field in stuff_to_interp_log:
+                positive = (f1 > 0) & (f2 > 0)
 
-                    # we interpolate linearily for cells where the value in either snapashots is non-positive, log for the rest
-                    if np.any(~positive):
-                        interpolated_data[field] = f1 * wt1 + f2 * wt2
-                        interpolated_data[field][positive] = np.exp(
-                            np.log(f1[positive]) * wt1[positive] + np.log(f2[positive]) * wt2[positive]
-                        )
-                    else:
-                        interpolated_data[field] = np.exp(np.log(f1) * wt1 + np.log(f2) * wt2)
-                else:  # interpolate everything else linearily
-                    if "Coordinates" in field:  # special behaviour to handle periodic BCs
-                        dx = f2 - f1
-                        dx = NearestImage(dx, snapdata_buffer[t1]["Header"]["BoxSize"])
-                        interpolated_data[field] = (f1 + wt2 * dx) % (snapdata_buffer[t1]["Header"]["BoxSize"])
-                    else:
-                        interpolated_data[field] = f1 * wt1 + f2 * wt2
+                # we interpolate linearily for cells where the value in either snapashots is non-positive, log for the rest
+                if np.any(~positive):
+                    interpolated_data[field] = f1 * wt1 + f2 * wt2
+                    interpolated_data[field][positive] = np.exp(
+                        np.log(f1[positive]) * wt1[positive] + np.log(f2[positive]) * wt2[positive]
+                    )
+                else:
+                    interpolated_data[field] = np.exp(np.log(f1) * wt1 + np.log(f2) * wt2)
+            else:  # interpolate everything else linearily
+                if "Coordinates" in field:  # special behaviour to handle periodic BCs
+                    dx = f2 - f1
+                    dx = NearestImage(dx, snapdata_buffer[t1]["Header"]["BoxSize"])
+                    interpolated_data[field] = (f1 + wt2 * dx) % (snapdata_buffer[t1]["Header"]["BoxSize"])
+                else:
+                    interpolated_data[field] = f1 * wt1 + f2 * wt2
 
     return interpolated_data
 
