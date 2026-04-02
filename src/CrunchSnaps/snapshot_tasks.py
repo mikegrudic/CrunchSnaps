@@ -9,7 +9,7 @@ from skimage.color import rgb2hsv, hsv2rgb
 from PIL import Image, ImageDraw, ImageFont
 from matplotlib import pyplot as plt
 from .realistic_stars import make_stars_image
-from numba import set_num_threads
+from numba import set_num_threads as _numba_set_num_threads
 from .misc_functions import *
 from os.path import isfile
 import json
@@ -160,7 +160,10 @@ class SinkVis(Task):
             self.parallel = True
             # if negative, just use all available threads, otherwise set to desired value
             if self.params["threads"] > 0:
-                set_num_threads(self.params["threads"])
+                try:
+                    _numba_set_num_threads(self.params["threads"])
+                except RuntimeError:
+                    pass  # Numba pool already launched with fewer threads
         else:
             self.parallel = False
 
@@ -264,17 +267,18 @@ class SinkVis(Task):
         if self.params["camera_distance"] != np.inf:
             if not contravariant:
                 # now transform from 3D to angular system
-                r = np.sum(x * x, axis=1) ** 0.5  # distance from camera
-                x[:, :2] = x[:, :2] / (-x[:, 2][:, None])  # homogeneous coordinates
-                r = np.abs(x[:, 2])
-                if update_r:
-                    self.r = r
-                if h is not None:
-                    h[:] = h / r  # kernel lengths are now angular (divide by distance)
-                    h[x[:, 2] > 0] = 0  # assign 0 weight/size to anything behind the camera
-                if m is not None:
-                    m[:] /= r**2  # rescale mass weights so that integrated surface density remains the same
-                    m[x[:, 2] > 0] = 0
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    r = np.abs(x[:, 2])
+                    x[:, :2] = x[:, :2] / (-x[:, 2][:, None])  # homogeneous coordinates
+                    if update_r:
+                        self.r = r
+                    behind = x[:, 2] >= 0  # at or behind the camera
+                    if h is not None:
+                        h[:] = h / r  # kernel lengths are now angular (divide by distance)
+                        h[behind] = 0
+                    if m is not None:
+                        m[:] /= r**2  # rescale mass weights so that integrated surface density remains the same
+                        m[behind] = 0
 
             else:  # dealing with a contravariant vector such as velocity - want the [:,2] component to correspond to line-of-sight value
                 # this would have been converted to angular by now - let's convert back to real space
@@ -287,8 +291,8 @@ class SinkVis(Task):
     def SetupCoordsAndWeights(self, snapdata):
         res = self.params["res"]
         if "PartType0/Coordinates" in snapdata.keys():
-            if "PartType0/SmoothingLength" not in snapdata:
-                snapdata["PartType0/SmoothingLength"] = Meshoid(
+            if "PartType0/KernelMaxRadius" not in snapdata:
+                snapdata["PartType0/KernelMaxRadius"] = Meshoid(
                     snapdata["PartType0/Coordinates"], boxsize=snapdata["Header"]["BoxSize"]
                 ).SmoothingLength()
             self.pos, self.mass, self.hsml = (
@@ -331,7 +335,15 @@ class SinkVis(Task):
 
         if "PartType0/Coordinates" in snapdata.keys():
             self.DoCoordinateTransform(self.pos, self.mass, self.hsml)
-            self.hsml = np.clip(self.hsml, 2 * self.params["rmax"] / res, 1e100)
+            # cull particles that can't contribute to the grid (behind camera, outside FOV)
+            rmax = self.params["rmax"]
+            keep = (self.hsml > 0) & (self.mass != 0)
+            keep &= (np.abs(self.pos[:, 0]) - self.hsml < rmax) & (np.abs(self.pos[:, 1]) - self.hsml < rmax)
+            if keep.sum() < len(keep):
+                self.pos = self.pos[keep]
+                self.mass = self.mass[keep]
+                self.hsml = self.hsml[keep]
+            self.hsml = np.clip(self.hsml, 2 * rmax / res, np.inf)
 
     def GenerateMaps(self, snapdata):
         return

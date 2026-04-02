@@ -1,11 +1,12 @@
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import multiprocessing
+import os
+
 from .snapshot_tasks import *
 from .misc_functions import *
 from natsort import natsorted
 import h5py
 import numpy as np
-import os
 
 # Use forkserver to avoid unsafe fork-after-OpenMP-init (GNU OpenMP crashes on fork).
 # Falls back to fork on systems where forkserver is unavailable.
@@ -130,12 +131,15 @@ def _bounding_snaptimes(time, snaptimes):
 def _limit_threads(n):
     """Limit all threading backends to n threads. Must be called before any computation."""
     t = str(n)
-    for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMBA_NUM_THREADS"):
+    for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
         os.environ[var] = t
+    # For Numba: use set_num_threads() to change the active count at runtime.
+    # Do NOT set os.environ["NUMBA_NUM_THREADS"] — Numba's config reload checks
+    # the env var against its launched pool size and raises RuntimeError on mismatch.
     try:
         from numba import set_num_threads
         set_num_threads(n)
-    except Exception:
+    except (ImportError, RuntimeError):
         pass
 
 
@@ -160,6 +164,7 @@ def DoParamsPass(chunk, id_mask=None):
     snapdata_buffer = {}  # should store data from at most 2 snapshots
     prefetch_executor = ThreadPoolExecutor(max_workers=1)
     prefetch_futures = {}  # snap_time -> Future
+    needs_id_sort = len(snaptimes) > 1  # only needed when interpolating between snapshots
 
     for i_idx, i in enumerate(task_chunk_indices):
         ######################### initialization  ############################################
@@ -205,17 +210,17 @@ def DoParamsPass(chunk, id_mask=None):
             if pt < min(t1, t2) or pt > max(t1, t2):
                 prefetch_futures.pop(pt)  # future will complete but result is discarded
 
-        for t in t1, t2:
+        for t in (t1,) if t1 == t2 else (t1, t2):
             if t in snapdata_buffer:
                 # check if buffered entry is missing fields we now need; reload if so
                 missing = [k for k in required_snapdata if k not in snapdata_buffer[t]]
                 if missing:
-                    snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num, id_mask)
+                    snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num, id_mask, sort_by_id=needs_id_sort)
             elif t in prefetch_futures:
                 # wait for the in-flight prefetch
                 snapdata_buffer[t] = prefetch_futures.pop(t).result()
             else:
-                snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num, id_mask)
+                snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num, id_mask, sort_by_id=needs_id_sort)
 
         ##########################  interpolation #############################################
         # now get the particle data we need for this time, interpolating if needed
@@ -252,7 +257,7 @@ def DoParamsPass(chunk, id_mask=None):
             for nt in (next_t1, next_t2):
                 if nt not in snapdata_buffer and nt not in prefetch_futures:
                     prefetch_futures[nt] = prefetch_executor.submit(
-                        GetSnapData, snapdict[nt], required_snapdata, process_num, id_mask
+                        GetSnapData, snapdict[nt], required_snapdata, process_num, id_mask, sort_by_id=needs_id_sort
                     )
 
         ################# task execution  ####################################################
@@ -379,7 +384,7 @@ def _field_fallback_name(field, F):
     return None
 
 
-def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
+def GetSnapData(snappath, required_snapdata, process_num, id_mask=None, sort_by_id=True):
     ptypes_toread = set()
     for s in required_snapdata:
         for i in range(6):
@@ -413,9 +418,10 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
                     read_field = alt
                 else:
                     continue
-            snapdata[field] = F[read_field][:]
             if "ID" in field:
-                snapdata[field] = np.int_(snapdata[field])  # cast to int for things that should be signed integers
+                snapdata[field] = np.int_(F[read_field][:])
+            else:
+                snapdata[field] = np.float32(F[read_field][:])
 
             if cosmological:
                 ascale = time
@@ -428,39 +434,40 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
                 if "Density" in field or "Pressure" in field:
                     snapdata[field] *= 1 / hubble / (ascale / hubble) ** 3
 
-    id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
-    for ptype in ptypes_toread:
-        if not ptype + "/ParticleIDs" in snapdata.keys():
-            continue
-        if not len(snapdata[ptype + "/ParticleIDs"]):
-            continue
-        ids = snapdata[ptype + "/ParticleIDs"]
-        if (
-            ptype == "PartType0" and "PartType0/ParticleChildIDsNumber" in snapdata.keys()
-        ):  # if we have to worry about wind IDs and splitting
-            child_ids = snapdata["PartType0/ParticleChildIDsNumber"]
-            wind_idx1 = np.isin(ids, wind_ids)
-            ids[np.invert(wind_idx1)] = ((child_ids << 32) + ids)[np.invert(wind_idx1)]
-            if np.any(wind_idx1):
-                progenitor_ids = snapdata["PartType0/ParticleIDGenerationNumber"][wind_idx1]
-                child_ids = child_ids[wind_idx1]
-                wind_particle_ids = -(
-                    (progenitor_ids << 16) + child_ids
-                )  # bit-shift the progenitor ID outside the plausible range for particle count, then add child ids to get a unique new id
-                ids[wind_idx1] = wind_particle_ids
+    if sort_by_id:
+        id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
+        for ptype in ptypes_toread:
+            if not ptype + "/ParticleIDs" in snapdata.keys():
+                continue
+            if not len(snapdata[ptype + "/ParticleIDs"]):
+                continue
+            ids = snapdata[ptype + "/ParticleIDs"]
+            if (
+                ptype == "PartType0" and "PartType0/ParticleChildIDsNumber" in snapdata.keys()
+            ):  # if we have to worry about wind IDs and splitting
+                child_ids = snapdata["PartType0/ParticleChildIDsNumber"]
+                wind_idx1 = np.isin(ids, wind_ids)
+                ids[np.invert(wind_idx1)] = ((child_ids << 32) + ids)[np.invert(wind_idx1)]
+                if np.any(wind_idx1):
+                    progenitor_ids = snapdata["PartType0/ParticleIDGenerationNumber"][wind_idx1]
+                    child_ids = child_ids[wind_idx1]
+                    wind_particle_ids = -(
+                        (progenitor_ids << 16) + child_ids
+                    )  # bit-shift the progenitor ID outside the plausible range for particle count, then add child ids to get a unique new id
+                    ids[wind_idx1] = wind_particle_ids
 
-        unique, counts = np.unique(ids, return_counts=True)
-        doubles = unique[counts > 1]
-        ids[np.isin(ids, doubles)] = -1
+            unique, counts = np.unique(ids, return_counts=True)
+            doubles = unique[counts > 1]
+            ids[np.isin(ids, doubles)] = -1
 
-        id_order[ptype] = ids.argsort()
+            id_order[ptype] = ids.argsort()
 
-    for field in snapdata.keys():
-        if field == "Header":
-            continue
-        ptype = field.split("/")[0]
-        if len(snapdata[field]):
-            snapdata[field] = np.take(snapdata[field], id_order[ptype], axis=0)
+        for field in snapdata.keys():
+            if field == "Header":
+                continue
+            ptype = field.split("/")[0]
+            if len(snapdata[field]):
+                snapdata[field] = np.take(snapdata[field], id_order[ptype], axis=0)
 
     # lastly if we have a particle mask, zero out the masked-out entries
 
