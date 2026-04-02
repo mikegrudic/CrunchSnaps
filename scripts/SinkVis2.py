@@ -148,7 +148,7 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
         if i % n_interp == 0 and (input["--freeze_rotation"] is not None):
             num_rotation_frames = 720
             if snapnum in [int(f) for f in input["--freeze_rotation"].split(",")]:  # add a rotation freeze
-                for k in range(num_rotation_frames):  # do a pan
+                for k in range(1, num_rotation_frames):  # do a pan, skip k=0 (duplicate of original)
                     d = p[-1].copy()
                     d["index"] = snapnum * 10 + i % n_interp
                     d["pan"] = k * 360 / num_rotation_frames

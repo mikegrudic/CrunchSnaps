@@ -261,6 +261,8 @@ def DoParamsPass(chunk, id_mask=None):
                     )
 
         ################# task execution  ####################################################
+        # strip None sentinels (fields that don't exist in the HDF5 file) before passing to tasks
+        snapdata_for_thistime = {k: v for k, v in snapdata_for_thistime.items() if v is not None}
         # actually do the task - each method can optionally return data to be compiled in the pass through the snapshots
         data = [t.DoTask(snapdata_for_thistime) for t in task_instances]
 
@@ -417,6 +419,7 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None, sort_by_
                 if alt is not None:
                     read_field = alt
                 else:
+                    snapdata[field] = None  # mark as unavailable so buffer doesn't reload
                     continue
             if "ID" in field:
                 snapdata[field] = np.int_(F[read_field][:])
@@ -437,13 +440,11 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None, sort_by_
     if sort_by_id:
         id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
         for ptype in ptypes_toread:
-            if not ptype + "/ParticleIDs" in snapdata.keys():
-                continue
-            if not len(snapdata[ptype + "/ParticleIDs"]):
+            if snapdata.get(ptype + "/ParticleIDs") is None:
                 continue
             ids = snapdata[ptype + "/ParticleIDs"]
             if (
-                ptype == "PartType0" and "PartType0/ParticleChildIDsNumber" in snapdata.keys()
+                ptype == "PartType0" and snapdata.get("PartType0/ParticleChildIDsNumber") is not None
             ):  # if we have to worry about wind IDs and splitting
                 child_ids = snapdata["PartType0/ParticleChildIDsNumber"]
                 wind_idx1 = np.isin(ids, wind_ids)
@@ -463,10 +464,10 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None, sort_by_
             id_order[ptype] = ids.argsort()
 
         for field in snapdata.keys():
-            if field == "Header":
+            if field == "Header" or snapdata[field] is None:
                 continue
             ptype = field.split("/")[0]
-            if len(snapdata[field]):
+            if ptype in id_order and len(snapdata[field]):
                 snapdata[field] = np.take(snapdata[field], id_order[ptype], axis=0)
 
     # lastly if we have a particle mask, zero out the masked-out entries
@@ -476,15 +477,14 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None, sort_by_
         mask_ids = mask_ids.clip(0, wind_ids.min())
 
         for field in snapdata.keys():
-            if field == "Header" or "ParticleIDs" in field:
+            if field == "Header" or "ParticleIDs" in field or snapdata[field] is None:
                 continue
             ptype = field.split("/")[0]
             index_tokeep = np.isin(snapdata[ptype + "/ParticleIDs"], mask_ids)
-            # print(index_tokeep.shape[0], snapdata[])
             if snapdata[field].shape[0] > 0:
                 snapdata[field] = snapdata[field][index_tokeep]
         for field in snapdata.keys():
-            if "ParticleIDs" in field:
+            if "ParticleIDs" in field and snapdata[field] is not None:
                 snapdata[field] = snapdata[field][np.isin(snapdata[field], mask_ids)]
 
     return snapdata
