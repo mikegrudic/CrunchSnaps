@@ -17,6 +17,8 @@ Options:
     --v_limits=<min,max>         Dynamic range of kinematic map in km/s
     --SHO_RGB_norm=<f>           Normalization constant for narrow band plot, set automatically by default. If a vector is provided, then each channel is normalized by the correponding component [default: 0.0]
     --camera_distance=<D>        Camera distance if perspective rendering is required [default: inf]
+    --pan=<deg>                  Pan angle in degrees (rotation about Y axis) [default: 0]
+    --tilt=<deg>                 Tilt angle in degrees (rotation about X axis) [default: 0]
     --freeze_rotation=<num1,num2,...> Snapshot numbers at which to add a freeze-frame rotation [default: None]
     --cmap=<name>                Name of colormap to use [default: viridis]
     --cool_cmap=<name>           Name of colormap to use for plot_cool_map, defaults to same as cmap [default: magma]
@@ -107,6 +109,9 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
             "no_colorbar": input["--no_colorbar"],
         }
     )
+
+    common_params["pan"] = float(input["--pan"])
+    common_params["tilt"] = float(input["--tilt"])
 
     if direction == "x":
         common_params["camera_dir"] = np.array([1.0, 0, 0])
