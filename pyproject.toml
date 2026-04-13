@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "CrunchSnaps"
+version = "0.12"
+description = "Package for making publication-quality visualizations of GIZMO simulation data"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    { name = "Mike Grudić", email = "mike.grudich@gmail.com" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "meshoid",
+    "natsort",
+    "docopt",
+    "aggdraw",
+    "scikit-image",
+    "matplotlib",
+    "numba",
+    "astropy",
+    "h5py",
+    "joblib",
+    "Pillow",
+]
+
+[project.urls]
+Homepage = "https://github.com/mikegrudic/CrunchSnaps"
+"Bug Tracker" = "https://github.com/mikegrudic/CrunchSnaps/issues"
+Documentation = "https://crunchsnaps.readthedocs.io"
+
+[project.scripts]
+SinkVis2 = "CrunchSnaps.sinkvis2:main_cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+CrunchSnaps = ["realistic_stars/psf/*/*.fits"]
