@@ -307,20 +307,18 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
     interpolated_data = snapdata_buffer[t1].copy()
     idx1, idx2 = {}, {}
     for ptype in "PartType0", "PartType5":
-        if ptype + "/ParticleIDs" in snapdata_buffer[t1].keys():
-            id1 = np.array(snapdata_buffer[t1][ptype + "/ParticleIDs"])
-        else:
-            id1 = np.array([])
-        if ptype + "/ParticleIDs" in snapdata_buffer[t2].keys():
-            id2 = np.array(snapdata_buffer[t2][ptype + "/ParticleIDs"])
-        else:
-            id2 = np.array([])
+        ids1 = snapdata_buffer[t1].get(ptype + "/ParticleIDs")
+        id1 = np.array(ids1) if ids1 is not None else np.array([])
+        ids2 = snapdata_buffer[t2].get(ptype + "/ParticleIDs")
+        id2 = np.array(ids2) if ids2 is not None else np.array([])
         common_ids = np.intersect1d(id1, id2)
         idx1[ptype] = np.isin(np.sort(id1), common_ids)
         idx2[ptype] = np.isin(np.sort(id2), common_ids)
 
     for field in snapdata_buffer[t1].keys():
         if field in stuff_to_skip or field not in snapdata_buffer[t2]:
+            continue
+        if snapdata_buffer[t1][field] is None or snapdata_buffer[t2][field] is None:
             continue
         ptype = field.split("/")[0]
         if ptype not in idx1 or ptype not in idx2:

@@ -33,4 +33,9 @@ setup(
     zip_safe=False,
     install_requires=install_requires,
     include_package_data=True,
+    entry_points={
+        "console_scripts": [
+            "SinkVis2=CrunchSnaps.sinkvis2:main_cli",
+        ],
+    },
 )
