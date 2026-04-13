@@ -26,9 +26,13 @@ Render Modes
 ------------
 
 ``SurfaceDensity(expr)``
-    Computes :math:`\int \mathtt{expr}\, dz` along each sightline using
-    SPH kernel integration (``meshoid.GridSurfaceDensity``).  Colormap
-    limits are chosen with mass-weighted max-entropy optimization.
+    Computes the surface density (line-of-sight integral of the volume
+    density) of the quantity given by *expr*.  For example,
+    ``SurfaceDensity(Masses)`` gives :math:`\Sigma = \int \rho\, dz`
+    and ``SurfaceDensity(Masses*InternalEnergy)`` gives the thermal
+    energy surface density :math:`\int \rho\, u\, dz`.  Uses SPH kernel
+    integration via ``meshoid.GridSurfaceDensity``.  Colormap limits are
+    chosen with mass-weighted max-entropy optimization.
 
 ``Projection(expr)``
     Alias for ``SurfaceDensity``.

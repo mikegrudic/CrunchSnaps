@@ -683,7 +683,12 @@ class SinkVis(Task):
             frac = np.clip(frac, 0, 1)
             tick_y = bar_y2 - int(frac * bar_h)
             draw.line([(bar_x2, tick_y), (bar_x2 + 3, tick_y)], fill=text_color, width=1)
-            tick_label = r"$%.2g$" % tv
+            exp = np.floor(np.log10(np.abs(tv)))
+            coeff = tv / 10**exp
+            if abs(coeff - 1.0) < 0.01:
+                tick_label = r"$10^{%d}$" % int(exp)
+            else:
+                tick_label = r"$%.3g\times10^{%d}$" % (coeff, int(exp))
             tick_img = self._render_latex_label(tick_label, font_size, text_color)
             tw, th = tick_img.size
             paste_x = bar_x2 + 5
@@ -753,10 +758,10 @@ class SinkVisSigmaGas(SinkVis):
 
     def MakeImages(self, snapdata):
         if self.params["limits"] is None:
-            sigma = self.maps["sigma_gas"]
-            self.params["limits"] = np.array(max_entropy_limits(
-                sigma.ravel(), sigma.ravel(), log_scale=True
-            ))
+            # Mass-weighted 1st/99th percentiles for surface density
+            sigma_flat = np.sort(self.maps["sigma_gas"].ravel())
+            cw = sigma_flat.cumsum() / sigma_flat.sum()
+            self.params["limits"] = np.interp([0.01, 0.99], cw, sigma_flat)
 
         vmin, vmax = self.params["limits"]
         if vmax > vmin:
@@ -884,10 +889,10 @@ class SinkVisCoolMap(SinkVis):
 
     def MakeImages(self, snapdata):
         if self.params["limits"] is None:
-            sigma = self.maps["sigma_gas"]
-            self.params["limits"] = np.array(max_entropy_limits(
-                sigma.ravel(), sigma.ravel(), log_scale=True
-            ))
+            # Mass-weighted 1st/99th percentiles for surface density
+            sigma_flat = np.sort(self.maps["sigma_gas"].ravel())
+            cw = sigma_flat.cumsum() / sigma_flat.sum()
+            self.params["limits"] = np.interp([0.01, 0.99], cw, sigma_flat)
         if self.params["v_limits"] is None:
             #            Ekin_flat = np.sort((self.maps["sigma_gas"]*self.maps["sigma_1D"]**2).flatten()[self.maps["sigma_1D"].flatten().argsort()])
             self.params["v_limits"] = np.percentile(
@@ -1149,6 +1154,22 @@ register_derived_field("ThermalEnergy", "Masses * InternalEnergy")
 register_derived_field("KineticEnergy", "0.5 * Masses * norm(Velocities)**2")
 register_derived_field("MagneticEnergy", "norm(MagneticField)**2 / (8*pi) * Masses / Density")
 register_derived_field("NumberDensity", "Density / m_p")
+register_derived_field("Entropy", "Pressure / Density**(5./3)")
+
+# Photon energy density fields (eV/cm^3) — col(PhotonEnergy, band) extracts
+# band 0=EUV, 1=FUV, 2=NUV, 3=ONIR, 4=FIR from the (N,5) PhotonEnergy array.
+# PhotonEnergy is specific (per unit mass) in code units, so:
+#   energy_density [code] = PhotonEnergy * Density / Masses
+#   energy_density [CGS]  = energy_density [code] * UnitEnergyDensity_In_CGS
+#   energy_density [eV/cm^3] = energy_density [CGS] / eV
+register_derived_field("PhotonEnergyDensity_EUV", "col(PhotonEnergy, 0) * Density / Masses * UnitEnergyDensity_In_CGS / eV")
+register_derived_field("PhotonEnergyDensity_FUV", "col(PhotonEnergy, 1) * Density / Masses * UnitEnergyDensity_In_CGS / eV")
+register_derived_field("PhotonEnergyDensity_NUV", "col(PhotonEnergy, 2) * Density / Masses * UnitEnergyDensity_In_CGS / eV")
+register_derived_field("PhotonEnergyDensity_ONIR", "col(PhotonEnergy, 3) * Density / Masses * UnitEnergyDensity_In_CGS / eV")
+register_derived_field("PhotonEnergyDensity_FIR", "col(PhotonEnergy, 4) * Density / Masses * UnitEnergyDensity_In_CGS / eV")
+
+# G0: FUV photon energy density in Habing units (1 Habing = 5.29e-14 erg/cm^3)
+register_derived_field("G0", "col(PhotonEnergy, 1) * Density / Masses * UnitEnergyDensity_In_CGS / 5.29e-14")
 
 # LaTeX symbols for colorbar labels.  Keys can be snapshot field names,
 # derived field names, or full expression strings.
@@ -1179,6 +1200,13 @@ register_field_symbol("NumberDensity", r"n\;\mathrm{(cm^{-3})}")
 register_field_symbol("ThermalEnergy", r"E_\mathrm{th}")
 register_field_symbol("KineticEnergy", r"E_\mathrm{kin}")
 register_field_symbol("MagneticEnergy", r"E_B")
+register_field_symbol("Entropy", r"P/\rho^{\gamma}")
+register_field_symbol("PhotonEnergyDensity_EUV", r"u_\mathrm{EUV}\;\mathrm{(eV\,cm^{-3})}")
+register_field_symbol("PhotonEnergyDensity_FUV", r"u_\mathrm{FUV}\;\mathrm{(eV\,cm^{-3})}")
+register_field_symbol("PhotonEnergyDensity_NUV", r"u_\mathrm{NUV}\;\mathrm{(eV\,cm^{-3})}")
+register_field_symbol("PhotonEnergyDensity_ONIR", r"u_\mathrm{ONIR}\;\mathrm{(eV\,cm^{-3})}")
+register_field_symbol("PhotonEnergyDensity_FIR", r"u_\mathrm{FIR}\;\mathrm{(eV\,cm^{-3})}")
+register_field_symbol("G0", r"G_0")
 
 
 # Built-in fallbacks for fields that GIZMO may or may not write
@@ -1187,11 +1215,20 @@ register_field_fallback("SoundSpeed", "sqrt(5./3 * (5./3 - 1) * InternalEnergy)"
 register_field_fallback("Temperature", "(5./3 - 1) * InternalEnergy * m_p / k_B")
 
 
+# Regex to extract identifier tokens, skipping the 'e'/'E' in scientific notation
+_TOKEN_RE = re.compile(r"(?<!\d)[A-Za-z_]\w*")
+
 # Tokens that are builtins, NOT field names
+_UNIT_NAMES = {
+    "UnitLength_In_CGS", "UnitMass_In_CGS", "UnitVelocity_In_CGS",
+    "UnitEnergyDensity_In_CGS", "UnitDensity_In_CGS",
+    "UnitTime_In_CGS", "UnitEnergy_In_CGS",
+}
+
 _EXPR_BUILTINS = {
-    "abs", "sqrt", "norm", "log", "log2", "log10", "exp",
+    "abs", "sqrt", "norm", "col", "log", "log2", "log10", "exp",
     "sin", "cos", "tan", "minimum", "maximum", "clip", "where",
-} | set(_CONSTANTS.keys())
+} | set(_CONSTANTS.keys()) | _UNIT_NAMES
 
 
 def _extract_field_names(expr):
@@ -1201,7 +1238,7 @@ def _extract_field_names(expr):
     Returns all snapshot fields that *might* be needed — both the primary
     field and any fields its fallback expression requires.
     """
-    tokens = re.findall(r"[A-Za-z_]\w*", expr)
+    tokens = _TOKEN_RE.findall( expr)
     raw = set(t for t in tokens if t not in _EXPR_BUILTINS)
 
     base_fields = set()
@@ -1213,7 +1250,7 @@ def _extract_field_names(expr):
                 continue
             seen.add(name)
             if name in DERIVED_FIELDS:
-                sub = re.findall(r"[A-Za-z_]\w*", DERIVED_FIELDS[name])
+                sub = _TOKEN_RE.findall( DERIVED_FIELDS[name])
                 _resolve(t for t in sub if t not in _EXPR_BUILTINS)
             else:
                 # This is a snapshot field (or has a fallback).  Request
@@ -1221,7 +1258,7 @@ def _extract_field_names(expr):
                 # since we won't know until runtime which is available.
                 base_fields.add(name)
                 if name in FIELD_FALLBACKS:
-                    sub = re.findall(r"[A-Za-z_]\w*", FIELD_FALLBACKS[name])
+                    sub = _TOKEN_RE.findall( FIELD_FALLBACKS[name])
                     _resolve(t for t in sub if t not in _EXPR_BUILTINS)
 
     _resolve(raw)
@@ -1241,8 +1278,11 @@ def _eval_field_expr(expr, snapdata, _cache=None):
     def _norm(x):
         return np.sqrt(np.sum(np.asarray(x) ** 2, axis=-1))
 
+    def _col(arr, i):
+        return np.asarray(arr)[:, int(i)]
+
     ns = {
-        "np": np, "abs": np.abs, "sqrt": np.sqrt, "norm": _norm,
+        "np": np, "abs": np.abs, "sqrt": np.sqrt, "norm": _norm, "col": _col,
         "log": np.log, "log2": np.log2, "log10": np.log10,
         "exp": np.exp, "sin": np.sin, "cos": np.cos, "tan": np.tan,
         "minimum": np.minimum, "maximum": np.maximum,
@@ -1250,7 +1290,20 @@ def _eval_field_expr(expr, snapdata, _cache=None):
     }
     ns.update(_CONSTANTS)
 
-    tokens = re.findall(r"[A-Za-z_]\w*", expr)
+    # Add code-unit conversion factors from snapshot header
+    header = snapdata.get("Header", {})
+    UL = header.get("UnitLength_In_CGS", 1.0)
+    UM = header.get("UnitMass_In_CGS", 1.0)
+    UV = header.get("UnitVelocity_In_CGS", 1.0)
+    ns["UnitLength_In_CGS"] = UL
+    ns["UnitMass_In_CGS"] = UM
+    ns["UnitVelocity_In_CGS"] = UV
+    ns["UnitEnergyDensity_In_CGS"] = UM * UV**2 / UL**3
+    ns["UnitDensity_In_CGS"] = UM / UL**3
+    ns["UnitTime_In_CGS"] = UL / UV
+    ns["UnitEnergy_In_CGS"] = UM * UV**2
+
+    tokens = _TOKEN_RE.findall(expr)
     for name in set(tokens) - _EXPR_BUILTINS:
         if name in ns:
             continue
@@ -1347,7 +1400,7 @@ class SinkVisCustomField(SinkVis):
         if expr in FIELD_SYMBOLS:
             return FIELD_SYMBOLS[expr]
         # For simple single-field expressions, look up the field
-        tokens = [t for t in re.findall(r"[A-Za-z_]\w*", expr) if t not in _EXPR_BUILTINS]
+        tokens = [t for t in _TOKEN_RE.findall( expr) if t not in _EXPR_BUILTINS]
         if len(tokens) == 1 and tokens[0] == expr and expr in FIELD_SYMBOLS:
             return FIELD_SYMBOLS[expr]
         # Fall back to rendering the raw expression in mathtt
@@ -1371,7 +1424,8 @@ class SinkVisCustomField(SinkVis):
         res = self.params["res"]
         rmax = self.params["rmax"]
         # Build a Meshoid from the already-transformed coordinates
-        M = Meshoid(self.pos, self.mass, self.hsml)
+        n_jobs = self.params["threads"] if self.params["threads"] > 0 else -1
+        M = Meshoid(self.pos, self.mass, self.hsml, n_jobs=n_jobs)
 
         if self._render_mode in ("SurfaceDensity", "Projection"):
             # Integral of f along sightlines
@@ -1383,12 +1437,27 @@ class SinkVisCustomField(SinkVis):
                 f, center=np.zeros(3), size=2 * rmax, res=res,
             ).T
         elif self._render_mode == "Slice":
-            # Supersample at 4x and downsample to anti-alias Voronoi edges
-            ss = 4
+            # Supersample and downsample to anti-alias Voronoi edges
+            ss = int(self.params.get("supersample", 2))
+            # For positive quantities, slice in log space to guarantee positivity
+            positive = np.all(f > 0)
+            slice_f = np.log(f) if positive else f
             hi_res = M.Slice(
-                f, center=np.zeros(3), size=2 * rmax, res=res * ss,
+                slice_f, center=np.zeros(3), size=2 * rmax, res=res * ss,
+                order=1, slope_limiter=True,
             ).T
-            result = hi_res.reshape(res, ss, res, ss).mean(axis=(1, 3))
+            if positive:
+                hi_res = np.exp(hi_res)
+            if ss > 1:
+                if positive:
+                    result = np.exp(
+                        np.log(hi_res).reshape(res, ss, res, ss).mean(axis=(1, 3))
+                    )
+                else:
+                    result = hi_res.reshape(res, ss, res, ss).mean(axis=(1, 3))
+                self._slice_hires = hi_res
+            else:
+                result = hi_res
         else:
             raise ValueError(f"Unknown render mode: {self._render_mode}")
 
@@ -1400,18 +1469,16 @@ class SinkVisCustomField(SinkVis):
         positive = data > 0
 
         if self.params["limits"] is None:
-            if positive.any():
-                # SurfaceDensity/Projection: mass-weight (value = accumulated mass)
-                # Slice/ProjectedAverage: uniform weight (each pixel is equal area)
-                if self._render_mode in ("SurfaceDensity", "Projection"):
-                    weights = np.abs(data.ravel())
-                else:
-                    weights = np.ones(data.size)
-                self.params["limits"] = np.array(max_entropy_limits(
-                    data.ravel(), weights, log_scale=bool(positive.all()),
-                ))
+            # Use hi-res slice data for limits if available (before AA smoothing)
+            limit_data = getattr(self, "_slice_hires", data)
+            if self._render_mode in ("SurfaceDensity", "Projection"):
+                # Mass-weighted 1st/99th percentiles for integral quantities
+                flat = np.sort(limit_data.ravel())
+                cw = flat.cumsum() / flat.sum()
+                self.params["limits"] = np.interp([0.01, 0.99], cw, flat)
             else:
-                self.params["limits"] = np.array([data.min(), data.max()])
+                # Raw 1st/99th percentiles for slice/projected average
+                self.params["limits"] = np.percentile(limit_data, [1, 99])
 
         vmin, vmax = self.params["limits"]
         if vmax <= vmin:

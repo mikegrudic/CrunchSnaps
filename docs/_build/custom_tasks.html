@@ -21,7 +21,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="API Reference" href="api.html" />
-    <link rel="prev" title="SinkVis2 Command-Line Tool" href="sinkvis2.html" /> 
+    <link rel="prev" title="Camera-File Movies" href="camera_movies.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -47,6 +47,7 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sinkvis2.html">SinkVis2 Command-Line Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="camera_movies.html">Camera-File Movies</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Custom Tasks In Depth</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#expression-evaluation">Expression Evaluation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#render-modes">Render Modes</a></li>
@@ -107,9 +108,13 @@ in multiple places does not cause redundant computation.</p>
 <section id="render-modes">
 <h2>Render Modes<a class="headerlink" href="#render-modes" title="Link to this heading"></a></h2>
 <dl class="simple">
-<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Computes <span class="math notranslate nohighlight">\(\int \mathtt{expr}\, dz\)</span> along each sightline using
-SPH kernel integration (<code class="docutils literal notranslate"><span class="pre">meshoid.GridSurfaceDensity</span></code>).  Colormap
-limits are chosen with mass-weighted max-entropy optimization.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Computes the surface density (line-of-sight integral of the volume
+density) of the quantity given by <em>expr</em>.  For example,
+<code class="docutils literal notranslate"><span class="pre">SurfaceDensity(Masses)</span></code> gives <span class="math notranslate nohighlight">\(\Sigma = \int \rho\, dz\)</span>
+and <code class="docutils literal notranslate"><span class="pre">SurfaceDensity(Masses*InternalEnergy)</span></code> gives the thermal
+energy surface density <span class="math notranslate nohighlight">\(\int \rho\, u\, dz\)</span>.  Uses SPH kernel
+integration via <code class="docutils literal notranslate"><span class="pre">meshoid.GridSurfaceDensity</span></code>.  Colormap limits are
+chosen with mass-weighted max-entropy optimization.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">Projection(expr)</span></code></dt><dd><p>Alias for <code class="docutils literal notranslate"><span class="pre">SurfaceDensity</span></code>.</p>
 </dd>
@@ -232,7 +237,7 @@ The snapshot value is always preferred when available:</p>
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="sinkvis2.html" class="btn btn-neutral float-left" title="SinkVis2 Command-Line Tool" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="camera_movies.html" class="btn btn-neutral float-left" title="Camera-File Movies" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="api.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

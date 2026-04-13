@@ -6,22 +6,39 @@ SinkVis2 Command-Line Tool
 Basic Usage
 -----------
 
-Render surface density images for a sequence of snapshots::
+Tasks (what to plot) are given as positional arguments after the snapshot
+files.  Anything ending in ``.hdf5`` is treated as a snapshot; everything
+else is a task.  If no tasks are given, ``SigmaGas`` is the default.
 
+::
+
+    # Default surface density
     SinkVis2 output/snapshot_*.hdf5
 
-Render at higher resolution with the ``inferno`` colormap::
+    # Surface density + temperature slice
+    SinkVis2 output/snapshot_*.hdf5 SigmaGas Slice(Temperature)
 
-    SinkVis2 output/snapshot_*.hdf5 --res=2048 --cmap=inferno
+    # Just a temperature slice, higher resolution, inferno colormap
+    SinkVis2 output/snapshot_*.hdf5 Slice(Temperature) --res=2048 --cmap=inferno
 
-Make a movie::
+    # Make a movie
+    SinkVis2 output/snapshot_*.hdf5 SigmaGas --make_movie --fps=30
 
-    SinkVis2 output/snapshot_*.hdf5 --make_movie --fps=30
+.. note::
+
+   Shells like zsh interpret parentheses as glob qualifiers.  Quote task
+   names that contain parentheses::
+
+       SinkVis2 output/snapshot_*.hdf5 'Slice(Temperature)'
+
+   Or use the ``--tasks`` flag, which avoids the issue::
+
+       SinkVis2 output/snapshot_*.hdf5 --tasks=Slice(Temperature)
 
 Built-in Tasks
 --------------
 
-Select tasks with ``--tasks``.  Multiple tasks can be comma-separated.
+The following built-in task names are available:
 
 ``SigmaGas`` (default)
     Gas surface density map with colorbar.
@@ -35,7 +52,7 @@ Select tasks with ``--tasks``.  Multiple tasks can be comma-separated.
 
 Example::
 
-    SinkVis2 snapshot_*.hdf5 --tasks=SigmaGas,CoolMap
+    SinkVis2 snapshot_*.hdf5 SigmaGas CoolMap
 
 Custom Field Tasks
 ------------------
@@ -44,7 +61,9 @@ Beyond the built-in tasks, you can render arbitrary field expressions using
 four render modes:
 
 ``SurfaceDensity(expr)``
-    Line-of-sight integral of *expr* (column density).
+    Surface density of *expr* --- the line-of-sight integral of the volume
+    density of the given quantity.  E.g. ``SurfaceDensity(Masses)`` gives
+    mass surface density :math:`\Sigma = \int \rho\, dz`.
 
 ``Projection(expr)``
     Alias for ``SurfaceDensity``.
@@ -53,7 +72,9 @@ four render modes:
     Mass-weighted average of *expr* along the line of sight.
 
 ``Slice(expr)``
-    Midplane slice of *expr* (anti-aliased at 4x supersampling).
+    Midplane slice of *expr*, with order-1 linear reconstruction in log
+    space (for positive quantities) and anti-aliasing via supersampling
+    (default 2x, controllable with ``--supersample``).
 
 Expressions can reference any ``PartType0`` field by name (``Masses``,
 ``Temperature``, ``Density``, ``Velocities``, etc.), use arithmetic
@@ -62,16 +83,16 @@ operators, and call numpy functions.
 Examples::
 
     # Temperature slice
-    SinkVis2 snapshot_*.hdf5 --tasks=Slice(Temperature)
+    SinkVis2 snapshot_*.hdf5 Slice(Temperature)
 
     # Column density of thermal energy
-    SinkVis2 snapshot_*.hdf5 --tasks=SurfaceDensity(Masses*InternalEnergy)
+    SinkVis2 snapshot_*.hdf5 SurfaceDensity(Masses*InternalEnergy)
 
     # Projected average of log density
-    SinkVis2 snapshot_*.hdf5 --tasks=ProjectedAverage(log10(Density))
+    SinkVis2 snapshot_*.hdf5 ProjectedAverage(log10(Density))
 
     # Multiple tasks at once
-    SinkVis2 snapshot_*.hdf5 --tasks=SigmaGas,Slice(Temperature),Slice(PlasmaBeta)
+    SinkVis2 snapshot_*.hdf5 SigmaGas Slice(Temperature) Slice(PlasmaBeta)
 
 Available Functions in Expressions
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -150,7 +171,7 @@ derived fields.
 
 Example::
 
-    SinkVis2 snapshot_*.hdf5 --tasks=Slice(PlasmaBeta),Slice(MachNumber)
+    SinkVis2 snapshot_*.hdf5 Slice(PlasmaBeta) Slice(MachNumber)
 
 Field Fallbacks
 ^^^^^^^^^^^^^^^
@@ -204,6 +225,16 @@ change::
 Arbitrary directions can be specified as a vector::
 
     SinkVis2 snapshot_*.hdf5 --dir=1,1,0   # view along (1,1,0)
+
+Camera up vector
+^^^^^^^^^^^^^^^^
+
+By default the up direction is inferred from the viewing direction.  Use
+``--camera_up`` to set it explicitly (it will be orthogonalized against
+the viewing direction automatically)::
+
+    # Edge-on disk with rotation axis along z
+    SinkVis2 snapshot_*.hdf5 --dir=0,1,0 --camera_up=0,0,1
 
 Pan and tilt
 ^^^^^^^^^^^^
@@ -270,8 +301,8 @@ Parallelism
     Number of worker processes for processing different snapshots in parallel.
 
 ``--np_render``
-    Number of OpenMP threads per rendering call.  Set to ``-1`` to use all
-    available cores divided by ``--np``.
+    Number of threads per rendering call.  Defaults to ``-1``, which uses
+    all available cores divided by ``--np``.
 
 Example: 4 snapshot workers, each using 4 render threads::
 
@@ -297,23 +328,30 @@ Full Option Reference
 .. code-block:: text
 
     Usage:
-    SinkVis2 <files> ... [options]
+    SinkVis2 <args> ... [options]
+
+    Positional arguments are split automatically: .hdf5 files are snapshots,
+    everything else is a task (e.g. SigmaGas, Slice(Temperature)).
+    If no tasks are given, defaults to SigmaGas.
 
     Options:
         -h --help                         Show this screen.
-        --tasks=<task1,task2...>           Comma-separated list of tasks [default: SigmaGas]
+        --tasks=<task1,task2...>           Alternative to positional task args
         --rmax=<pc>                        Half-width of the field of view
         --res=<N>                          Image resolution in pixels [default: 1024]
         --cmap=<name>                      Colormap name [default: viridis]
         --limits=<min,max>                 Colormap dynamic range
         --center=<s>                       Image center [default: None]
         --dir=<x,y,z>                      Viewing direction [default: z]
+        --camera_up=<x,y,z>                Camera up vector [default: None]
         --pan=<deg>                        Pan angle in degrees [default: 0]
         --tilt=<deg>                       Tilt angle in degrees [default: 0]
         --camera_distance=<D>              Camera distance for perspective [default: inf]
+        --target_time=<f>                  Render single image at this simulation time
         --np=<N>                           Number of worker processes [default: 1]
-        --np_render=<N>                    Render threads per process [default: 1]
+        --np_render=<N>                    Render threads (-1 = auto) [default: -1]
         --interp_fac=<N>                   Interpolated frames per snapshot [default: 1]
+        --supersample=<N>                  Anti-aliasing factor for Slice [default: 2]
         --make_movie                       Encode frames into an mp4 movie
         --fps=<N>                          Movie frame rate [default: 24]
         --outputfolder=<name>              Output directory [default: .]
@@ -335,5 +373,4 @@ Full Option Reference
         --cool_cmap=<name>                CoolMap colormap [default: magma]
         --v_limits=<min,max>              CoolMap velocity dispersion range
         --SHO_RGB_norm=<f>                Narrowband normalization [default: 0.0]
-        --highlight_wind=<f>              Wind particle mass boost [default: 1]
         --id_mask=<file>                  Particle ID filter (.npy file)

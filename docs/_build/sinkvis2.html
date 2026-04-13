@@ -16,10 +16,11 @@
       <script src="_static/documentation_options.js?v=086c1757"></script>
       <script src="_static/doctools.js?v=9bcbadda"></script>
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Custom Tasks In Depth" href="custom_tasks.html" />
+    <link rel="next" title="Camera-File Movies" href="camera_movies.html" />
     <link rel="prev" title="Installation" href="installation.html" /> 
 </head>
 
@@ -72,6 +73,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#full-option-reference">Full Option Reference</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="camera_movies.html">Camera-File Movies</a></li>
 <li class="toctree-l1"><a class="reference internal" href="custom_tasks.html">Custom Tasks In Depth</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
 </ul>
@@ -105,22 +107,31 @@
 <p><code class="docutils literal notranslate"><span class="pre">SinkVis2</span></code> renders images and movies from GIZMO simulation snapshots.</p>
 <section id="basic-usage">
 <h2>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading"></a></h2>
-<p>Render surface density images for a sequence of snapshots:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span>
+<p>Tasks (what to plot) are given as positional arguments after the snapshot
+files.  Anything ending in <code class="docutils literal notranslate"><span class="pre">.hdf5</span></code> is treated as a snapshot; everything
+else is a task.  If no tasks are given, <code class="docutils literal notranslate"><span class="pre">SigmaGas</span></code> is the default.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Default surface density</span>
+<span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span>
+
+<span class="c1"># Surface density + temperature slice</span>
+<span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SigmaGas</span> <span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span>
+
+<span class="c1"># Just a temperature slice, higher resolution, inferno colormap</span>
+<span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span> <span class="o">--</span><span class="n">res</span><span class="o">=</span><span class="mi">2048</span> <span class="o">--</span><span class="n">cmap</span><span class="o">=</span><span class="n">inferno</span>
+
+<span class="c1"># Make a movie</span>
+<span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SigmaGas</span> <span class="o">--</span><span class="n">make_movie</span> <span class="o">--</span><span class="n">fps</span><span class="o">=</span><span class="mi">30</span>
 </pre></div>
 </div>
-<p>Render at higher resolution with the <code class="docutils literal notranslate"><span class="pre">inferno</span></code> colormap:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">res</span><span class="o">=</span><span class="mi">2048</span> <span class="o">--</span><span class="n">cmap</span><span class="o">=</span><span class="n">inferno</span>
-</pre></div>
-</div>
-<p>Make a movie:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">make_movie</span> <span class="o">--</span><span class="n">fps</span><span class="o">=</span><span class="mi">30</span>
+<p>Tasks can also be specified with the <code class="docutils literal notranslate"><span class="pre">--tasks</span></code> flag for backwards
+compatibility:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">SigmaGas</span><span class="p">,</span><span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
 <section id="built-in-tasks">
 <h2>Built-in Tasks<a class="headerlink" href="#built-in-tasks" title="Link to this heading"></a></h2>
-<p>Select tasks with <code class="docutils literal notranslate"><span class="pre">--tasks</span></code>.  Multiple tasks can be comma-separated.</p>
+<p>The following built-in task names are available:</p>
 <dl class="simple">
 <dt><code class="docutils literal notranslate"><span class="pre">SigmaGas</span></code> (default)</dt><dd><p>Gas surface density map with colorbar.</p>
 </dd>
@@ -131,7 +142,7 @@ images.</p>
 </dd>
 </dl>
 <p>Example:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">SigmaGas</span><span class="p">,</span><span class="n">CoolMap</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SigmaGas</span> <span class="n">CoolMap</span>
 </pre></div>
 </div>
 </section>
@@ -140,13 +151,17 @@ images.</p>
 <p>Beyond the built-in tasks, you can render arbitrary field expressions using
 four render modes:</p>
 <dl class="simple">
-<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Line-of-sight integral of <em>expr</em> (column density).</p>
+<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Surface density of <em>expr</em> — the line-of-sight integral of the volume
+density of the given quantity.  E.g. <code class="docutils literal notranslate"><span class="pre">SurfaceDensity(Masses)</span></code> gives
+mass surface density <span class="math notranslate nohighlight">\(\Sigma = \int \rho\, dz\)</span>.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">Projection(expr)</span></code></dt><dd><p>Alias for <code class="docutils literal notranslate"><span class="pre">SurfaceDensity</span></code>.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">ProjectedAverage(expr)</span></code></dt><dd><p>Mass-weighted average of <em>expr</em> along the line of sight.</p>
 </dd>
-<dt><code class="docutils literal notranslate"><span class="pre">Slice(expr)</span></code></dt><dd><p>Midplane slice of <em>expr</em> (anti-aliased at 4x supersampling).</p>
+<dt><code class="docutils literal notranslate"><span class="pre">Slice(expr)</span></code></dt><dd><p>Midplane slice of <em>expr</em>, with order-1 linear reconstruction in log
+space (for positive quantities) and anti-aliasing via supersampling
+(default 2x, controllable with <code class="docutils literal notranslate"><span class="pre">--supersample</span></code>).</p>
 </dd>
 </dl>
 <p>Expressions can reference any <code class="docutils literal notranslate"><span class="pre">PartType0</span></code> field by name (<code class="docutils literal notranslate"><span class="pre">Masses</span></code>,
@@ -154,16 +169,16 @@ four render modes:</p>
 operators, and call numpy functions.</p>
 <p>Examples:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Temperature slice</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span>
 
 <span class="c1"># Column density of thermal energy</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">SurfaceDensity</span><span class="p">(</span><span class="n">Masses</span><span class="o">*</span><span class="n">InternalEnergy</span><span class="p">)</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SurfaceDensity</span><span class="p">(</span><span class="n">Masses</span><span class="o">*</span><span class="n">InternalEnergy</span><span class="p">)</span>
 
 <span class="c1"># Projected average of log density</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">ProjectedAverage</span><span class="p">(</span><span class="n">log10</span><span class="p">(</span><span class="n">Density</span><span class="p">))</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">ProjectedAverage</span><span class="p">(</span><span class="n">log10</span><span class="p">(</span><span class="n">Density</span><span class="p">))</span>
 
 <span class="c1"># Multiple tasks at once</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">SigmaGas</span><span class="p">,</span><span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">),</span><span class="n">Slice</span><span class="p">(</span><span class="n">PlasmaBeta</span><span class="p">)</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SigmaGas</span> <span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span> <span class="n">Slice</span><span class="p">(</span><span class="n">PlasmaBeta</span><span class="p">)</span>
 </pre></div>
 </div>
 <section id="available-functions-in-expressions">
@@ -272,7 +287,7 @@ derived fields.</p>
 </tbody>
 </table>
 <p>Example:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">Slice</span><span class="p">(</span><span class="n">PlasmaBeta</span><span class="p">),</span><span class="n">Slice</span><span class="p">(</span><span class="n">MachNumber</span><span class="p">)</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">Slice</span><span class="p">(</span><span class="n">PlasmaBeta</span><span class="p">)</span> <span class="n">Slice</span><span class="p">(</span><span class="n">MachNumber</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
@@ -398,8 +413,8 @@ smoother movies:</p>
 <dl class="simple">
 <dt><code class="docutils literal notranslate"><span class="pre">--np</span></code></dt><dd><p>Number of worker processes for processing different snapshots in parallel.</p>
 </dd>
-<dt><code class="docutils literal notranslate"><span class="pre">--np_render</span></code></dt><dd><p>Number of OpenMP threads per rendering call.  Set to <code class="docutils literal notranslate"><span class="pre">-1</span></code> to use all
-available cores divided by <code class="docutils literal notranslate"><span class="pre">--np</span></code>.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">--np_render</span></code></dt><dd><p>Number of threads per rendering call.  Defaults to <code class="docutils literal notranslate"><span class="pre">-1</span></code>, which uses
+all available cores divided by <code class="docutils literal notranslate"><span class="pre">--np</span></code>.</p>
 </dd>
 </dl>
 <p>Example: 4 snapshot workers, each using 4 render threads:</p>
@@ -423,11 +438,15 @@ temperature, using the AMUSE fresco algorithm.</p>
 <section id="full-option-reference">
 <h2>Full Option Reference<a class="headerlink" href="#full-option-reference" title="Link to this heading"></a></h2>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Usage:
-SinkVis2 &lt;files&gt; ... [options]
+SinkVis2 &lt;args&gt; ... [options]
+
+Positional arguments are split automatically: .hdf5 files are snapshots,
+everything else is a task (e.g. SigmaGas, Slice(Temperature)).
+If no tasks are given, defaults to SigmaGas.
 
 Options:
     -h --help                         Show this screen.
-    --tasks=&lt;task1,task2...&gt;           Comma-separated list of tasks [default: SigmaGas]
+    --tasks=&lt;task1,task2...&gt;           Alternative to positional task args
     --rmax=&lt;pc&gt;                        Half-width of the field of view
     --res=&lt;N&gt;                          Image resolution in pixels [default: 1024]
     --cmap=&lt;name&gt;                      Colormap name [default: viridis]
@@ -437,9 +456,11 @@ Options:
     --pan=&lt;deg&gt;                        Pan angle in degrees [default: 0]
     --tilt=&lt;deg&gt;                       Tilt angle in degrees [default: 0]
     --camera_distance=&lt;D&gt;              Camera distance for perspective [default: inf]
+    --target_time=&lt;f&gt;                  Render single image at this simulation time
     --np=&lt;N&gt;                           Number of worker processes [default: 1]
-    --np_render=&lt;N&gt;                    Render threads per process [default: 1]
+    --np_render=&lt;N&gt;                    Render threads (-1 = auto) [default: -1]
     --interp_fac=&lt;N&gt;                   Interpolated frames per snapshot [default: 1]
+    --supersample=&lt;N&gt;                  Anti-aliasing factor for Slice [default: 2]
     --make_movie                       Encode frames into an mp4 movie
     --fps=&lt;N&gt;                          Movie frame rate [default: 24]
     --outputfolder=&lt;name&gt;              Output directory [default: .]
@@ -461,7 +482,6 @@ Options:
     --cool_cmap=&lt;name&gt;                CoolMap colormap [default: magma]
     --v_limits=&lt;min,max&gt;              CoolMap velocity dispersion range
     --SHO_RGB_norm=&lt;f&gt;                Narrowband normalization [default: 0.0]
-    --highlight_wind=&lt;f&gt;              Wind particle mass boost [default: 1]
     --id_mask=&lt;file&gt;                  Particle ID filter (.npy file)
 </pre></div>
 </div>
@@ -473,7 +493,7 @@ Options:
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="installation.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="custom_tasks.html" class="btn btn-neutral float-right" title="Custom Tasks In Depth" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="camera_movies.html" class="btn btn-neutral float-right" title="Camera-File Movies" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

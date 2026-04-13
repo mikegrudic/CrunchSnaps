@@ -11,7 +11,7 @@ Options:
     --no_overwrite         Skip rendering if the output file already exists
     --res=<N>              Resolution [default: 256]
     --np=<N>               Number of renders to do in parallel [default: 1]
-    --np_render=<N>        Number of cores per process for rendering [default: 1]
+    --np_render=<N>        Number of threads for rendering (-1 uses all cores / --np) [default: -1]
     --cubemap              Render 6 faces of a cubemap surrounding the camera
     --no_timestamp         Don't add timestamp
     --no_size_scale        Don't draw size scale

@@ -1,14 +1,13 @@
 """
 Usage:
-SinkVis2 <files> ... [options]
+SinkVis2 <args> ... [options]
 
 Options:
     -h --help                    Show this screen.
-    --tasks=<task1,task2...>     Comma-separated list of tasks [default: SigmaGas]
+    --tasks=<task1,task2...>     Comma-separated list of tasks (alternative to positional args)
                                  Built-in: SigmaGas, HubbleSHO, CoolMap
                                  Custom: SurfaceDensity(expr), Projection(expr),
                                          ProjectedAverage(expr), Slice(expr)
-                                 e.g. --tasks=SigmaGas,Slice(Temperature),ProjectedAverage(Density)
     --rmax=<pc>                  Half-width of the field of view; defaults to mass-weighted spatial extent of gas. FOV/2 in radians if camera_dist is <inf
     --no_stars                   Hide sink particles
     --no_overwrite               Skip rendering if the output file already exists
@@ -20,6 +19,7 @@ Options:
     --v_limits=<min,max>         Dynamic range of kinematic map in km/s
     --SHO_RGB_norm=<f>           Normalization constant for narrow band plot, set automatically by default. If a vector is provided, then each channel is normalized by the correponding component [default: 0.0]
     --camera_distance=<D>        Camera distance if perspective rendering is required [default: inf]
+    --camera_up=<x,y,z>          Camera up vector [default: None]
     --pan=<deg>                  Pan angle in degrees (rotation about Y axis) [default: 0]
     --tilt=<deg>                 Tilt angle in degrees (rotation about X axis) [default: 0]
     --freeze_rotation=<num1,num2,...> Snapshot numbers at which to add a freeze-frame rotation [default: None]
@@ -27,7 +27,7 @@ Options:
     --cool_cmap=<name>           Name of colormap to use for plot_cool_map, defaults to same as cmap [default: magma]
     --interp_fac=<N>             Number of interpolating frames per snapshot [default: 1]
     --np=<N>                     Number of processors to run on [default: 1]
-    --np_render=<N>              Number of openMP threads to run rendering on (-1 uses all available cores divided by --np) [default: 1]
+    --np_render=<N>              Number of threads for rendering (-1 uses all available cores divided by --np) [default: -1]
     --res=<N>                    Image resolution [default: 1024]
     --center=<s>                 Center of the image. Argument can include 3D comma-separated coordinates, a particle
                                  ID, 'densest' to center on the densest gas, 'median' to center on the median gas cell
@@ -44,6 +44,7 @@ Options:
     --realstars_lum_exp=<f>      Exponent p such that luminosities are rescaled by raising to that power [default: 1.0]
     --realstars_max_lum=<f>      Maximum stellar luminosity in realistic PSF rendering [default: 1.0e3]
     --realstars_opacity=<f>      Opacity scaling factor for realstars [default: 1.0]
+    --supersample=<N>            Anti-aliasing supersampling factor for Slice renders [default: 2]
     --make_movie                 Stitch rendered frames into a 24fps mp4 movie using ffmpeg
     --fps=<N>                    Frames per second for movie [default: 24]
 """
@@ -124,7 +125,9 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
 
     # parameters that every single task will have in common
     common_params = {i.replace("--", ""): input[i] for i in input}
-    del common_params["<files>"]
+    for k in list(common_params):
+        if k.startswith("<"):
+            del common_params[k]
     for c, i in common_params.items():
         if not isinstance(i, str):
             continue
@@ -161,6 +164,11 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
     elif direction == "y":
         common_params["camera_dir"] = np.array([0, 1.0, 0])
         common_params["camera_up"] = np.array([0, 0, 1.0])
+    elif isinstance(direction, np.ndarray):
+        common_params["camera_dir"] = direction
+
+    if input["--camera_up"] is not None and input["--camera_up"] != "None":
+        common_params["camera_up"] = np.array([float(x) for x in input["--camera_up"].split(",")])
 
     if input["--rmax"] is None:
         common_params["rmax"] = None
@@ -315,6 +323,15 @@ def main(input):
 
 def main_cli():
     arguments = docopt(__doc__)
+    # Split positional args into snapshot files and task specs
+    positional = arguments["<args>"]
+    files = [a for a in positional if a.endswith(".hdf5")]
+    pos_tasks = [a for a in positional if not a.endswith(".hdf5")]
+    arguments["<files>"] = files
+    if pos_tasks:
+        arguments["--tasks"] = ",".join(pos_tasks)
+    elif not arguments["--tasks"]:
+        arguments["--tasks"] = "SigmaGas"
     main(arguments)
 
 
