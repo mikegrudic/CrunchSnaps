@@ -1,0 +1,502 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SinkVis2 Command-Line Tool &mdash; CrunchSnaps 0.11 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=086c1757"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Custom Tasks In Depth" href="custom_tasks.html" />
+    <link rel="prev" title="Installation" href="installation.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            CrunchSnaps
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">SinkVis2 Command-Line Tool</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#basic-usage">Basic Usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#built-in-tasks">Built-in Tasks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#custom-field-tasks">Custom Field Tasks</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#available-functions-in-expressions">Available Functions in Expressions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#derived-fields">Derived Fields</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#field-fallbacks">Field Fallbacks</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#registering-custom-fields">Registering Custom Fields</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#camera-and-projection">Camera and Projection</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#viewing-direction">Viewing direction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pan-and-tilt">Pan and tilt</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#perspective-projection">Perspective projection</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#centering">Centering</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#movies">Movies</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#interpolated-movies">Interpolated movies</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#freeze-frame-rotation">Freeze-frame rotation</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#parallelism">Parallelism</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#stars">Stars</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#full-option-reference">Full Option Reference</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="custom_tasks.html">Custom Tasks In Depth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">CrunchSnaps</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">SinkVis2 Command-Line Tool</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/sinkvis2.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="sinkvis2-command-line-tool">
+<h1>SinkVis2 Command-Line Tool<a class="headerlink" href="#sinkvis2-command-line-tool" title="Link to this heading"></a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">SinkVis2</span></code> renders images and movies from GIZMO simulation snapshots.</p>
+<section id="basic-usage">
+<h2>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading"></a></h2>
+<p>Render surface density images for a sequence of snapshots:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span>
+</pre></div>
+</div>
+<p>Render at higher resolution with the <code class="docutils literal notranslate"><span class="pre">inferno</span></code> colormap:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">res</span><span class="o">=</span><span class="mi">2048</span> <span class="o">--</span><span class="n">cmap</span><span class="o">=</span><span class="n">inferno</span>
+</pre></div>
+</div>
+<p>Make a movie:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">make_movie</span> <span class="o">--</span><span class="n">fps</span><span class="o">=</span><span class="mi">30</span>
+</pre></div>
+</div>
+</section>
+<section id="built-in-tasks">
+<h2>Built-in Tasks<a class="headerlink" href="#built-in-tasks" title="Link to this heading"></a></h2>
+<p>Select tasks with <code class="docutils literal notranslate"><span class="pre">--tasks</span></code>.  Multiple tasks can be comma-separated.</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">SigmaGas</span></code> (default)</dt><dd><p>Gas surface density map with colorbar.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">CoolMap</span></code></dt><dd><p>Surface density modulated by velocity dispersion in HSV space.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">HubbleSHO</span></code></dt><dd><p>Narrowband SII/H-alpha/OIII composite resembling Hubble SHO palette
+images.</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">SigmaGas</span><span class="p">,</span><span class="n">CoolMap</span>
+</pre></div>
+</div>
+</section>
+<section id="custom-field-tasks">
+<h2>Custom Field Tasks<a class="headerlink" href="#custom-field-tasks" title="Link to this heading"></a></h2>
+<p>Beyond the built-in tasks, you can render arbitrary field expressions using
+four render modes:</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Line-of-sight integral of <em>expr</em> (column density).</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">Projection(expr)</span></code></dt><dd><p>Alias for <code class="docutils literal notranslate"><span class="pre">SurfaceDensity</span></code>.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">ProjectedAverage(expr)</span></code></dt><dd><p>Mass-weighted average of <em>expr</em> along the line of sight.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">Slice(expr)</span></code></dt><dd><p>Midplane slice of <em>expr</em> (anti-aliased at 4x supersampling).</p>
+</dd>
+</dl>
+<p>Expressions can reference any <code class="docutils literal notranslate"><span class="pre">PartType0</span></code> field by name (<code class="docutils literal notranslate"><span class="pre">Masses</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Temperature</span></code>, <code class="docutils literal notranslate"><span class="pre">Density</span></code>, <code class="docutils literal notranslate"><span class="pre">Velocities</span></code>, etc.), use arithmetic
+operators, and call numpy functions.</p>
+<p>Examples:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Temperature slice</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span>
+
+<span class="c1"># Column density of thermal energy</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">SurfaceDensity</span><span class="p">(</span><span class="n">Masses</span><span class="o">*</span><span class="n">InternalEnergy</span><span class="p">)</span>
+
+<span class="c1"># Projected average of log density</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">ProjectedAverage</span><span class="p">(</span><span class="n">log10</span><span class="p">(</span><span class="n">Density</span><span class="p">))</span>
+
+<span class="c1"># Multiple tasks at once</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">SigmaGas</span><span class="p">,</span><span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">),</span><span class="n">Slice</span><span class="p">(</span><span class="n">PlasmaBeta</span><span class="p">)</span>
+</pre></div>
+</div>
+<section id="available-functions-in-expressions">
+<h3>Available Functions in Expressions<a class="headerlink" href="#available-functions-in-expressions" title="Link to this heading"></a></h3>
+<p>The following numpy functions are available in expressions:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">abs</span></code>, <code class="docutils literal notranslate"><span class="pre">sqrt</span></code>, <code class="docutils literal notranslate"><span class="pre">norm</span></code> (vector magnitude)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">log</span></code>, <code class="docutils literal notranslate"><span class="pre">log2</span></code>, <code class="docutils literal notranslate"><span class="pre">log10</span></code>, <code class="docutils literal notranslate"><span class="pre">exp</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sin</span></code>, <code class="docutils literal notranslate"><span class="pre">cos</span></code>, <code class="docutils literal notranslate"><span class="pre">tan</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">minimum</span></code>, <code class="docutils literal notranslate"><span class="pre">maximum</span></code>, <code class="docutils literal notranslate"><span class="pre">clip</span></code>, <code class="docutils literal notranslate"><span class="pre">where</span></code></p></li>
+</ul>
+<p>Physical constants (CGS, from astropy) are also available:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 23.1%" />
+<col style="width: 76.9%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Name</p></th>
+<th class="head"><p>Value</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">pi</span></code></p></td>
+<td><p>3.14159…</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">k_B</span></code></p></td>
+<td><p>Boltzmann constant (erg/K)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">m_p</span></code></p></td>
+<td><p>Proton mass (g)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">m_e</span></code></p></td>
+<td><p>Electron mass (g)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">G</span></code></p></td>
+<td><p>Gravitational constant (cm<sup>3</sup> g<sup>-1</sup> s<sup>-2</sup>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">c_light</span></code></p></td>
+<td><p>Speed of light (cm/s)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Msun</span></code></p></td>
+<td><p>Solar mass (g)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Lsun</span></code></p></td>
+<td><p>Solar luminosity (erg/s)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">pc</span></code></p></td>
+<td><p>Parsec (cm)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">AU</span></code></p></td>
+<td><p>Astronomical unit (cm)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">yr</span></code>, <code class="docutils literal notranslate"><span class="pre">Myr</span></code></p></td>
+<td><p>Year / megayear (s)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">eV</span></code></p></td>
+<td><p>Electron-volt (erg)</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="derived-fields">
+<h3>Derived Fields<a class="headerlink" href="#derived-fields" title="Link to this heading"></a></h3>
+<p>Named derived fields are pre-defined expressions that can be used by name in
+any task.  They resolve recursively, so a derived field can depend on other
+derived fields.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 35.7%" />
+<col style="width: 64.3%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Name</p></th>
+<th class="head"><p>Expression</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">MagneticPressure</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">norm(MagneticField)**2</span> <span class="pre">/</span> <span class="pre">(8*pi)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PlasmaBeta</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Pressure</span> <span class="pre">/</span> <span class="pre">MagneticPressure</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AlfvenSpeed</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">norm(MagneticField)</span> <span class="pre">/</span> <span class="pre">sqrt(4*pi*Density)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">MachNumber</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">norm(Velocities)</span> <span class="pre">/</span> <span class="pre">SoundSpeed</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">JeansLength</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SoundSpeed</span> <span class="pre">/</span> <span class="pre">sqrt(G</span> <span class="pre">*</span> <span class="pre">Density)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ThermalEnergy</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Masses</span> <span class="pre">*</span> <span class="pre">InternalEnergy</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">KineticEnergy</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">0.5</span> <span class="pre">*</span> <span class="pre">Masses</span> <span class="pre">*</span> <span class="pre">norm(Velocities)**2</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">MagneticEnergy</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">norm(MagneticField)**2</span> <span class="pre">/</span> <span class="pre">(8*pi)</span> <span class="pre">*</span> <span class="pre">Masses</span> <span class="pre">/</span> <span class="pre">Density</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">NumberDensity</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Density</span> <span class="pre">/</span> <span class="pre">m_p</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">Slice</span><span class="p">(</span><span class="n">PlasmaBeta</span><span class="p">),</span><span class="n">Slice</span><span class="p">(</span><span class="n">MachNumber</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="field-fallbacks">
+<h3>Field Fallbacks<a class="headerlink" href="#field-fallbacks" title="Link to this heading"></a></h3>
+<p>Some fields may not be present in every snapshot.  Fallback expressions are
+used automatically when a field is missing:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 33.3%" />
+<col style="width: 66.7%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Field</p></th>
+<th class="head"><p>Fallback expression</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Pressure</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(5/3</span> <span class="pre">-</span> <span class="pre">1)</span> <span class="pre">*</span> <span class="pre">Density</span> <span class="pre">*</span> <span class="pre">InternalEnergy</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">SoundSpeed</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">sqrt(5/3</span> <span class="pre">*</span> <span class="pre">(5/3</span> <span class="pre">-</span> <span class="pre">1)</span> <span class="pre">*</span> <span class="pre">InternalEnergy)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Temperature</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(5/3</span> <span class="pre">-</span> <span class="pre">1)</span> <span class="pre">*</span> <span class="pre">InternalEnergy</span> <span class="pre">*</span> <span class="pre">m_p</span> <span class="pre">/</span> <span class="pre">k_B</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p>If the field exists in the snapshot, its stored value is used instead.</p>
+</section>
+<section id="registering-custom-fields">
+<h3>Registering Custom Fields<a class="headerlink" href="#registering-custom-fields" title="Link to this heading"></a></h3>
+<p>You can register your own derived fields, fallbacks, and colorbar symbols
+from Python before calling <code class="docutils literal notranslate"><span class="pre">main</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">CrunchSnaps.snapshot_tasks</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">register_derived_field</span><span class="p">,</span>
+    <span class="n">register_field_fallback</span><span class="p">,</span>
+    <span class="n">register_field_symbol</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">register_derived_field</span><span class="p">(</span><span class="s2">&quot;CoolingTime&quot;</span><span class="p">,</span> <span class="s2">&quot;InternalEnergy / CoolingRate&quot;</span><span class="p">)</span>
+<span class="n">register_field_fallback</span><span class="p">(</span><span class="s2">&quot;ElectronAbundance&quot;</span><span class="p">,</span> <span class="s2">&quot;1.0&quot;</span><span class="p">)</span>
+<span class="n">register_field_symbol</span><span class="p">(</span><span class="s2">&quot;CoolingTime&quot;</span><span class="p">,</span> <span class="sa">r</span><span class="s2">&quot;t_{\rm cool}\;\mathrm{(s)}&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="camera-and-projection">
+<h2>Camera and Projection<a class="headerlink" href="#camera-and-projection" title="Link to this heading"></a></h2>
+<section id="viewing-direction">
+<h3>Viewing direction<a class="headerlink" href="#viewing-direction" title="Link to this heading"></a></h3>
+<p>By default the image is projected along the z-axis.  Use <code class="docutils literal notranslate"><span class="pre">--dir</span></code> to
+change:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="nb">dir</span><span class="o">=</span><span class="n">x</span>       <span class="c1"># view along x</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="nb">dir</span><span class="o">=</span><span class="n">y</span>       <span class="c1"># view along y</span>
+</pre></div>
+</div>
+<p>Arbitrary directions can be specified as a vector:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="nb">dir</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span>   <span class="c1"># view along (1,1,0)</span>
+</pre></div>
+</div>
+</section>
+<section id="pan-and-tilt">
+<h3>Pan and tilt<a class="headerlink" href="#pan-and-tilt" title="Link to this heading"></a></h3>
+<p>Apply rotation about the Y and X axes:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">pan</span><span class="o">=</span><span class="mi">45</span> <span class="o">--</span><span class="n">tilt</span><span class="o">=</span><span class="mi">10</span>
+</pre></div>
+</div>
+</section>
+<section id="perspective-projection">
+<h3>Perspective projection<a class="headerlink" href="#perspective-projection" title="Link to this heading"></a></h3>
+<p>Set a finite camera distance for perspective (non-orthographic) rendering:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">camera_distance</span><span class="o">=</span><span class="mi">100</span>
+</pre></div>
+</div>
+</section>
+<section id="centering">
+<h3>Centering<a class="headerlink" href="#centering" title="Link to this heading"></a></h3>
+<p>Control the center of the image:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">densest</span>       <span class="c1"># densest gas cell</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">massive</span>        <span class="c1"># most massive star</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">massive</span><span class="o">=</span><span class="mi">3</span>      <span class="c1"># 3rd most massive star</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">median</span>          <span class="c1"># median gas position</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span><span class="mf">0.5</span><span class="p">,</span><span class="mf">0.5</span>    <span class="c1"># explicit coordinates</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">ID</span><span class="o">=</span><span class="mi">12345</span>        <span class="c1"># specific particle ID</span>
+</pre></div>
+</div>
+<p>When not specified, the default center is the box center, and the default
+field of view (<code class="docutils literal notranslate"><span class="pre">--rmax</span></code>) is determined from the mass-weighted spatial
+extent of the gas.</p>
+</section>
+</section>
+<section id="movies">
+<h2>Movies<a class="headerlink" href="#movies" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">--make_movie</span></code> renders all frames, then stitches them into an mp4 using
+ffmpeg:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">make_movie</span> <span class="o">--</span><span class="n">fps</span><span class="o">=</span><span class="mi">24</span>
+</pre></div>
+</div>
+<p>When <code class="docutils literal notranslate"><span class="pre">--limits</span></code> is not explicitly set, the movie pipeline automatically
+computes <strong>global colormap limits</strong> that maximize the sum of per-frame
+Shannon entropies across the sequence, ensuring consistent and
+information-rich coloring throughout the movie.</p>
+<section id="interpolated-movies">
+<h3>Interpolated movies<a class="headerlink" href="#interpolated-movies" title="Link to this heading"></a></h3>
+<p>Use <code class="docutils literal notranslate"><span class="pre">--interp_fac</span></code> to generate interpolated frames between snapshots for
+smoother movies:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">make_movie</span> <span class="o">--</span><span class="n">interp_fac</span><span class="o">=</span><span class="mi">4</span>
+</pre></div>
+</div>
+</section>
+<section id="freeze-frame-rotation">
+<h3>Freeze-frame rotation<a class="headerlink" href="#freeze-frame-rotation" title="Link to this heading"></a></h3>
+<p>Add a 360-degree rotation at specific snapshot numbers:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">make_movie</span> <span class="o">--</span><span class="n">freeze_rotation</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span><span class="mi">200</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="parallelism">
+<h2>Parallelism<a class="headerlink" href="#parallelism" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">--np</span></code></dt><dd><p>Number of worker processes for processing different snapshots in parallel.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">--np_render</span></code></dt><dd><p>Number of OpenMP threads per rendering call.  Set to <code class="docutils literal notranslate"><span class="pre">-1</span></code> to use all
+available cores divided by <code class="docutils literal notranslate"><span class="pre">--np</span></code>.</p>
+</dd>
+</dl>
+<p>Example: 4 snapshot workers, each using 4 render threads:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">np</span><span class="o">=</span><span class="mi">4</span> <span class="o">--</span><span class="n">np_render</span><span class="o">=</span><span class="mi">4</span>
+</pre></div>
+</div>
+</section>
+<section id="stars">
+<h2>Stars<a class="headerlink" href="#stars" title="Link to this heading"></a></h2>
+<p>Sink particles are rendered on top of the image by default.  Use
+<code class="docutils literal notranslate"><span class="pre">--no_stars</span></code> to hide them.</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">--realstars</span></code></dt><dd><p>Render stars with realistic PSFs based on their luminosity and
+temperature, using the AMUSE fresco algorithm.</p>
+</dd>
+</dl>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">realstars</span> <span class="o">--</span><span class="n">realstars_max_lum</span><span class="o">=</span><span class="mf">1e4</span>
+</pre></div>
+</div>
+</section>
+<section id="full-option-reference">
+<h2>Full Option Reference<a class="headerlink" href="#full-option-reference" title="Link to this heading"></a></h2>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Usage:
+SinkVis2 &lt;files&gt; ... [options]
+
+Options:
+    -h --help                         Show this screen.
+    --tasks=&lt;task1,task2...&gt;           Comma-separated list of tasks [default: SigmaGas]
+    --rmax=&lt;pc&gt;                        Half-width of the field of view
+    --res=&lt;N&gt;                          Image resolution in pixels [default: 1024]
+    --cmap=&lt;name&gt;                      Colormap name [default: viridis]
+    --limits=&lt;min,max&gt;                 Colormap dynamic range
+    --center=&lt;s&gt;                       Image center [default: None]
+    --dir=&lt;x,y,z&gt;                      Viewing direction [default: z]
+    --pan=&lt;deg&gt;                        Pan angle in degrees [default: 0]
+    --tilt=&lt;deg&gt;                       Tilt angle in degrees [default: 0]
+    --camera_distance=&lt;D&gt;              Camera distance for perspective [default: inf]
+    --np=&lt;N&gt;                           Number of worker processes [default: 1]
+    --np_render=&lt;N&gt;                    Render threads per process [default: 1]
+    --interp_fac=&lt;N&gt;                   Interpolated frames per snapshot [default: 1]
+    --make_movie                       Encode frames into an mp4 movie
+    --fps=&lt;N&gt;                          Movie frame rate [default: 24]
+    --outputfolder=&lt;name&gt;              Output directory [default: .]
+    --backend=&lt;b&gt;                      PIL or matplotlib [default: PIL]
+    --no_stars                         Hide sink particles
+    --no_timestamp                     Hide timestamp overlay
+    --no_size_scale                    Hide size scale bar
+    --no_colorbar                      Hide colorbar
+    --no_overwrite                     Skip existing files
+    --realstars                        Realistic stellar PSFs
+    --realstars_lum_exp=&lt;f&gt;            Luminosity exponent [default: 1.0]
+    --realstars_max_lum=&lt;f&gt;            Max stellar luminosity [default: 1.0e3]
+    --realstars_opacity=&lt;f&gt;            Star opacity scaling [default: 1.0]
+    --rescale_hsml=&lt;f&gt;                 Smoothing length scale factor [default: 1]
+    --freeze_rotation=&lt;num1,num2,...&gt;  Snapshots for freeze-frame rotation
+    --equal_frame_times               Equally-spaced frame times
+    --sparse_snaps                    Reduce flicker for sparse snapshots
+    --outflow_only                    Show only outflowing gas
+    --cool_cmap=&lt;name&gt;                CoolMap colormap [default: magma]
+    --v_limits=&lt;min,max&gt;              CoolMap velocity dispersion range
+    --SHO_RGB_norm=&lt;f&gt;                Narrowband normalization [default: 0.0]
+    --highlight_wind=&lt;f&gt;              Wind particle mass boost [default: 1]
+    --id_mask=&lt;file&gt;                  Particle ID filter (.npy file)
+</pre></div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="installation.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="custom_tasks.html" class="btn btn-neutral float-right" title="Custom Tasks In Depth" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright .</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
