@@ -45,6 +45,13 @@ Options:
     --realstars_opacity=<f>      Opacity scaling factor for realstars [default: 1.0]
 """
 
+import os
+import sys
+
+if not os.getenv("PYTHONHASHSEED"):
+    os.environ["PYTHONHASHSEED"] = "0"
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
 from docopt import docopt
 from natsort import natsorted
 import numpy as np

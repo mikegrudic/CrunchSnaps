@@ -99,13 +99,19 @@ def DoTasksForSimulation(
         # Set thread limits in parent env so forkserver workers inherit them;
         # workers also call _limit_threads() themselves as a fallback
         _limit_threads(nthreads)
-        worker_id = 0
+        # Split batches so each worker gets a roughly equal share of frames
+        worker_batches = []
+        for batch in frame_batches:
+            if len(batch) > nproc:
+                worker_batches.extend(np.array_split(batch, nproc))
+            else:
+                worker_batches.append(batch)
+
         with ProcessPoolExecutor(max_workers=nproc, mp_context=_mp_context) as pool:
             futures = {}
-            for batch in frame_batches:
+            for worker_id, batch in enumerate(worker_batches):
                 chunk = (worker_id % nproc, np.array(batch), task_types, snaps, task_params, snapdict, snaptimes, snapnums)
                 futures[pool.submit(DoParamsPass, chunk, id_mask=id_mask)] = batch
-                worker_id += 1
             for f in as_completed(futures):
                 f.result()  # propagate exceptions
     else:

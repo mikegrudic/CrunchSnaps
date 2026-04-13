@@ -1,6 +1,4 @@
 import numpy as np
-from numpy import abs, copysign, sqrt
-from numba import njit, vectorize
 from glob import glob
 from natsort import natsorted
 import h5py
@@ -18,28 +16,56 @@ def cubemapify(params):
     return new_params
 
 
-@njit(cache=True)
+def _NormalizeVector_numpy(v):
+    v /= np.sqrt(np.dot(v, v))
+
+
+def _NearestImage_numpy(dx, boxsize):
+    half = boxsize / 2
+    return np.where(np.abs(dx) > half, -np.copysign(boxsize - np.abs(dx), dx), dx)
+
+
+def _init_numba_funcs():
+    """Lazy-initialize numba-accelerated versions of NormalizeVector and NearestImage."""
+    global NormalizeVector, NearestImage
+    try:
+        from numba import njit, vectorize
+        from numpy import abs, copysign, sqrt
+
+        @njit(cache=True)
+        def _NormalizeVector_numba(v):
+            norm = 0
+            for k in range(v.shape[0]):
+                norm += v[k] * v[k]
+            norm = 1.0 / sqrt(norm)
+            for k in range(v.shape[0]):
+                v[k] *= norm
+
+        @vectorize(cache=True)
+        def _NearestImage_numba(dx, boxsize):
+            if abs(dx) > boxsize / 2:
+                return -copysign(boxsize - abs(dx), dx)
+            else:
+                return dx
+
+        NormalizeVector = _NormalizeVector_numba
+        NearestImage = _NearestImage_numba
+    except ImportError:
+        NormalizeVector = _NormalizeVector_numpy
+        NearestImage = _NearestImage_numpy
+
+
 def NormalizeVector(v):
-    norm = 0
-    for k in range(v.shape[0]):
-        norm += v[k] * v[k]
-    norm = 1.0 / sqrt(norm)
-    for k in range(v.shape[0]):
-        v[k] *= norm
+    _init_numba_funcs()
+    NormalizeVector(v)
 
 
-@vectorize(cache=True)
 def NearestImage(dx, boxsize):
-    """
-    Given a coordinate difference dx, return the *nearest* coordinate difference of the periodic image
-    """
-    if abs(dx) > boxsize / 2:
-        return -copysign(boxsize - abs(dx), dx)
-    else:
-        return dx
+    _init_numba_funcs()
+    return NearestImage(dx, boxsize)
 
 
-def get_snapshot_time_dict(snaps, save_to_file=False):
+def get_snapshot_time_dict(snaps, save_to_file=True):
     snaps = natsorted(snaps)
     all_snaps = natsorted(
         glob(snaps[0].split("snapshot")[0] + "snapshot*.hdf5")
