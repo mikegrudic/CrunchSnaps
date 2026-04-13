@@ -1,9 +1,20 @@
-from joblib import Parallel, delayed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+import multiprocessing
+import os
+
 from .snapshot_tasks import *
 from .misc_functions import *
 from natsort import natsorted
 import h5py
 import numpy as np
+
+# Use forkserver to avoid unsafe fork-after-OpenMP-init (GNU OpenMP crashes on fork).
+# Falls back to fork on systems where forkserver is unavailable.
+try:
+    _mp_context = multiprocessing.get_context("forkserver")
+except ValueError:
+    _mp_context = multiprocessing.get_context("fork")
+
 
 
 def DoTasksForSimulation(
@@ -21,6 +32,10 @@ def DoTasksForSimulation(
     ####################################################################################################
     if len(snaps) == 0 or len(task_types) == 0:
         return  # no work to do so just quit
+
+    # Resolve threads=-1 to an actual count: total cores / nproc
+    if nthreads < 0:
+        nthreads = max(1, (os.cpu_count() or 1) // nproc)
 
     snaps = natsorted(snaps)
     if snaptime_dict is None:
@@ -57,15 +72,81 @@ def DoTasksForSimulation(
             ]  # add the other defaults
     else:
         N_params = len(task_params[0])
+        # resolve threads=-1 in pre-built params
+        for task_list in task_params:
+            for p in task_list:
+                if p.get("threads", 1) < 0:
+                    p["threads"] = nthreads
     # note that params must be sorted by time!
 
-    index_chunks = np.array_split(np.arange(N_params), nproc)
-    chunks = [(i, index_chunks[i], task_types, snaps, task_params, snapdict, snaptimes, snapnums) for i in range(nproc)]
+    # Group frames into small batches that share the same bounding snapshot pair,
+    # so each worker can reuse its snapshot buffer within a batch.
+    frame_batches = []
+    current_batch = []
+    current_bounds = None
+    for i in range(N_params):
+        time_i = task_params[0][i]["Time"]
+        bounds = _bounding_snaptimes(time_i, snaptimes)
+        if bounds != current_bounds and current_batch:
+            frame_batches.append(current_batch)
+            current_batch = []
+        current_bounds = bounds
+        current_batch.append(i)
+    if current_batch:
+        frame_batches.append(current_batch)
+
     if nproc > 1:
-        #        Pool(nproc).starmap(DoParamsPass, zip(chunks,len(chunks)*[id_mask]),chunksize=1) # this is where we fork into parallel tasks
-        Parallel(n_jobs=nproc, backend="loky")(delayed(DoParamsPass)(c, id_mask=id_mask) for c in chunks)
+        # Set thread limits in parent env so forkserver workers inherit them;
+        # workers also call _limit_threads() themselves as a fallback
+        _limit_threads(nthreads)
+        # Split batches so each worker gets a roughly equal share of frames
+        worker_batches = []
+        for batch in frame_batches:
+            if len(batch) > nproc:
+                worker_batches.extend(np.array_split(batch, nproc))
+            else:
+                worker_batches.append(batch)
+
+        with ProcessPoolExecutor(max_workers=nproc, mp_context=_mp_context) as pool:
+            futures = {}
+            for worker_id, batch in enumerate(worker_batches):
+                chunk = (worker_id % nproc, np.array(batch), task_types, snaps, task_params, snapdict, snaptimes, snapnums)
+                futures[pool.submit(DoParamsPass, chunk, id_mask=id_mask)] = batch
+            for f in as_completed(futures):
+                f.result()  # propagate exceptions
     else:
-        [DoParamsPass(c, id_mask=id_mask) for c in chunks]
+        chunk = (0, np.arange(N_params), task_types, snaps, task_params, snapdict, snaptimes, snapnums)
+        DoParamsPass(chunk, id_mask=id_mask)
+
+
+def _bounding_snaptimes(time, snaptimes):
+    """Return the (t1, t2) bounding snapshot times needed to interpolate at a given time."""
+    if len(snaptimes) >= 2:
+        if time < snaptimes.max():
+            t1, t2 = (
+                snaptimes[snaptimes <= time][-1],
+                snaptimes[snaptimes >= time][0],
+            )
+        else:
+            t1, t2 = snaptimes[-2:]
+    else:
+        t1 = t2 = snaptimes[0]
+    return t1, t2
+
+
+def _limit_threads(n):
+    """Limit all threading backends to n threads. Must be called before any computation."""
+    t = str(n)
+    for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+        os.environ[var] = t
+    # For Numba: use set_num_threads() to change the active count at runtime.
+    # Do NOT set os.environ["NUMBA_NUM_THREADS"] — Numba's config reload checks
+    # the env var against its launched pool size and raises RuntimeError on mismatch.
+    try:
+        from numba import set_num_threads
+        set_num_threads(n)
+    except (ImportError, RuntimeError):
+        pass
 
 
 def DoParamsPass(chunk, id_mask=None):
@@ -81,8 +162,17 @@ def DoParamsPass(chunk, id_mask=None):
     ) = chunk  # unpack chunk data
     N_task_types = len(task_types)
 
+    # Limit threads in this worker before any computation
+    nthreads = task_params[0][task_chunk_indices[0]].get("threads", 1)
+    if nthreads > 0:
+        _limit_threads(nthreads)
+
     snapdata_buffer = {}  # should store data from at most 2 snapshots
-    for i in task_chunk_indices:
+    prefetch_executor = ThreadPoolExecutor(max_workers=1)
+    prefetch_futures = {}  # snap_time -> Future
+    needs_id_sort = len(snaptimes) > 1  # only needed when interpolating between snapshots
+
+    for i_idx, i in enumerate(task_chunk_indices):
         ######################### initialization  ############################################
         # initialize the task objects and figure out what data the tasks need
         task_instances = [
@@ -110,39 +200,41 @@ def DoParamsPass(chunk, id_mask=None):
 
         ############################ IO ######################################################
         # OK now we do file I/O if we don't find what we need in the buffer
-        if len(snaptimes) >= 2:
-            if time < snaptimes.max():
-                t1, t2 = (
-                    snaptimes[snaptimes <= time][-1],
-                    snaptimes[snaptimes >= time][0],
-                )  # if the time is within our timeline
-            else:
-                t1, t2 = snaptimes[
-                    -2:
-                ]  # else if we have >1 snapshot, let those be the two times we interpolate/extrapolate from
-        else:
-            t1 = t2 = snaptimes[0]  # otherwise we have exactly 1 snapshot, so set t1=t2 and ignore all time dependence
+        t1, t2 = _bounding_snaptimes(time, snaptimes)
+
+        # collect any completed prefetch results before evicting
+        for pt in list(prefetch_futures.keys()):
+            if prefetch_futures[pt].done():
+                snapdata_buffer[pt] = prefetch_futures.pop(pt).result()
+
         # do a pass to delete anything that will no longer be needed
-        #        print(f"{t1}, {t2}, {process_num}: ", list(snapdata_buffer.keys()))
         for k in list(snapdata_buffer.keys()):
             if k < min(t1, t2) or k > max(t1, t2):
                 del snapdata_buffer[k]  # delete if not needed for interpolation (including old interpolants)
-        for t in t1, t2:
-            if not t in snapdata_buffer.keys():
-                snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num, id_mask)
-        # for t in list(snapdata_buffer.keys()):
-        #     missing = [key for key in required_snapdata if not (key in snapdata_buffer[t].keys())]
-        #     if len(missing):
-        #         print("\n%d: For time %s missing data in buffer: "%(process_num,t), missing)
-        #         if t in [t1, t2]:
-        #             print("%d: Loading missing data for time %s from snapshot file..."%(process_num,t))
-        #             snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num)
-        #         else: #means it is interpolated data
-        #             print("%d: Deleting interpolated buffer entry %s, we will redo the interpolation..."%(process_num, t))
-        #             del snapdata_buffer[t] #we have to redo the interpolation for this one
+        # also cancel prefetches that are no longer relevant
+        for pt in list(prefetch_futures.keys()):
+            if pt < min(t1, t2) or pt > max(t1, t2):
+                prefetch_futures.pop(pt)  # future will complete but result is discarded
+
+        for t in (t1,) if t1 == t2 else (t1, t2):
+            if t in snapdata_buffer:
+                # check if buffered entry is missing fields we now need; reload if so
+                missing = [k for k in required_snapdata if k not in snapdata_buffer[t]]
+                if missing:
+                    snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num, id_mask, sort_by_id=needs_id_sort)
+            elif t in prefetch_futures:
+                # wait for the in-flight prefetch
+                snapdata_buffer[t] = prefetch_futures.pop(t).result()
+            else:
+                snapdata_buffer[t] = GetSnapData(snapdict[t], required_snapdata, process_num, id_mask, sort_by_id=needs_id_sort)
 
         ##########################  interpolation #############################################
         # now get the particle data we need for this time, interpolating if needed
+        # if we have a cached interpolated entry but it's missing fields, discard it
+        if time in snapdata_buffer and time != t1 and time != t2:
+            missing = [k for k in required_snapdata if k not in snapdata_buffer[time]]
+            if missing:
+                del snapdata_buffer[time]
         if time in snapdata_buffer.keys():  # if we have the data for this exact time in the buffer, no action needed
             print("%d: Data for time %g available in buffer ..." % (process_num, time))
             snapdata_for_thistime = snapdata_buffer[time]
@@ -163,12 +255,27 @@ def DoParamsPass(chunk, id_mask=None):
                 snapdata_for_thistime = snapdata_buffer[t1]
             snapdata_buffer[time] = snapdata_for_thistime
 
+        ################# prefetch next snapshot while we render #############################
+        if i_idx + 1 < len(task_chunk_indices):
+            next_i = task_chunk_indices[i_idx + 1]
+            next_time = task_params[0][next_i]["Time"]
+            next_t1, next_t2 = _bounding_snaptimes(next_time, snaptimes)
+            for nt in (next_t1, next_t2):
+                if nt not in snapdata_buffer and nt not in prefetch_futures:
+                    prefetch_futures[nt] = prefetch_executor.submit(
+                        GetSnapData, snapdict[nt], required_snapdata, process_num, id_mask, sort_by_id=needs_id_sort
+                    )
+
         ################# task execution  ####################################################
+        # strip None sentinels (fields that don't exist in the HDF5 file) before passing to tasks
+        snapdata_for_thistime = {k: v for k, v in snapdata_for_thistime.items() if v is not None}
         # actually do the task - each method can optionally return data to be compiled in the pass through the snapshots
         data = [t.DoTask(snapdata_for_thistime) for t in task_instances]
 
+    prefetch_executor.shutdown(wait=False)
 
-def SnapInterpolate(t, t1, t2, snapdata_buffer):
+
+def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
     stuff_to_skip = [
         "Header",
         "PartType0/ParticleIDs",
@@ -200,51 +307,52 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer):
     interpolated_data = snapdata_buffer[t1].copy()
     idx1, idx2 = {}, {}
     for ptype in "PartType0", "PartType5":
-        if ptype + "/ParticleIDs" in snapdata_buffer[t1].keys():
-            id1 = np.array(snapdata_buffer[t1][ptype + "/ParticleIDs"])
-        else:
-            id1 = np.array([])
-        if ptype + "/ParticleIDs" in snapdata_buffer[t2].keys():
-            id2 = np.array(snapdata_buffer[t2][ptype + "/ParticleIDs"])
-        else:
-            id2 = np.array([])
+        ids1 = snapdata_buffer[t1].get(ptype + "/ParticleIDs")
+        id1 = np.array(ids1) if ids1 is not None else np.array([])
+        ids2 = snapdata_buffer[t2].get(ptype + "/ParticleIDs")
+        id2 = np.array(ids2) if ids2 is not None else np.array([])
         common_ids = np.intersect1d(id1, id2)
         idx1[ptype] = np.isin(np.sort(id1), common_ids)
         idx2[ptype] = np.isin(np.sort(id2), common_ids)
 
     for field in snapdata_buffer[t1].keys():
-        if not (field in stuff_to_skip):
-            ptype = field.split("/")[0]
-            f1, f2 = snapdata_buffer[t1][field][idx1[ptype]], snapdata_buffer[t2][field][idx2[ptype]]
-            wt1 = (
-                (t2 - t) / (t2 - t1) * np.ones_like(f1)
-            )  # relative weights, can be set individually for each cell, for now we just use the same time linear weight for all cells
-            wt2 = 1.0 - wt1
-            if field in stuff_to_leave_as_is:
-                interpolated_data[field] = f1.copy()
-            elif field in stuff_to_keep_lowest:
-                interpolated_data[field] = f1.copy()
-                ind2 = np.abs(f1) > np.abs(f2)
-                interpolated_data[field][ind2] = f2[ind2]
-            else:
-                if field in stuff_to_interp_log:
-                    positive = (f1 > 0) & (f2 > 0)
+        if field in stuff_to_skip or field not in snapdata_buffer[t2]:
+            continue
+        if snapdata_buffer[t1][field] is None or snapdata_buffer[t2][field] is None:
+            continue
+        ptype = field.split("/")[0]
+        if ptype not in idx1 or ptype not in idx2:
+            continue
+        f1, f2 = snapdata_buffer[t1][field][idx1[ptype]], snapdata_buffer[t2][field][idx2[ptype]]
+        wt1 = (
+            (t2 - t) / (t2 - t1) * np.ones_like(f1)
+        )  # relative weights, can be set individually for each cell, for now we just use the same time linear weight for all cells
+        wt2 = 1.0 - wt1
+        if field in stuff_to_leave_as_is:
+            interpolated_data[field] = f1.copy()
+        elif field in stuff_to_keep_lowest:
+            interpolated_data[field] = f1.copy()
+            ind2 = np.abs(f1) > np.abs(f2)
+            interpolated_data[field][ind2] = f2[ind2]
+        else:
+            if field in stuff_to_interp_log:
+                positive = (f1 > 0) & (f2 > 0)
 
-                    # we interpolate linearily for cells where the value in either snapashots is non-positive, log for the rest
-                    if np.any(~positive):
-                        interpolated_data[field] = f1 * wt1 + f2 * wt2
-                        interpolated_data[field][positive] = np.exp(
-                            np.log(f1[positive]) * wt1[positive] + np.log(f2[positive]) * wt2[positive]
-                        )
-                    else:
-                        interpolated_data[field] = np.exp(np.log(f1) * wt1 + np.log(f2) * wt2)
-                else:  # interpolate everything else linearily
-                    if "Coordinates" in field:  # special behaviour to handle periodic BCs
-                        dx = f2 - f1
-                        dx = NearestImage(dx, snapdata_buffer[t1]["Header"]["BoxSize"])
-                        interpolated_data[field] = (f1 + wt2 * dx) % (snapdata_buffer[t1]["Header"]["BoxSize"])
-                    else:
-                        interpolated_data[field] = f1 * wt1 + f2 * wt2
+                # we interpolate linearily for cells where the value in either snapashots is non-positive, log for the rest
+                if np.any(~positive):
+                    interpolated_data[field] = f1 * wt1 + f2 * wt2
+                    interpolated_data[field][positive] = np.exp(
+                        np.log(f1[positive]) * wt1[positive] + np.log(f2[positive]) * wt2[positive]
+                    )
+                else:
+                    interpolated_data[field] = np.exp(np.log(f1) * wt1 + np.log(f2) * wt2)
+            else:  # interpolate everything else linearily
+                if "Coordinates" in field:  # special behaviour to handle periodic BCs
+                    dx = f2 - f1
+                    dx = NearestImage(dx, snapdata_buffer[t1]["Header"]["BoxSize"])
+                    interpolated_data[field] = (f1 + wt2 * dx) % (snapdata_buffer[t1]["Header"]["BoxSize"])
+                else:
+                    interpolated_data[field] = f1 * wt1 + f2 * wt2
 
     return interpolated_data
 
@@ -282,7 +390,7 @@ def _field_fallback_name(field, F):
     return None
 
 
-def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
+def GetSnapData(snappath, required_snapdata, process_num, id_mask=None, sort_by_id=True):
     ptypes_toread = set()
     for s in required_snapdata:
         for i in range(6):
@@ -315,10 +423,12 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
                 if alt is not None:
                     read_field = alt
                 else:
+                    snapdata[field] = None  # mark as unavailable so buffer doesn't reload
                     continue
-            snapdata[field] = F[read_field][:]
             if "ID" in field:
-                snapdata[field] = np.int_(snapdata[field])  # cast to int for things that should be signed integers
+                snapdata[field] = np.int_(F[read_field][:])
+            else:
+                snapdata[field] = np.float32(F[read_field][:])
 
             if cosmological:
                 ascale = time
@@ -331,39 +441,38 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
                 if "Density" in field or "Pressure" in field:
                     snapdata[field] *= 1 / hubble / (ascale / hubble) ** 3
 
-    id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
-    for ptype in ptypes_toread:
-        if not ptype + "/ParticleIDs" in snapdata.keys():
-            continue
-        if not len(snapdata[ptype + "/ParticleIDs"]):
-            continue
-        ids = snapdata[ptype + "/ParticleIDs"]
-        if (
-            ptype == "PartType0" and "PartType0/ParticleChildIDsNumber" in snapdata.keys()
-        ):  # if we have to worry about wind IDs and splitting
-            child_ids = snapdata["PartType0/ParticleChildIDsNumber"]
-            wind_idx1 = np.isin(ids, wind_ids)
-            ids[np.invert(wind_idx1)] = ((child_ids << 32) + ids)[np.invert(wind_idx1)]
-            if np.any(wind_idx1):
-                progenitor_ids = snapdata["PartType0/ParticleIDGenerationNumber"][wind_idx1]
-                child_ids = child_ids[wind_idx1]
-                wind_particle_ids = -(
-                    (progenitor_ids << 16) + child_ids
-                )  # bit-shift the progenitor ID outside the plausible range for particle count, then add child ids to get a unique new id
-                ids[wind_idx1] = wind_particle_ids
+    if sort_by_id:
+        id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
+        for ptype in ptypes_toread:
+            if snapdata.get(ptype + "/ParticleIDs") is None:
+                continue
+            ids = snapdata[ptype + "/ParticleIDs"]
+            if (
+                ptype == "PartType0" and snapdata.get("PartType0/ParticleChildIDsNumber") is not None
+            ):  # if we have to worry about wind IDs and splitting
+                child_ids = snapdata["PartType0/ParticleChildIDsNumber"]
+                wind_idx1 = np.isin(ids, wind_ids)
+                ids[np.invert(wind_idx1)] = ((child_ids << 32) + ids)[np.invert(wind_idx1)]
+                if np.any(wind_idx1):
+                    progenitor_ids = snapdata["PartType0/ParticleIDGenerationNumber"][wind_idx1]
+                    child_ids = child_ids[wind_idx1]
+                    wind_particle_ids = -(
+                        (progenitor_ids << 16) + child_ids
+                    )  # bit-shift the progenitor ID outside the plausible range for particle count, then add child ids to get a unique new id
+                    ids[wind_idx1] = wind_particle_ids
 
-        unique, counts = np.unique(ids, return_counts=True)
-        doubles = unique[counts > 1]
-        ids[np.isin(ids, doubles)] = -1
+            unique, counts = np.unique(ids, return_counts=True)
+            doubles = unique[counts > 1]
+            ids[np.isin(ids, doubles)] = -1
 
-        id_order[ptype] = ids.argsort()
+            id_order[ptype] = ids.argsort()
 
-    for field in snapdata.keys():
-        if field == "Header":
-            continue
-        ptype = field.split("/")[0]
-        if len(snapdata[field]):
-            snapdata[field] = np.take(snapdata[field], id_order[ptype], axis=0)
+        for field in snapdata.keys():
+            if field == "Header" or snapdata[field] is None:
+                continue
+            ptype = field.split("/")[0]
+            if ptype in id_order and len(snapdata[field]):
+                snapdata[field] = np.take(snapdata[field], id_order[ptype], axis=0)
 
     # lastly if we have a particle mask, zero out the masked-out entries
 
@@ -372,15 +481,14 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None):
         mask_ids = mask_ids.clip(0, wind_ids.min())
 
         for field in snapdata.keys():
-            if field == "Header" or "ParticleIDs" in field:
+            if field == "Header" or "ParticleIDs" in field or snapdata[field] is None:
                 continue
             ptype = field.split("/")[0]
             index_tokeep = np.isin(snapdata[ptype + "/ParticleIDs"], mask_ids)
-            # print(index_tokeep.shape[0], snapdata[])
             if snapdata[field].shape[0] > 0:
                 snapdata[field] = snapdata[field][index_tokeep]
         for field in snapdata.keys():
-            if "ParticleIDs" in field:
+            if "ParticleIDs" in field and snapdata[field] is not None:
                 snapdata[field] = snapdata[field][np.isin(snapdata[field], mask_ids)]
 
     return snapdata

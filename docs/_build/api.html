@@ -1,0 +1,262 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Reference &mdash; CrunchSnaps 0.11 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=086c1757"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Custom Tasks In Depth" href="custom_tasks.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            CrunchSnaps
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sinkvis2.html">SinkVis2 Command-Line Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="custom_tasks.html">Custom Tasks In Depth</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#field-registration-functions">Field Registration Functions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.snapshot_tasks.register_derived_field"><code class="docutils literal notranslate"><span class="pre">register_derived_field()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.snapshot_tasks.register_field_fallback"><code class="docutils literal notranslate"><span class="pre">register_field_fallback()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.snapshot_tasks.register_field_symbol"><code class="docutils literal notranslate"><span class="pre">register_field_symbol()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.snapshot_tasks.parse_custom_task"><code class="docutils literal notranslate"><span class="pre">parse_custom_task()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#expression-evaluation">Expression Evaluation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.snapshot_tasks.max_entropy_limits"><code class="docutils literal notranslate"><span class="pre">max_entropy_limits()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.snapshot_tasks.max_entropy_limits_multi"><code class="docutils literal notranslate"><span class="pre">max_entropy_limits_multi()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#task-classes">Task Classes</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.snapshot_tasks.SinkVis"><code class="docutils literal notranslate"><span class="pre">SinkVis</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.snapshot_tasks.SinkVisSigmaGas"><code class="docutils literal notranslate"><span class="pre">SinkVisSigmaGas</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.snapshot_tasks.SinkVisCoolMap"><code class="docutils literal notranslate"><span class="pre">SinkVisCoolMap</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.snapshot_tasks.SinkVisNarrowbandComposite"><code class="docutils literal notranslate"><span class="pre">SinkVisNarrowbandComposite</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.snapshot_tasks.SinkVisCustomField"><code class="docutils literal notranslate"><span class="pre">SinkVisCustomField</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#main-entry-point">Main Entry Point</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.CrunchSnaps.DoTasksForSimulation"><code class="docutils literal notranslate"><span class="pre">DoTasksForSimulation()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">CrunchSnaps</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">API Reference</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/api.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="api-reference">
+<h1>API Reference<a class="headerlink" href="#api-reference" title="Link to this heading"></a></h1>
+<section id="field-registration-functions">
+<h2>Field Registration Functions<a class="headerlink" href="#field-registration-functions" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.register_derived_field">
+<span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">register_derived_field</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expr</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.register_derived_field" title="Link to this definition"></a></dt>
+<dd><p>Register a named derived field.</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">register_derived_field</span><span class="p">(</span><span class="s2">&quot;MagneticPressure&quot;</span><span class="p">,</span> <span class="s2">&quot;norm(MagneticField)**2 / (8*pi)&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.register_field_fallback">
+<span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">register_field_fallback</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expr</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.register_field_fallback" title="Link to this definition"></a></dt>
+<dd><p>Register a fallback expression for a snapshot field.</p>
+<p>The fallback is used only when PartType0/&lt;name&gt; is not present in the
+snapshot.  If the field exists on disk, the snapshot value is used.</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">register_field_fallback</span><span class="p">(</span><span class="s2">&quot;Pressure&quot;</span><span class="p">,</span> <span class="s2">&quot;(5./3 - 1) * Density * InternalEnergy&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.register_field_symbol">
+<span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">register_field_symbol</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">latex</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.register_field_symbol" title="Link to this definition"></a></dt>
+<dd><p>Register a LaTeX symbol for a field or expression.</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">register_field_symbol</span><span class="p">(</span><span class="s2">&quot;Temperature&quot;</span><span class="p">,</span> <span class="sa">r</span><span class="s2">&quot;T\;\mathrm{(K)}&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.parse_custom_task">
+<span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">parse_custom_task</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spec</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.parse_custom_task" title="Link to this definition"></a></dt>
+<dd><p>Parse a task spec like ‘SurfaceDensity(Masses*Temperature)’.</p>
+<p>Returns (render_mode, field_expr) or None if not a custom task.</p>
+</dd></dl>
+
+</section>
+<section id="expression-evaluation">
+<h2>Expression Evaluation<a class="headerlink" href="#expression-evaluation" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.max_entropy_limits">
+<span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">max_entropy_limits</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vals</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weights</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">128</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_search</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.max_entropy_limits" title="Link to this definition"></a></dt>
+<dd><p>Find (lo, hi) that maximize mass-weighted Shannon entropy of the
+color histogram.</p>
+<p>The search runs on the <em>displayed</em> axis: when <code class="docutils literal notranslate"><span class="pre">log_scale=True</span></code>, the
+objective is the entropy of the log10(value) histogram, and the
+returned limits are still in linear units.</p>
+<p>Ported from vizmo.field_ops.max_entropy_limits.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.max_entropy_limits_multi">
+<span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">max_entropy_limits_multi</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">map_arrays</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">128</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_search</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.max_entropy_limits_multi" title="Link to this definition"></a></dt>
+<dd><p>Find (lo, hi) that maximize the sum of per-frame Shannon entropies.</p>
+<p>Each frame’s entropy is mass-weighted (pixel values used as weights),
+so limits are chosen to maximize information about where the mass is
+across the entire sequence.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>map_arrays</strong> – list of 2D arrays (one per frame, e.g. surface density maps).</p></li>
+<li><p><strong>n_bins</strong> – histogram bin count.</p></li>
+<li><p><strong>n_search</strong> – grid resolution per axis (lo, hi).</p></li>
+<li><p><strong>log_scale</strong> – when True, optimize in log10 space and return linear limits.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="task-classes">
+<h2>Task Classes<a class="headerlink" href="#task-classes" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.SinkVis">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">SinkVis</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.SinkVis" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.SinkVisSigmaGas">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">SinkVisSigmaGas</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.SinkVisSigmaGas" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#CrunchSnaps.snapshot_tasks.SinkVis" title="CrunchSnaps.snapshot_tasks.SinkVis"><code class="xref py py-class docutils literal notranslate"><span class="pre">SinkVis</span></code></a></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.SinkVisCoolMap">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">SinkVisCoolMap</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.SinkVisCoolMap" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#CrunchSnaps.snapshot_tasks.SinkVis" title="CrunchSnaps.snapshot_tasks.SinkVis"><code class="xref py py-class docutils literal notranslate"><span class="pre">SinkVis</span></code></a></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.SinkVisNarrowbandComposite">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">SinkVisNarrowbandComposite</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.SinkVisNarrowbandComposite" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#CrunchSnaps.snapshot_tasks.SinkVis" title="CrunchSnaps.snapshot_tasks.SinkVis"><code class="xref py py-class docutils literal notranslate"><span class="pre">SinkVis</span></code></a></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.SinkVisCustomField">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">SinkVisCustomField</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.SinkVisCustomField" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#CrunchSnaps.snapshot_tasks.SinkVis" title="CrunchSnaps.snapshot_tasks.SinkVis"><code class="xref py py-class docutils literal notranslate"><span class="pre">SinkVis</span></code></a></p>
+<p>Generic task that renders an arbitrary field expression.</p>
+<dl class="simple">
+<dt>Supports four render modes:</dt><dd><ul class="simple">
+<li><p>SurfaceDensity(expr): integral of expr along the line of sight  (Σ)</p></li>
+<li><p>Projection(expr):     same as SurfaceDensity (alias)</p></li>
+<li><p>ProjectedAverage(expr): mass-weighted projected average of expr</p></li>
+<li><p>Slice(expr):          midplane slice of expr</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="main-entry-point">
+<h2>Main Entry Point<a class="headerlink" href="#main-entry-point" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="CrunchSnaps.CrunchSnaps.DoTasksForSimulation">
+<span class="sig-prename descclassname"><span class="pre">CrunchSnaps.CrunchSnaps.</span></span><span class="sig-name descname"><span class="pre">DoTasksForSimulation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">snaps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_types</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">task_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">interp_fac</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nproc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nthreads</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">snaptime_dict</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">id_mask</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.CrunchSnaps.DoTasksForSimulation" title="Link to this definition"></a></dt>
+<dd><p>Main CrunchSnaps routine, performs a list of tasks using (possibly interpolated) time series simulation data
+snaps - list of paths of simulation snapshots
+task_types - list of tasks to perform at each simulation time
+task_params - shape [N_tasks,N_params] list of dictionaries containing the parameters for each task - if only (N_tasks,) list is provided this will be broadcast</p>
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="custom_tasks.html" class="btn btn-neutral float-left" title="Custom Tasks In Depth" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright .</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

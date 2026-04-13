@@ -1,31 +1,18 @@
 import numpy as np
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-from matplotlib.colors import LightSource
-from scipy.spatial import KDTree
-from meshoid import GridSurfaceDensity, Meshoid
-from meshoid.radiation import radtransfer
-import aggdraw
-from skimage.color import rgb2hsv, hsv2rgb
-from PIL import Image, ImageDraw, ImageFont
-from matplotlib import pyplot as plt
-from .realistic_stars import make_stars_image
-from numba import set_num_threads
+import re
+from astropy import constants as _ac, units as _au
 from .misc_functions import *
 from os.path import isfile
 import json
 import os
-import sys
-import matplotlib
-import matplotlib.font_manager as fm
 
-hashseed = os.getenv("PYTHONHASHSEED")
-if not hashseed:
-    os.environ["PYTHONHASHSEED"] = "0"
-    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 def _get_font(size):
     """Get a PIL ImageFont at the requested pixel size, with robust fallbacks."""
+    import matplotlib.font_manager as fm
+    from PIL import ImageFont
+
     # Try matplotlib's font manager to find a sans-serif system font
     try:
         font_path = fm.findfont(fm.FontProperties(family="sans-serif"))
@@ -160,7 +147,11 @@ class SinkVis(Task):
             self.parallel = True
             # if negative, just use all available threads, otherwise set to desired value
             if self.params["threads"] > 0:
-                set_num_threads(self.params["threads"])
+                try:
+                    from numba import set_num_threads as _numba_set_num_threads
+                    _numba_set_num_threads(self.params["threads"])
+                except (ImportError, RuntimeError):
+                    pass  # Numba pool already launched with fewer threads
         else:
             self.parallel = False
 
@@ -264,17 +255,18 @@ class SinkVis(Task):
         if self.params["camera_distance"] != np.inf:
             if not contravariant:
                 # now transform from 3D to angular system
-                r = np.sum(x * x, axis=1) ** 0.5  # distance from camera
-                x[:, :2] = x[:, :2] / (-x[:, 2][:, None])  # homogeneous coordinates
-                r = np.abs(x[:, 2])
-                if update_r:
-                    self.r = r
-                if h is not None:
-                    h[:] = h / r  # kernel lengths are now angular (divide by distance)
-                    h[x[:, 2] > 0] = 0  # assign 0 weight/size to anything behind the camera
-                if m is not None:
-                    m[:] /= r**2  # rescale mass weights so that integrated surface density remains the same
-                    m[x[:, 2] > 0] = 0
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    r = np.abs(x[:, 2])
+                    x[:, :2] = x[:, :2] / (-x[:, 2][:, None])  # homogeneous coordinates
+                    if update_r:
+                        self.r = r
+                    behind = x[:, 2] >= 0  # at or behind the camera
+                    if h is not None:
+                        h[:] = h / r  # kernel lengths are now angular (divide by distance)
+                        h[behind] = 0
+                    if m is not None:
+                        m[:] /= r**2  # rescale mass weights so that integrated surface density remains the same
+                        m[behind] = 0
 
             else:  # dealing with a contravariant vector such as velocity - want the [:,2] component to correspond to line-of-sight value
                 # this would have been converted to angular by now - let's convert back to real space
@@ -285,10 +277,14 @@ class SinkVis(Task):
                 x[:, 2] = np.sum(x * global_coords, axis=1) / np.sum(global_coords**2, axis=1) ** 0.5
 
     def SetupCoordsAndWeights(self, snapdata):
+        from meshoid import Meshoid
+
         res = self.params["res"]
         if "PartType0/Coordinates" in snapdata.keys():
-            if "PartType0/SmoothingLength" not in snapdata:
-                snapdata["PartType0/SmoothingLength"] = Meshoid(snapdata["PartType0/Coordinates"],boxsize=snapdata["Header"]["BoxSize"]).SmoothingLength()
+            if "PartType0/KernelMaxRadius" not in snapdata:
+                snapdata["PartType0/KernelMaxRadius"] = Meshoid(
+                    snapdata["PartType0/Coordinates"], boxsize=snapdata["Header"]["BoxSize"]
+                ).SmoothingLength()
             self.pos, self.mass, self.hsml = (
                 np.copy(snapdata["PartType0/Coordinates"]),
                 np.copy(snapdata["PartType0/Masses"]),
@@ -299,6 +295,7 @@ class SinkVis(Task):
 
         if self.params["outflow_only"]:
             if "PartType5/Coordinates" in snapdata.keys():
+                from scipy.spatial import KDTree
                 # find nearest star to each gas cell
                 _, ngb = KDTree(snapdata["PartType5/Coordinates"]).query(self.pos)
                 dx = self.pos - snapdata["PartType5/Coordinates"][ngb]
@@ -329,7 +326,16 @@ class SinkVis(Task):
 
         if "PartType0/Coordinates" in snapdata.keys():
             self.DoCoordinateTransform(self.pos, self.mass, self.hsml)
-            self.hsml = np.clip(self.hsml, 2 * self.params["rmax"] / res, 1e100)
+            # cull particles that can't contribute to the grid (behind camera, outside FOV)
+            rmax = self.params["rmax"]
+            keep = (self.hsml > 0) & (self.mass != 0)
+            keep &= (np.abs(self.pos[:, 0]) - self.hsml < rmax) & (np.abs(self.pos[:, 1]) - self.hsml < rmax)
+            if keep.sum() < len(keep):
+                self.pos = self.pos[keep]
+                self.mass = self.mass[keep]
+                self.hsml = self.hsml[keep]
+            self._keep_mask = keep  # save for subclasses that need to cull field arrays
+            self.hsml = np.clip(self.hsml, 2 * rmax / res, np.inf)
 
     def GenerateMaps(self, snapdata):
         return
@@ -337,10 +343,14 @@ class SinkVis(Task):
     def SaveImage(self):
         print("Saving ", self.params["filename"])
         if self.params["backend"] == "matplotlib":
+            from matplotlib import pyplot as plt
             rmax = self.params["rmax"]
             self.ax.set(xlim=[-rmax, rmax], ylim=[-rmax, rmax])
             plt.savefig(self.params["filename_incomplete"], bbox_inches="tight", dpi=400)
             plt.close()
+        elif self.params["backend"] == "PIL":
+            self._pil_image.convert("RGB").save(self.params["filename_incomplete"])
+            self._pil_image = None
         os.rename(self.params["filename_incomplete"], self.params["filename"])
 
     def MakeImages(self, snapdata):
@@ -353,12 +363,11 @@ class SinkVis(Task):
     def AddTimestampToImage(self, header):
         if self.params["no_timestamp"]:
             return
-        fname = self.params["filename_incomplete"]
         if "UnitLength_In_CGS" in header.keys():
             unit_time_in_s = header["UnitLength_In_CGS"] / header["UnitVelocity_In_CGS"]
         else:
-            unit_time_in_s = 3.086e16
-        time_Myr = self.params["Time"] * unit_time_in_s / 3.154e13
+            unit_time_in_s = _au.kpc.to(_au.cm) / (_au.km.to(_au.cm))  # kpc/(km/s) in seconds
+        time_Myr = self.params["Time"] * unit_time_in_s / _au.Myr.to(_au.s)
         if time_Myr >= 1e-2:
             time_text = "%3.2gMyr" % (time_Myr)
         elif time_Myr >= 1e-4:
@@ -367,13 +376,11 @@ class SinkVis(Task):
             time_text = "%3.2gyr" % (time_Myr * 1e6)
 
         if self.params["backend"] == "PIL":
-            F = Image.open(fname)
-            gridres = F.size[0]
-            draw = ImageDraw.Draw(F)
+            from PIL import ImageDraw
+            gridres = self._pil_image.size[0]
+            draw = ImageDraw.Draw(self._pil_image)
             font = _get_font(gridres // 12)
             draw.text((gridres / 16, gridres / 24), time_text, font=font)
-            F.save(fname)
-            F.close()
         elif self.params["backend"] == "matplotlib":
             self.ax.text(-self.params["rmax"] * 0.85, self.params["rmax"] * 0.85, time_text, color="#FFFFFF")
 
@@ -381,21 +388,19 @@ class SinkVis(Task):
         #        if self.params["camera_distance"] < np.inf: return
         if self.params["backend"] == "matplotlib":
             return  # matplotlib will have axis ticks for scale
-        pc_to_AU = 206265.0
+        pc_to_AU = _au.pc.to(_au.AU)
         if self.params["no_size_scale"]:
             return
-        fname = self.params["filename_incomplete"]
-        F = Image.open(fname)
-        draw = ImageDraw.Draw(F)
+        from PIL import ImageDraw
+        draw = ImageDraw.Draw(self._pil_image)
         gridres = self.params["res"]
         font = _get_font(gridres // 12)
         if "UnitLength_In_CGS" in header.keys():
-            r = self.params["rmax"] * header["UnitLength_In_CGS"] / 3.086e18  # in pc
+            r = self.params["rmax"] * header["UnitLength_In_CGS"] / _au.pc.to(_au.cm)  # in pc
         else:
             r = self.params["rmax"]
         if self.params["camera_distance"] < np.inf:
             r = self.params["rmax"] * self.params["camera_distance"]  # * self.params["unit_scalefac"]
-        #        print("r=%g\n"%r)
         if r * 2 > 1000:
             scale_kpc = 10 ** np.round(np.log10(r * 0.5 / 1000))
             size_scale_text = "%3.3gkpc" % (scale_kpc)
@@ -410,8 +415,6 @@ class SinkVis(Task):
             size_scale_ending = gridres / 16 + gridres * (scale_AU) / (2 * r * pc_to_AU)
         draw.line(((gridres / 16, 7 * gridres / 8), (size_scale_ending, 7 * gridres / 8)), fill="#FFFFFF", width=6)
         draw.text((gridres / 16, 7 * gridres / 8 + 5), size_scale_text, font=font)
-        F.save(fname)
-        F.close()
 
     def AddStarsToImage(self, snapdata):
         if "PartType5/Coordinates" not in snapdata.keys():
@@ -422,9 +425,10 @@ class SinkVis(Task):
         m_star = snapdata["PartType5/Sink_Mass"]
 
         if self.params["backend"] == "PIL":
-            fname = self.params["filename_incomplete"]
+            from PIL import Image
             if self.params["realstars"]:  # use realstars for stellar images
                 if "realstars" not in self.maps:
+                    from .realistic_stars import make_stars_image
                     self.maps["realstars"] = make_stars_image(
                         self,
                         snapdata,
@@ -437,14 +441,16 @@ class SinkVis(Task):
                         threads=self.params["threads"],
                     )
                 np.savez_compressed(self.map_files["realstars"], realstars=self.maps["realstars"])
-                img = plt.imread(fname)
-                plt.imsave(fname, np.clip(img[:, :, :3] + self.maps["realstars"], 0, 1))
+                # blend realstars into the in-memory image
+                img_arr = np.array(self._pil_image.convert("RGB")).astype(np.float32) / 255
+                img_arr = np.clip(img_arr + self.maps["realstars"], 0, 1)
+                self._pil_image = Image.fromarray((img_arr * 255).astype(np.uint8), "RGB").convert("RGBA")
 
             else:  # use derpy PIL circles
+                import aggdraw
                 self.DoCoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))
-                F = Image.open(fname)
-                gridres = F.size[0]
-                d = aggdraw.Draw(F)
+                gridres = self._pil_image.size[0]
+                d = aggdraw.Draw(self._pil_image)
                 pen = aggdraw.Pen(self.Star_Edge_Color(), 1)  # gridres/800
                 sink_relscale = 0.0025
                 X_star, m_star = X_star[m_star.argsort()[::-1]], np.sort(m_star)[::-1]
@@ -454,24 +460,18 @@ class SinkVis(Task):
                     ms = m_star[j]
                     if ms == 0:
                         continue
-                    # if ms < self.params["sink_scale"]:
-                    #  continue
                     star_size = max(1, gridres * sink_relscale * (np.log10(ms / self.params["sink_scale"]) + 1))
                     if self.params["camera_distance"] < np.inf:
-                        # make 100msun ~ 0.03pc, scale down from there
                         if X[2] > 0:
                             continue
-                    #                        star_size = gridres * 0.03 / dist_to_camera / self.params["rmax"] * (ms/100)**(1./3)
                     star_size = max(1, star_size)
                     p = aggdraw.Brush(self.GetStarColor(ms))
                     norm_coords = (X[:2] + self.params["rmax"]) / (2 * self.params["rmax"]) * gridres
-                    # Pillow puts the origin in th top left corner, so we need to flip the y axis
+                    # Pillow puts the origin in the top left corner, so we need to flip the y axis
                     norm_coords[1] = gridres - norm_coords[1]
                     coords = np.concatenate([norm_coords - star_size, norm_coords + star_size])
-                    d.ellipse(coords, pen, p)  # , fill=(155, 176, 255))
-                    d.flush()
-                F.save(fname)
-                F.close()
+                    d.ellipse(coords, pen, p)
+                d.flush()
         elif self.params["backend"] == "matplotlib":
             star_size = np.log10(m_star / self.params["sink_scale"]) + 2
             star_size[m_star < self.params["sink_scale"]] = 0
@@ -550,13 +550,52 @@ class SinkVis(Task):
         if not isinstance(self.params["center"], np.ndarray):
             self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"] * 0.5, 3)  # default
 
+    def _compute_default_rmax(self, snapdata):
+        """Compute default rmax from mass-weighted 2D variance in the viewing plane.
+
+        Scaled so that a uniform-density cube returns rmax = BoxSize/2.
+        """
+        if "PartType0/Coordinates" not in snapdata or "PartType0/Masses" not in snapdata:
+            return snapdata["Header"]["BoxSize"] / 2
+
+        pos = snapdata["PartType0/Coordinates"]
+        mass = snapdata["PartType0/Masses"]
+        total_mass = mass.sum()
+        if total_mass == 0:
+            return snapdata["Header"]["BoxSize"] / 2
+
+        dx = pos - self.params["center"]
+
+        # line-of-sight direction in the original frame
+        if self.params["camera_dir"] is not None:
+            los = np.array(self.params["camera_dir"], dtype=float)
+            los /= np.sqrt(np.dot(los, los))
+        else:
+            pan_rad = np.pi * self.params["pan"] / 180
+            tilt_rad = np.pi * self.params["tilt"] / 180
+            los = np.array([
+                np.sin(pan_rad) * np.cos(tilt_rad),
+                np.sin(tilt_rad),
+                np.cos(pan_rad) * np.cos(tilt_rad),
+            ])
+
+        # Var_2D = Tr(Cov) - los^T @ Cov @ los, without forming the full 3x3
+        trace_cov = np.sum(mass * np.sum(dx ** 2, axis=1)) / total_mass
+        los_proj = dx @ los
+        var_los = np.sum(mass * los_proj ** 2) / total_mass
+        var_2d = max(trace_cov - var_los, 0)
+
+        # For uniform cube of side L: Var_2D = L^2/6, want rmax = L/2
+        # => rmax = sqrt(6)/2 * sqrt(Var_2D)
+        return np.sqrt(6) / 2 * np.sqrt(var_2d)
+
     def AssignDefaultParamsFromSnapdata(self, snapdata):
         self.assign_center(snapdata)
         if self.params["rmax"] is None:
             if self.params["camera_distance"] < np.inf:
                 self.params["rmax"] = self.params["FOV"] / 90  # angular width
             else:
-                self.params["rmax"] = snapdata["Header"]["BoxSize"] / 10
+                self.params["rmax"] = self._compute_default_rmax(snapdata)
 
     #            if self.params["camera_distance"] < np.inf and self.params["FOV"] is None:
     #                self.params["rmax"] /= self.params["camera_distance"] # convert to angular assuming rmax is real-space half-width at the focal distance
@@ -569,6 +608,101 @@ class SinkVis(Task):
             self.GenerateMaps(snapdata)
         self.MakeImages(snapdata)
         return self.maps
+
+    @staticmethod
+    def _render_latex_label(text, fontsize, color, rotation=0, dpi=200):
+        """Render a LaTeX string via matplotlib and return as a RGBA PIL Image."""
+        import io
+        import matplotlib
+        from matplotlib import pyplot as plt
+        from PIL import Image
+
+        matplotlib.use("Agg")
+        tmp_fig = plt.figure(figsize=(0.01, 0.01), dpi=dpi)
+        tmp_fig.text(
+            0, 0, text,
+            fontsize=fontsize, color=color,
+            ha="left", va="bottom",
+            rotation=rotation, rotation_mode="anchor",
+        )
+        buf = io.BytesIO()
+        tmp_fig.savefig(buf, format="png", bbox_inches="tight", transparent=True, pad_inches=0.01, dpi=dpi)
+        plt.close(tmp_fig)
+        buf.seek(0)
+        return Image.open(buf).convert("RGBA")
+
+    def _add_colorbar_to_image(self, vmin, vmax, label=None):
+        """Overlay a vertical colorbar on the in-memory PIL image."""
+        from PIL import Image, ImageDraw
+        from matplotlib import pyplot as plt
+
+        img = self._pil_image
+        W, H = img.size
+        cmap = plt.get_cmap(self.params["cmap"])
+
+        # vertical colorbar geometry — right side, top-aligned, with room for tick labels
+        margin = int(W * 0.20)
+        bar_w = max(int(W * 0.025), 6)
+        bar_h = int(H * 0.45)
+        bar_x1 = W - margin
+        bar_y1 = int(H * 0.08)
+        bar_x2 = bar_x1 + bar_w
+        bar_y2 = bar_y1 + bar_h
+
+        # sample image brightness in the colorbar region to pick contrasting color
+        crop = (max(0, bar_x1 - int(W * 0.15)), max(0, bar_y1), min(W, bar_x2), min(H, bar_y2))
+        region = np.array(img.crop(crop))
+        luminance = 0.299 * region[:, :, 0] + 0.587 * region[:, :, 1] + 0.114 * region[:, :, 2]
+        text_color = "#FFFFFF" if luminance.mean() < 140 else "#000000"
+
+        # draw the vertical color gradient bar (top = vmax, bottom = vmin)
+        gradient = cmap(np.linspace(0, 1, bar_h))[::-1, :3]  # flip so top=vmax
+        gradient_col = (gradient * 255).astype(np.uint8)[:, None, :]  # (bar_h, 1, 3)
+        bar_arr = np.tile(gradient_col, (1, bar_w, 1))  # (bar_h, bar_w, 3)
+        bar_img = Image.fromarray(bar_arr, "RGB").convert("RGBA")
+        img.paste(bar_img, (bar_x1, bar_y1))
+
+        # draw border
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], outline=text_color, width=1)
+
+        # tick labels to the right of the bar
+        font_size = max(8, W // 55)
+        log_vmin, log_vmax = np.log10(vmin), np.log10(vmax)
+        tick_values = [vmin, vmax]
+        tick_exp_min = int(np.ceil(log_vmin))
+        tick_exp_max = int(np.floor(log_vmax))
+        for e in range(tick_exp_min, tick_exp_max + 1):
+            tv = 10.0**e
+            if tv > vmin * 1.1 and tv < vmax * 0.9:
+                tick_values.append(tv)
+        tick_values.sort()
+
+        for tv in tick_values:
+            frac = (np.log10(tv) - log_vmin) / (log_vmax - log_vmin)
+            frac = np.clip(frac, 0, 1)
+            tick_y = bar_y2 - int(frac * bar_h)
+            draw.line([(bar_x2, tick_y), (bar_x2 + 3, tick_y)], fill=text_color, width=1)
+            tick_label = r"$%.2g$" % tv
+            tick_img = self._render_latex_label(tick_label, font_size, text_color)
+            tw, th = tick_img.size
+            paste_x = bar_x2 + 5
+            paste_y = tick_y - th // 2
+            img.paste(tick_img, (paste_x, paste_y), tick_img)
+
+        # title label — rendered sideways (rotated 90°) to the left of the bar
+        if label:
+            title_fontsize = max(6, W // 75)
+            title_latex = "$" + label + "$"
+            label_img = self._render_latex_label(title_latex, title_fontsize, text_color, rotation=90)
+            lw, lh = label_img.size
+            if lh > bar_h:
+                lw = int(lw * bar_h / lh)
+                lh = bar_h
+                label_img = label_img.resize((lw, lh), Image.LANCZOS)
+            label_x = bar_x1 - lw - 3
+            label_y = bar_y1 + bar_h // 2 - lh // 2
+            img.paste(label_img, (label_x, label_y), label_img)
 
     def has_required_maps(self):
         return np.all([i in self.maps for i in self.required_maps])
@@ -604,6 +738,7 @@ class SinkVisSigmaGas(SinkVis):
 
     def GenerateMaps(self, snapdata):
         if "sigma_gas" not in self.maps.keys():
+            from meshoid import GridSurfaceDensity
             self.maps["sigma_gas"] = GridSurfaceDensity(
                 self.mass,
                 self.pos,
@@ -616,107 +751,12 @@ class SinkVisSigmaGas(SinkVis):
             # self.maps["sigma_gas"] = self.maps["sigma_gas"]
             np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])
 
-    @staticmethod
-    def _render_latex_label(text, fontsize, color, rotation=0, dpi=200):
-        """Render a LaTeX string via matplotlib and return as a RGBA PIL Image."""
-        import io
-        matplotlib.use("Agg")
-        tmp_fig = plt.figure(figsize=(0.01, 0.01), dpi=dpi)
-        tmp_fig.text(0, 0, text, fontsize=fontsize, color=color,
-                     ha="left", va="bottom", rotation=rotation, rotation_mode="anchor")
-        buf = io.BytesIO()
-        tmp_fig.savefig(buf, format="png", bbox_inches="tight", transparent=True, pad_inches=0.01, dpi=dpi)
-        plt.close(tmp_fig)
-        buf.seek(0)
-        return Image.open(buf).convert("RGBA")
-
-    def _add_colorbar_to_image(self, vmin, vmax):
-        """Overlay a vertical logarithmic colorbar on the top-right of the saved PIL image."""
-        fname = self.params["filename_incomplete"]
-        img = Image.open(fname).convert("RGBA")
-        W, H = img.size
-        cmap = plt.get_cmap(self.params["cmap"])
-
-        # vertical colorbar geometry — right side, top-aligned, with room for tick labels
-        margin = int(W * 0.08)
-        bar_w = max(int(W * 0.025), 6)
-        bar_h = int(H * 0.45)
-        bar_x1 = W - margin - bar_w
-        bar_y1 = margin
-        bar_x2 = bar_x1 + bar_w
-        bar_y2 = bar_y1 + bar_h
-
-        # sample image brightness in the colorbar region to pick contrasting color
-        crop = (max(0, bar_x1 - int(W * 0.15)), max(0, bar_y1),
-                min(W, bar_x2), min(H, bar_y2))
-        region = np.array(img.crop(crop))
-        luminance = 0.299 * region[:, :, 0] + 0.587 * region[:, :, 1] + 0.114 * region[:, :, 2]
-        text_color = "#FFFFFF" if luminance.mean() < 140 else "#000000"
-
-        # draw the vertical color gradient bar (top = vmax, bottom = vmin)
-        gradient = cmap(np.linspace(0, 1, bar_h))[::-1, :3]  # flip so top=vmax
-        gradient_col = (gradient * 255).astype(np.uint8)[:, None, :]  # (bar_h, 1, 3)
-        bar_arr = np.tile(gradient_col, (1, bar_w, 1))  # (bar_h, bar_w, 3)
-        bar_img = Image.fromarray(bar_arr, "RGB").convert("RGBA")
-        img.paste(bar_img, (bar_x1, bar_y1))
-
-        # draw border
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], outline=text_color, width=1)
-
-        # tick labels to the right of the bar, 2 significant figures
-        font_size = max(8, W // 55)
-        log_vmin, log_vmax = np.log10(vmin), np.log10(vmax)
-        # place ticks at vmin and vmax
-        tick_values = [vmin, vmax]
-        # also add integer powers of 10 that fall strictly between them
-        tick_exp_min = int(np.ceil(log_vmin))
-        tick_exp_max = int(np.floor(log_vmax))
-        for e in range(tick_exp_min, tick_exp_max + 1):
-            tv = 10.0**e
-            if tv > vmin * 1.1 and tv < vmax * 0.9:
-                tick_values.append(tv)
-        tick_values.sort()
-
-        for tv in tick_values:
-            frac = (np.log10(tv) - log_vmin) / (log_vmax - log_vmin)
-            frac = np.clip(frac, 0, 1)
-            tick_y = bar_y2 - int(frac * bar_h)
-            # tick mark to the right of the bar
-            draw.line([(bar_x2, tick_y), (bar_x2 + 3, tick_y)], fill=text_color, width=1)
-            # 2 significant figures
-            label = r"$%.2g$" % tv
-            tick_img = self._render_latex_label(label, font_size, text_color)
-            tw, th = tick_img.size
-            paste_x = bar_x2 + 5
-            paste_y = tick_y - th // 2
-            img.paste(tick_img, (paste_x, paste_y), tick_img)
-
-        # title label — rendered sideways (rotated 90°) to the left of the bar
-        title_fontsize = max(6, W // 75)
-        title_latex = r"$\Sigma_{\rm gas}\,\left(M_\odot\,\rm pc^{-2}\right)$"
-        label_img = self._render_latex_label(title_latex, title_fontsize, text_color, rotation=90)
-        lw, lh = label_img.size
-        if lh > bar_h:
-            lw = int(lw * bar_h / lh)
-            lh = bar_h
-            label_img = label_img.resize((lw, lh), Image.LANCZOS)
-        # place directly to the left of the bar, vertically centered
-        label_x = bar_x1 - lw - 3
-        label_y = bar_y1 + bar_h // 2 - lh // 2
-        img.paste(label_img, (label_x, label_y), label_img)
-
-        img.convert("RGB").save(fname)
-
     def MakeImages(self, snapdata):
-        if (
-            self.params["limits"] is None
-        ):  # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
-            sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
-            # self.params["limits"][1] = max(self.params["limits"][0])
-        #            else:
-        # self.params["limits"] = 1e100, 1.1e100
+        if self.params["limits"] is None:
+            sigma = self.maps["sigma_gas"]
+            self.params["limits"] = np.array(max_entropy_limits(
+                sigma.ravel(), sigma.ravel(), log_scale=True
+            ))
 
         vmin, vmax = self.params["limits"]
         if vmax > vmin:
@@ -724,13 +764,20 @@ class SinkVisSigmaGas(SinkVis):
         else:
             f = np.zeros_like(self.maps["sigma_gas"])
 
+        import matplotlib
+        from matplotlib import pyplot as plt
+
         if self.params["backend"] == "PIL":
-            plt.imsave(
-                self.params["filename_incomplete"], plt.get_cmap(self.params["cmap"])(np.flipud(f))
-            )  # save base image
+            from PIL import Image
+            rgba = plt.get_cmap(self.params["cmap"])(np.flipud(f))
+            self._pil_image = Image.fromarray((rgba * 255).astype(np.uint8), "RGBA")
             if not self.params["no_colorbar"]:
-                self._add_colorbar_to_image(vmin, vmax)
+                self._add_colorbar_to_image(
+                    vmin, vmax,
+                    label=r"\Sigma_{\rm gas}\,\left(M_\odot\,\rm pc^{-2}\right)",
+                )
         elif self.params["backend"] == "matplotlib":
+            from mpl_toolkits.axes_grid1 import make_axes_locatable
             matplotlib.use("Agg")
             self.fig, self.ax = plt.subplots(figsize=(4, 4))
             X = Y = np.linspace(-self.params["rmax"], self.params["rmax"], self.params["res"])
@@ -791,6 +838,7 @@ class SinkVisCoolMap(SinkVis):
 
     def GenerateMaps(self, snapdata):
         super().GenerateMaps(snapdata)
+        from meshoid import GridSurfaceDensity
 
         if not "sigma_gas" in self.maps.keys():
             self.maps["sigma_gas"] = GridSurfaceDensity(
@@ -836,9 +884,10 @@ class SinkVisCoolMap(SinkVis):
 
     def MakeImages(self, snapdata):
         if self.params["limits"] is None:
-            # if nothing set for the surface density limits, we determine the limits that show 98% of the total mass within the unsaturated range
-            sigmagas_flat = np.sort(self.maps["sigma_gas"].flatten())
-            self.params["limits"] = np.interp([0.01, 0.99], sigmagas_flat.cumsum() / sigmagas_flat.sum(), sigmagas_flat)
+            sigma = self.maps["sigma_gas"]
+            self.params["limits"] = np.array(max_entropy_limits(
+                sigma.ravel(), sigma.ravel(), log_scale=True
+            ))
         if self.params["v_limits"] is None:
             #            Ekin_flat = np.sort((self.maps["sigma_gas"]*self.maps["sigma_1D"]**2).flatten()[self.maps["sigma_1D"].flatten().argsort()])
             self.params["v_limits"] = np.percentile(
@@ -848,18 +897,35 @@ class SinkVisCoolMap(SinkVis):
             self.params["limits"][1] / self.params["limits"][0]
         )
         fgas = np.clip(fgas, 0, 1)
-        ls = LightSource(azdeg=315, altdeg=45)
-        # lightness = ls.hillshade(z, vert_exag=4)
+        from matplotlib import pyplot as plt
+        from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
         mapcolor = plt.get_cmap(self.params["cool_cmap"])(
             np.log10(self.maps["sigma_1D"] / self.params["v_limits"][0])
             / np.log10(self.params["v_limits"][1] / self.params["v_limits"][0])
         )
-        cool_data = ls.blend_hsv(mapcolor[:, :, :3], fgas[:, :, None])
+        # blend HSV: use fgas as intensity to modulate saturation and value
+        hsv = rgb_to_hsv(mapcolor[:, :, :3])
+        intensity = 2 * fgas - 1  # remap [0,1] -> [-1,1]
+        hue, sat, val = np.moveaxis(hsv, -1, 0)
+        bright = intensity > 0
+        dark = intensity < 0
+        nontrivial_sat = np.abs(sat) > 1e-10
+        np.putmask(sat, nontrivial_sat & bright, (1 - intensity) * sat)
+        np.putmask(sat, nontrivial_sat & dark, (1 + intensity) * sat - intensity)
+        np.putmask(val, bright, (1 - intensity) * val + intensity)
+        np.putmask(val, dark, (1 + intensity) * val)
+        np.clip(hsv[:, :, 1:], 0, 1, out=hsv[:, :, 1:])
+        cool_data = hsv_to_rgb(hsv)
         self.maps["coolmap"] = cool_data
 
-        plt.imsave(
-            self.params["filename_incomplete"], np.flipud(self.maps["coolmap"])
-        )  # NOTE - we invert this to get the coordinate system right
+        if self.params["backend"] == "PIL":
+            from PIL import Image
+            rgb = np.flipud(self.maps["coolmap"])
+            self._pil_image = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8), "RGB").convert("RGBA")
+        else:
+            plt.imsave(
+                self.params["filename_incomplete"], np.flipud(self.maps["coolmap"])
+            )
         super().MakeImages(snapdata)
 
 
@@ -900,6 +966,8 @@ class SinkVisNarrowbandComposite(SinkVis):
         super().GenerateMaps(snapdata)
 
         if not "SHO_RGB" in self.maps.keys():
+            from skimage.color import rgb2hsv, hsv2rgb
+            from meshoid.radiation import radtransfer
             # print("Generating SHO map...")
             rho = snapdata["PartType0/Density"]
             T = snapdata["PartType0/Temperature"]
@@ -944,8 +1012,8 @@ class SinkVisNarrowbandComposite(SinkVis):
                 * T4**-0.5
             )
 
-            pc_to_cm = 3.08e18
-            msun_to_g = 2e33
+            pc_to_cm = _au.pc.to(_au.cm)
+            msun_to_g = _ac.M_sun.cgs.value
 
             lum = np.c_[j_B_Ha, j_OIII, j_SII] * pc_to_cm**3 * (snapdata["PartType0/Masses"] / rho)[:, None]
             #            lum = np.c_[j_NII,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None] #NII behaves much better for interpolation than Ha, mostly because it does not diverge in the limit of ne->inf, similar to OIII and SII
@@ -1011,7 +1079,368 @@ class SinkVisNarrowbandComposite(SinkVis):
         self.maps["SHO_RGB"][:, :, 1] = sigmoid(ha_map[:, :, 0] / norm[1])
         self.maps["SHO_RGB"][:, :, 2] = sigmoid(ha_map[:, :, 1] / norm[2])
 
-        plt.imsave(
-            self.params["filename_incomplete"], self.maps["SHO_RGB"][::-1]
-        )  # NOTE - we invert this to get the coordinate system right
+        if self.params["backend"] == "PIL":
+            from PIL import Image
+            rgb = self.maps["SHO_RGB"][::-1]
+            self._pil_image = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8), "RGB").convert("RGBA")
+        else:
+            from matplotlib import pyplot as plt
+            plt.imsave(
+                self.params["filename_incomplete"], self.maps["SHO_RGB"][::-1]
+            )
+        super().MakeImages(snapdata)
+
+
+# ---------- Custom field task infrastructure ----------
+
+# Physical constants and unit conversions (CGS, from astropy)
+_CONSTANTS = {
+    "pi": np.pi,
+    "k_B": _ac.k_B.cgs.value,
+    "m_p": _ac.m_p.cgs.value,
+    "m_e": _ac.m_e.cgs.value,
+    "c_light": _ac.c.cgs.value,
+    "G": _ac.G.cgs.value,
+    "Msun": _ac.M_sun.cgs.value,
+    "Lsun": _ac.L_sun.cgs.value,
+    "pc": _au.pc.to(_au.cm),
+    "AU": _au.AU.to(_au.cm),
+    "yr": _au.yr.to(_au.s),
+    "Myr": _au.Myr.to(_au.s),
+    "eV": _au.eV.to(_au.erg),
+}
+
+# Registry of derived fields: name -> expression string.
+# Expressions can reference snapshot fields, constants, other derived fields,
+# and the builtins (abs, sqrt, norm, log, log10, exp, ...).
+DERIVED_FIELDS = {}
+
+# Fallback expressions for snapshot fields that may not exist.
+# Used only when PartType0/<name> is absent from the snapshot.
+FIELD_FALLBACKS = {}
+
+
+def register_derived_field(name, expr):
+    """Register a named derived field.
+
+    >>> register_derived_field("MagneticPressure", "norm(MagneticField)**2 / (8*pi)")
+    """
+    DERIVED_FIELDS[name] = expr
+
+
+def register_field_fallback(name, expr):
+    """Register a fallback expression for a snapshot field.
+
+    The fallback is used only when PartType0/<name> is not present in the
+    snapshot.  If the field exists on disk, the snapshot value is used.
+
+    >>> register_field_fallback("Pressure", "(5./3 - 1) * Density * InternalEnergy")
+    """
+    FIELD_FALLBACKS[name] = expr
+
+
+# Built-in derived fields (Gaussian CGS conventions matching GIZMO)
+register_derived_field("MagneticPressure", "norm(MagneticField)**2 / (8*pi)")
+register_derived_field("PlasmaBeta", "Pressure / MagneticPressure")
+register_derived_field("AlfvenSpeed", "norm(MagneticField) / sqrt(4*pi*Density)")
+register_derived_field("MachNumber", "norm(Velocities) / SoundSpeed")
+register_derived_field("JeansLength", "SoundSpeed / sqrt(G * Density)")
+register_derived_field("ThermalEnergy", "Masses * InternalEnergy")
+register_derived_field("KineticEnergy", "0.5 * Masses * norm(Velocities)**2")
+register_derived_field("MagneticEnergy", "norm(MagneticField)**2 / (8*pi) * Masses / Density")
+register_derived_field("NumberDensity", "Density / m_p")
+
+# LaTeX symbols for colorbar labels.  Keys can be snapshot field names,
+# derived field names, or full expression strings.
+FIELD_SYMBOLS = {}
+
+
+def register_field_symbol(name, latex):
+    r"""Register a LaTeX symbol for a field or expression.
+
+    >>> register_field_symbol("Temperature", r"T\;\mathrm{(K)}")
+    """
+    FIELD_SYMBOLS[name] = latex
+
+
+# Built-in symbols
+register_field_symbol("Density", r"\rho")
+register_field_symbol("Temperature", r"T\;\mathrm{(K)}")
+register_field_symbol("Pressure", r"P")
+register_field_symbol("InternalEnergy", r"u")
+register_field_symbol("Masses", r"M")
+register_field_symbol("SoundSpeed", r"c_s")
+register_field_symbol("MagneticPressure", r"P_B")
+register_field_symbol("PlasmaBeta", r"\beta")
+register_field_symbol("AlfvenSpeed", r"v_A")
+register_field_symbol("MachNumber", r"\mathcal{M}")
+register_field_symbol("JeansLength", r"\lambda_J")
+register_field_symbol("NumberDensity", r"n\;\mathrm{(cm^{-3})}")
+register_field_symbol("ThermalEnergy", r"E_\mathrm{th}")
+register_field_symbol("KineticEnergy", r"E_\mathrm{kin}")
+register_field_symbol("MagneticEnergy", r"E_B")
+
+
+# Built-in fallbacks for fields that GIZMO may or may not write
+register_field_fallback("Pressure", "(5./3 - 1) * Density * InternalEnergy")
+register_field_fallback("SoundSpeed", "sqrt(5./3 * (5./3 - 1) * InternalEnergy)")
+register_field_fallback("Temperature", "(5./3 - 1) * InternalEnergy * m_p / k_B")
+
+
+# Tokens that are builtins, NOT field names
+_EXPR_BUILTINS = {
+    "abs", "sqrt", "norm", "log", "log2", "log10", "exp",
+    "sin", "cos", "tan", "minimum", "maximum", "clip", "where",
+} | set(_CONSTANTS.keys())
+
+
+def _extract_field_names(expr):
+    """Extract field name tokens from an expression, resolving derived fields
+    and fallbacks recursively to their base PartType0 snapshot fields.
+
+    Returns all snapshot fields that *might* be needed — both the primary
+    field and any fields its fallback expression requires.
+    """
+    tokens = re.findall(r"[A-Za-z_]\w*", expr)
+    raw = set(t for t in tokens if t not in _EXPR_BUILTINS)
+
+    base_fields = set()
+    seen = set()
+
+    def _resolve(names):
+        for name in names:
+            if name in seen:
+                continue
+            seen.add(name)
+            if name in DERIVED_FIELDS:
+                sub = re.findall(r"[A-Za-z_]\w*", DERIVED_FIELDS[name])
+                _resolve(t for t in sub if t not in _EXPR_BUILTINS)
+            else:
+                # This is a snapshot field (or has a fallback).  Request
+                # both the field itself and any fields the fallback needs,
+                # since we won't know until runtime which is available.
+                base_fields.add(name)
+                if name in FIELD_FALLBACKS:
+                    sub = re.findall(r"[A-Za-z_]\w*", FIELD_FALLBACKS[name])
+                    _resolve(t for t in sub if t not in _EXPR_BUILTINS)
+
+    _resolve(raw)
+    return sorted(base_fields)
+
+
+def _eval_field_expr(expr, snapdata, _cache=None):
+    """Evaluate a field expression against loaded PartType0 snapshot data.
+
+    Field names (e.g. 'Masses', 'Temperature') are resolved to their
+    PartType0 arrays.  Derived fields are evaluated recursively and cached
+    within the call tree.  Numpy ufuncs and physical constants are available.
+    """
+    if _cache is None:
+        _cache = {}
+
+    def _norm(x):
+        return np.sqrt(np.sum(np.asarray(x) ** 2, axis=-1))
+
+    ns = {
+        "np": np, "abs": np.abs, "sqrt": np.sqrt, "norm": _norm,
+        "log": np.log, "log2": np.log2, "log10": np.log10,
+        "exp": np.exp, "sin": np.sin, "cos": np.cos, "tan": np.tan,
+        "minimum": np.minimum, "maximum": np.maximum,
+        "clip": np.clip, "where": np.where,
+    }
+    ns.update(_CONSTANTS)
+
+    tokens = re.findall(r"[A-Za-z_]\w*", expr)
+    for name in set(tokens) - _EXPR_BUILTINS:
+        if name in ns:
+            continue
+        if name in _cache:
+            ns[name] = _cache[name]
+            continue
+
+        # 1) Explicit derived field — always computed from expression
+        if name in DERIVED_FIELDS:
+            _cache[name] = _eval_field_expr(DERIVED_FIELDS[name], snapdata, _cache)
+            ns[name] = _cache[name]
+            continue
+
+        # 2) Snapshot field — use if present
+        key = "PartType0/" + name
+        if key in snapdata and snapdata[key] is not None:
+            ns[name] = snapdata[key]
+            continue
+
+        # 3) Fallback expression — used when snapshot field is missing
+        if name in FIELD_FALLBACKS:
+            _cache[name] = _eval_field_expr(FIELD_FALLBACKS[name], snapdata, _cache)
+            ns[name] = _cache[name]
+            continue
+
+        raise KeyError(
+            f"'{name}' is not a snapshot field (PartType0/{name}), "
+            f"a derived field, a fallback, or a builtin"
+        )
+    return eval(expr, {"__builtins__": {}}, ns)
+
+
+def parse_custom_task(spec):
+    """Parse a task spec like 'SurfaceDensity(Masses*Temperature)'.
+
+    Returns (render_mode, field_expr) or None if not a custom task.
+    """
+    m = re.match(r"^(SurfaceDensity|Projection|ProjectedAverage|Slice)\((.+)\)$", spec)
+    if m:
+        return m.group(1), m.group(2)
+    return None
+
+
+class SinkVisCustomField(SinkVis):
+    """Generic task that renders an arbitrary field expression.
+
+    Supports four render modes:
+      - SurfaceDensity(expr): integral of expr along the line of sight  (Σ)
+      - Projection(expr):     same as SurfaceDensity (alias)
+      - ProjectedAverage(expr): mass-weighted projected average of expr
+      - Slice(expr):          midplane slice of expr
+    """
+
+    def __init__(self, params):
+        self._render_mode = params["_render_mode"]
+        self._field_expr = params["_field_expr"]
+        self._map_key = f"{self._render_mode}_{self._field_expr}"
+        self.required_maps = set([self._map_key])
+        super().__init__(params)
+        if self.TaskDone:
+            return
+        self.AssignDefaultParams()
+
+    def AssignDefaultParams(self):
+        super().AssignDefaultParams()
+        if self.params["filename"] is None:
+            safe_expr = re.sub(r"[^\w]", "_", self._field_expr)
+            self.params["filename"] = (
+                self.params["outputfolder"]
+                + "/"
+                + f"{self._render_mode}_{safe_expr}_"
+                + self.params["filename_suffix"]
+            )
+
+    def DetermineRequiredSnapdata(self):
+        super().DetermineRequiredSnapdata()
+        # Always need coordinates, masses, smoothing lengths for rendering
+        self.RequiredSnapdata += [
+            "PartType0/Coordinates",
+            "PartType0/Masses",
+            "PartType0/KernelMaxRadius",
+            "PartType0/ParticleIDs",
+            "PartType0/ParticleChildIDsNumber",
+            "PartType0/ParticleIDGenerationNumber",
+        ]
+        # Add any fields referenced in the expression
+        for name in _extract_field_names(self._field_expr):
+            self.RequiredSnapdata.append("PartType0/" + name)
+
+    def _colorbar_label(self):
+        """Return a LaTeX string for the colorbar title."""
+        expr = self._field_expr
+        # Check for exact match on the expression or field name
+        if expr in FIELD_SYMBOLS:
+            return FIELD_SYMBOLS[expr]
+        # For simple single-field expressions, look up the field
+        tokens = [t for t in re.findall(r"[A-Za-z_]\w*", expr) if t not in _EXPR_BUILTINS]
+        if len(tokens) == 1 and tokens[0] == expr and expr in FIELD_SYMBOLS:
+            return FIELD_SYMBOLS[expr]
+        # Fall back to rendering the raw expression in mathtt
+        return r"\mathtt{" + expr.replace("_", r"\_") + "}"
+
+    def GenerateMaps(self, snapdata):
+        if self._map_key in self.maps:
+            return
+        from meshoid import Meshoid
+
+        f = _eval_field_expr(self._field_expr, snapdata)
+
+        # Handle vector fields: if f has multiple columns, take magnitude
+        if f.ndim > 1:
+            f = np.sqrt(np.sum(f ** 2, axis=1))
+
+        # Apply the same cull mask that SetupCoordsAndWeights applied to pos/mass/hsml
+        if hasattr(self, "_keep_mask"):
+            f = f[self._keep_mask]
+
+        res = self.params["res"]
+        rmax = self.params["rmax"]
+        # Build a Meshoid from the already-transformed coordinates
+        M = Meshoid(self.pos, self.mass, self.hsml)
+
+        if self._render_mode in ("SurfaceDensity", "Projection"):
+            # Integral of f along sightlines
+            result = M.SurfaceDensity(
+                f, center=np.zeros(3), size=2 * rmax, res=res,
+            ).T
+        elif self._render_mode == "ProjectedAverage":
+            result = M.ProjectedAverage(
+                f, center=np.zeros(3), size=2 * rmax, res=res,
+            ).T
+        elif self._render_mode == "Slice":
+            # Supersample at 4x and downsample to anti-alias Voronoi edges
+            ss = 4
+            hi_res = M.Slice(
+                f, center=np.zeros(3), size=2 * rmax, res=res * ss,
+            ).T
+            result = hi_res.reshape(res, ss, res, ss).mean(axis=(1, 3))
+        else:
+            raise ValueError(f"Unknown render mode: {self._render_mode}")
+
+        self.maps[self._map_key] = result
+        np.savez_compressed(self.map_files[self._map_key], **{self._map_key: result})
+
+    def MakeImages(self, snapdata):
+        data = self.maps[self._map_key]
+        positive = data > 0
+
+        if self.params["limits"] is None:
+            if positive.any():
+                # SurfaceDensity/Projection: mass-weight (value = accumulated mass)
+                # Slice/ProjectedAverage: uniform weight (each pixel is equal area)
+                if self._render_mode in ("SurfaceDensity", "Projection"):
+                    weights = np.abs(data.ravel())
+                else:
+                    weights = np.ones(data.size)
+                self.params["limits"] = np.array(max_entropy_limits(
+                    data.ravel(), weights, log_scale=bool(positive.all()),
+                ))
+            else:
+                self.params["limits"] = np.array([data.min(), data.max()])
+
+        vmin, vmax = self.params["limits"]
+        if vmax <= vmin:
+            f = np.zeros_like(data)
+        elif positive.all():
+            f = (np.log10(data) - np.log10(vmin)) / (np.log10(vmax) - np.log10(vmin))
+        else:
+            f = (data - vmin) / (vmax - vmin)
+        f = np.clip(f, 0, 1)
+
+        from matplotlib import pyplot as plt
+
+        if self.params["backend"] == "PIL":
+            from PIL import Image
+            rgba = plt.get_cmap(self.params["cmap"])(np.flipud(f))
+            self._pil_image = Image.fromarray((rgba * 255).astype(np.uint8), "RGBA")
+            if not self.params["no_colorbar"]:
+                self._add_colorbar_to_image(vmin, vmax, label=self._colorbar_label())
+        elif self.params["backend"] == "matplotlib":
+            import matplotlib
+            matplotlib.use("Agg")
+            self.fig, self.ax = plt.subplots(figsize=(4, 4))
+            X = Y = np.linspace(-self.params["rmax"], self.params["rmax"], self.params["res"])
+            X, Y = np.meshgrid(X, Y)
+            if positive.all():
+                norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
+            else:
+                norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+            self.ax.pcolormesh(X, Y, data, norm=norm, cmap=self.params["cmap"])
+            self.ax.set_aspect("equal")
+
         super().MakeImages(snapdata)
