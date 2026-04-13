@@ -12,5 +12,6 @@ of hydrodynamic simulations, with a focus on GIZMO_ snapshot data.
 
    installation
    sinkvis2
+   camera_movies
    custom_tasks
    api
