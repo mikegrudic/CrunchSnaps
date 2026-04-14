@@ -335,6 +335,20 @@ derived fields.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(PlasmaBeta)&#39;</span> <span class="s1">&#39;Slice(MachNumber)&#39;</span>
 </pre></div>
 </div>
+<figure class="align-center" id="id3">
+<a class="reference internal image-reference" href="_images/slice_plasmabeta.png"><img alt="_images/slice_plasmabeta.png" src="_images/slice_plasmabeta.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(PlasmaBeta)</span></code> with RdBu_r colormap.</span><a class="headerlink" href="#id3" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+<figure class="align-center" id="id4">
+<a class="reference internal image-reference" href="_images/slice_machnumber.png"><img alt="_images/slice_machnumber.png" src="_images/slice_machnumber.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(MachNumber)</span></code> with inferno colormap.</span><a class="headerlink" href="#id4" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 </section>
 <section id="field-fallbacks">
 <h3>Field Fallbacks<a class="headerlink" href="#field-fallbacks" title="Link to this heading"></a></h3>
@@ -395,11 +409,11 @@ change:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="nb">dir</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span>   <span class="c1"># view along (1,1,0)</span>
 </pre></div>
 </div>
-<figure class="align-center" id="id3">
+<figure class="align-center" id="id5">
 <a class="reference internal image-reference" href="_images/sigmagas_xdir.png"><img alt="_images/sigmagas_xdir.png" src="_images/sigmagas_xdir.png" style="width: 400px;" />
 </a>
 <figcaption>
-<p><span class="caption-text">Surface density viewed along the x-axis (<code class="docutils literal notranslate"><span class="pre">--dir=x</span></code>).</span><a class="headerlink" href="#id3" title="Link to this image"></a></p>
+<p><span class="caption-text">Surface density viewed along the x-axis (<code class="docutils literal notranslate"><span class="pre">--dir=x</span></code>).</span><a class="headerlink" href="#id5" title="Link to this image"></a></p>
 </figcaption>
 </figure>
 </section>
@@ -419,11 +433,11 @@ the viewing direction automatically):</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">pan</span><span class="o">=</span><span class="mi">45</span> <span class="o">--</span><span class="n">tilt</span><span class="o">=</span><span class="mi">10</span>
 </pre></div>
 </div>
-<figure class="align-center" id="id4">
+<figure class="align-center" id="id6">
 <a class="reference internal image-reference" href="_images/sigmagas_pantilt.png"><img alt="_images/sigmagas_pantilt.png" src="_images/sigmagas_pantilt.png" style="width: 400px;" />
 </a>
 <figcaption>
-<p><span class="caption-text">Surface density with <code class="docutils literal notranslate"><span class="pre">--pan=45</span> <span class="pre">--tilt=15</span></code>.</span><a class="headerlink" href="#id4" title="Link to this image"></a></p>
+<p><span class="caption-text">Surface density with <code class="docutils literal notranslate"><span class="pre">--pan=45</span> <span class="pre">--tilt=15</span></code>.</span><a class="headerlink" href="#id6" title="Link to this image"></a></p>
 </figcaption>
 </figure>
 </section>
@@ -437,20 +451,13 @@ the viewing direction automatically):</p>
 <section id="centering">
 <h3>Centering<a class="headerlink" href="#centering" title="Link to this heading"></a></h3>
 <p>Control the center of the image:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">..</span> <span class="n">figure</span><span class="p">::</span> <span class="n">_static</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">sigmagas_densest</span><span class="o">.</span><span class="n">png</span>
-</pre></div>
-</div>
-<blockquote>
-<div><dl class="field-list simple">
-<dt class="field-odd">width<span class="colon">:</span></dt>
-<dd class="field-odd"><p>400px</p>
-</dd>
-<dt class="field-even">align<span class="colon">:</span></dt>
-<dd class="field-even"><p>center</p>
-</dd>
-</dl>
-<p>Centered on the densest gas cell with <code class="docutils literal notranslate"><span class="pre">--center=densest</span> <span class="pre">--rmax=5</span></code>.</p>
-</div></blockquote>
+<figure class="align-center" id="id7">
+<a class="reference internal image-reference" href="_images/sigmagas_densest.png"><img alt="_images/sigmagas_densest.png" src="_images/sigmagas_densest.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Centered on the densest gas cell with <code class="docutils literal notranslate"><span class="pre">--center=densest</span> <span class="pre">--rmax=5</span></code>.</span><a class="headerlink" href="#id7" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">densest</span>       <span class="c1"># densest gas cell</span>
 <span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">massive</span>        <span class="c1"># most massive star</span>
 <span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">massive</span><span class="o">=</span><span class="mi">3</span>      <span class="c1"># 3rd most massive star</span>

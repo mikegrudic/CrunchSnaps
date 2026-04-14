@@ -208,21 +208,17 @@ Example::
 
     SinkVis2 snapshot_*.hdf5 'Slice(PlasmaBeta)' 'Slice(MachNumber)'
 
-.. list-table::
-   :widths: 50 50
-   :header-rows: 0
+.. figure:: _static/examples/slice_plasmabeta.png
+   :width: 400px
+   :align: center
 
-   * - .. figure:: _static/examples/slice_plasmabeta.png
-          :width: 100%
+   ``Slice(PlasmaBeta)`` with RdBu_r colormap.
 
-          ``Slice(PlasmaBeta)`` with RdBu_r
+.. figure:: _static/examples/slice_machnumber.png
+   :width: 400px
+   :align: center
 
-     - .. figure:: _static/examples/slice_machnumber.png
-          :width: 100%
-
-          ``Slice(MachNumber)`` with inferno
-
-   ``Slice(PlasmaBeta)`` — a derived field using ``RdBu_r`` colormap.
+   ``Slice(MachNumber)`` with inferno colormap.
 
 Field Fallbacks
 ^^^^^^^^^^^^^^^
@@ -316,7 +312,7 @@ Set a finite camera distance for perspective (non-orthographic) rendering::
 Centering
 ^^^^^^^^^
 
-Control the center of the image::
+Control the center of the image:
 
 .. figure:: _static/examples/sigmagas_densest.png
    :width: 400px
