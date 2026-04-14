@@ -126,6 +126,16 @@ quantity <span class="math notranslate nohighlight">\(\int f\, dz\)</span> via <
 via <code class="docutils literal notranslate"><span class="pre">Meshoid.ProjectedAverage</span></code>.  Colormap limits use uniform
 (per-pixel) weighting.</p>
 </dd>
+<dt><code class="docutils literal notranslate"><span class="pre">WeightedVariance(expr)</span></code></dt><dd><p>Computes the mass-weighted projected variance
+<span class="math notranslate nohighlight">\(\sigma(f) = \sqrt{\langle f^2 \rangle - \langle f \rangle^2}\)</span>.
+Uses two <code class="docutils literal notranslate"><span class="pre">Meshoid.ProjectedAverage</span></code> calls internally.  Colormap
+limits use uniform weighting.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">Sigma1D(expr)</span></code></dt><dd><p>Line-of-sight velocity dispersion.  Computes
+<span class="math notranslate nohighlight">\(\sigma_\mathrm{1D} = \sqrt{\langle v_z^2 \rangle - \langle v_z \rangle^2}\)</span>
+where <span class="math notranslate nohighlight">\(v_z\)</span> is the line-of-sight velocity after camera
+coordinate transformation.  The <em>expr</em> argument is unused.</p>
+</dd>
 <dt><code class="docutils literal notranslate"><span class="pre">Slice(expr)</span></code></dt><dd><p>Evaluates <em>expr</em> on the midplane (z = 0 in the camera frame) using
 <code class="docutils literal notranslate"><span class="pre">Meshoid.Slice</span></code> with order-1 linear reconstruction.  Positive
 quantities are reconstructed in log space to guarantee positivity.

@@ -60,6 +60,9 @@ run sigmagas_densest.png "$SNAP" --res=$RES --center=densest --rmax=5 --outputfo
 # MachNumber doesn't depend on B units, but keep consistent
 run slice_machnumber.png "$SNAP" --tasks='Slice(MachNumber)' --res=$RES --cmap=inferno --outputfolder="$OUT"
 
+# Sigma1D (velocity dispersion)
+run sigma1d_velocities.png "$SNAP" --tasks='Sigma1D(Velocities)' --res=$RES --cmap=magma --outputfolder="$OUT"
+
 # Matplotlib backend
 run sigmagas_matplotlib.png "$SNAP" --res=$RES --backend=matplotlib --outputfolder="$OUT"
 

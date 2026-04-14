@@ -187,6 +187,16 @@ number density.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">ProjectedAverage(expr)</span></code></dt><dd><p>Mass-weighted average of <em>expr</em> along the line of sight.</p>
 </dd>
+<dt><code class="docutils literal notranslate"><span class="pre">WeightedVariance(expr)</span></code></dt><dd><p>Mass-weighted projected variance of <em>expr</em>:
+<span class="math notranslate nohighlight">\(\sigma(f) = \sqrt{\langle f^2 \rangle - \langle f \rangle^2}\)</span>,
+where <span class="math notranslate nohighlight">\(\langle \cdot \rangle\)</span> denotes a mass-weighted projected
+average.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">Sigma1D(expr)</span></code></dt><dd><p>Line-of-sight velocity dispersion — the mass-weighted variance of the
+line-of-sight velocity component:
+<span class="math notranslate nohighlight">\(\sigma_\mathrm{1D} = \sqrt{\langle v_z^2 \rangle - \langle v_z \rangle^2}\)</span>.
+The <em>expr</em> argument is ignored (it always uses velocities).</p>
+</dd>
 <dt><code class="docutils literal notranslate"><span class="pre">Slice(expr)</span></code></dt><dd><p>Midplane slice of <em>expr</em>, with order-1 linear reconstruction in log
 space (for positive quantities) and anti-aliasing via supersampling
 (default 2x, controllable with <code class="docutils literal notranslate"><span class="pre">--supersample</span></code>).</p>
@@ -226,6 +236,18 @@ operators, and call numpy functions.</p>
 <figure class="align-center">
 <a class="reference internal image-reference" href="_images/slice_entropy.png"><img alt="_images/slice_entropy.png" src="_images/slice_entropy.png" style="width: 400px;" />
 </a>
+</figure>
+<p>Line-of-sight velocity dispersion:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Sigma1D(Velocities)&#39;</span> <span class="o">--</span><span class="n">cmap</span><span class="o">=</span><span class="n">magma</span>
+</pre></div>
+</div>
+<figure class="align-center" id="id3">
+<a class="reference internal image-reference" href="_images/sigma1d_velocities.png"><img alt="_images/sigma1d_velocities.png" src="_images/sigma1d_velocities.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Mass-weighted line-of-sight velocity dispersion
+<span class="math notranslate nohighlight">\(\sigma_\mathrm{1D} = \sqrt{\langle v_z^2 \rangle - \langle v_z \rangle^2}\)</span>.</span><a class="headerlink" href="#id3" title="Link to this image"></a></p>
+</figcaption>
 </figure>
 <section id="available-functions-in-expressions">
 <h3>Available Functions in Expressions<a class="headerlink" href="#available-functions-in-expressions" title="Link to this heading"></a></h3>
@@ -357,18 +379,18 @@ derived fields.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(PlasmaBeta)&#39;</span> <span class="s1">&#39;Slice(MachNumber)&#39;</span>
 </pre></div>
 </div>
-<figure class="align-center" id="id3">
+<figure class="align-center" id="id4">
 <a class="reference internal image-reference" href="_images/slice_plasmabeta.png"><img alt="_images/slice_plasmabeta.png" src="_images/slice_plasmabeta.png" style="width: 400px;" />
 </a>
 <figcaption>
-<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(PlasmaBeta)</span></code> with RdBu_r colormap.</span><a class="headerlink" href="#id3" title="Link to this image"></a></p>
+<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(PlasmaBeta)</span></code> with RdBu_r colormap.</span><a class="headerlink" href="#id4" title="Link to this image"></a></p>
 </figcaption>
 </figure>
-<figure class="align-center" id="id4">
+<figure class="align-center" id="id5">
 <a class="reference internal image-reference" href="_images/slice_machnumber.png"><img alt="_images/slice_machnumber.png" src="_images/slice_machnumber.png" style="width: 400px;" />
 </a>
 <figcaption>
-<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(MachNumber)</span></code> with inferno colormap.</span><a class="headerlink" href="#id4" title="Link to this image"></a></p>
+<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(MachNumber)</span></code> with inferno colormap.</span><a class="headerlink" href="#id5" title="Link to this image"></a></p>
 </figcaption>
 </figure>
 </section>
@@ -431,11 +453,11 @@ change:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="nb">dir</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span>   <span class="c1"># view along (1,1,0)</span>
 </pre></div>
 </div>
-<figure class="align-center" id="id5">
+<figure class="align-center" id="id6">
 <a class="reference internal image-reference" href="_images/sigmagas_xdir.png"><img alt="_images/sigmagas_xdir.png" src="_images/sigmagas_xdir.png" style="width: 400px;" />
 </a>
 <figcaption>
-<p><span class="caption-text">Surface density viewed along the x-axis (<code class="docutils literal notranslate"><span class="pre">--dir=x</span></code>).</span><a class="headerlink" href="#id5" title="Link to this image"></a></p>
+<p><span class="caption-text">Surface density viewed along the x-axis (<code class="docutils literal notranslate"><span class="pre">--dir=x</span></code>).</span><a class="headerlink" href="#id6" title="Link to this image"></a></p>
 </figcaption>
 </figure>
 </section>
@@ -455,11 +477,11 @@ the viewing direction automatically):</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">pan</span><span class="o">=</span><span class="mi">45</span> <span class="o">--</span><span class="n">tilt</span><span class="o">=</span><span class="mi">10</span>
 </pre></div>
 </div>
-<figure class="align-center" id="id6">
+<figure class="align-center" id="id7">
 <a class="reference internal image-reference" href="_images/sigmagas_pantilt.png"><img alt="_images/sigmagas_pantilt.png" src="_images/sigmagas_pantilt.png" style="width: 400px;" />
 </a>
 <figcaption>
-<p><span class="caption-text">Surface density with <code class="docutils literal notranslate"><span class="pre">--pan=45</span> <span class="pre">--tilt=15</span></code>.</span><a class="headerlink" href="#id6" title="Link to this image"></a></p>
+<p><span class="caption-text">Surface density with <code class="docutils literal notranslate"><span class="pre">--pan=45</span> <span class="pre">--tilt=15</span></code>.</span><a class="headerlink" href="#id7" title="Link to this image"></a></p>
 </figcaption>
 </figure>
 </section>
@@ -473,11 +495,11 @@ the viewing direction automatically):</p>
 <section id="centering">
 <h3>Centering<a class="headerlink" href="#centering" title="Link to this heading"></a></h3>
 <p>Control the center of the image:</p>
-<figure class="align-center" id="id7">
+<figure class="align-center" id="id8">
 <a class="reference internal image-reference" href="_images/sigmagas_densest.png"><img alt="_images/sigmagas_densest.png" src="_images/sigmagas_densest.png" style="width: 400px;" />
 </a>
 <figcaption>
-<p><span class="caption-text">Centered on the densest gas cell with <code class="docutils literal notranslate"><span class="pre">--center=densest</span> <span class="pre">--rmax=5</span></code>.</span><a class="headerlink" href="#id7" title="Link to this image"></a></p>
+<p><span class="caption-text">Centered on the densest gas cell with <code class="docutils literal notranslate"><span class="pre">--center=densest</span> <span class="pre">--rmax=5</span></code>.</span><a class="headerlink" href="#id8" title="Link to this image"></a></p>
 </figcaption>
 </figure>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">densest</span>       <span class="c1"># densest gas cell</span>
@@ -510,12 +532,12 @@ coordinate axes on the plot.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">backend</span><span class="o">=</span><span class="n">matplotlib</span>
 </pre></div>
 </div>
-<figure class="align-center" id="id8">
+<figure class="align-center" id="id9">
 <a class="reference internal image-reference" href="_images/sigmagas_matplotlib.png"><img alt="_images/sigmagas_matplotlib.png" src="_images/sigmagas_matplotlib.png" style="width: 400px;" />
 </a>
 <figcaption>
 <p><span class="caption-text">Surface density rendered with the matplotlib backend, showing labeled
-axes and a standard colorbar.</span><a class="headerlink" href="#id8" title="Link to this image"></a></p>
+axes and a standard colorbar.</span><a class="headerlink" href="#id9" title="Link to this image"></a></p>
 </figcaption>
 </figure>
 </section>

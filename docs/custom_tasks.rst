@@ -46,6 +46,18 @@ Render Modes
     via ``Meshoid.ProjectedAverage``.  Colormap limits use uniform
     (per-pixel) weighting.
 
+``WeightedVariance(expr)``
+    Computes the mass-weighted projected variance
+    :math:`\sigma(f) = \sqrt{\langle f^2 \rangle - \langle f \rangle^2}`.
+    Uses two ``Meshoid.ProjectedAverage`` calls internally.  Colormap
+    limits use uniform weighting.
+
+``Sigma1D(expr)``
+    Line-of-sight velocity dispersion.  Computes
+    :math:`\sigma_\mathrm{1D} = \sqrt{\langle v_z^2 \rangle - \langle v_z \rangle^2}`
+    where :math:`v_z` is the line-of-sight velocity after camera
+    coordinate transformation.  The *expr* argument is unused.
+
 ``Slice(expr)``
     Evaluates *expr* on the midplane (z = 0 in the camera frame) using
     ``Meshoid.Slice`` with order-1 linear reconstruction.  Positive

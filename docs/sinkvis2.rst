@@ -88,6 +88,18 @@ four render modes:
 ``ProjectedAverage(expr)``
     Mass-weighted average of *expr* along the line of sight.
 
+``WeightedVariance(expr)``
+    Mass-weighted projected variance of *expr*:
+    :math:`\sigma(f) = \sqrt{\langle f^2 \rangle - \langle f \rangle^2}`,
+    where :math:`\langle \cdot \rangle` denotes a mass-weighted projected
+    average.
+
+``Sigma1D(expr)``
+    Line-of-sight velocity dispersion — the mass-weighted variance of the
+    line-of-sight velocity component:
+    :math:`\sigma_\mathrm{1D} = \sqrt{\langle v_z^2 \rangle - \langle v_z \rangle^2}`.
+    The *expr* argument is ignored (it always uses velocities).
+
 ``Slice(expr)``
     Midplane slice of *expr*, with order-1 linear reconstruction in log
     space (for positive quantities) and anti-aliasing via supersampling
@@ -128,6 +140,17 @@ Entropy slice (derived field) with plasma colormap::
 .. figure:: _static/examples/slice_entropy.png
    :width: 400px
    :align: center
+
+Line-of-sight velocity dispersion::
+
+    SinkVis2 snapshot_*.hdf5 'Sigma1D(Velocities)' --cmap=magma
+
+.. figure:: _static/examples/sigma1d_velocities.png
+   :width: 400px
+   :align: center
+
+   Mass-weighted line-of-sight velocity dispersion
+   :math:`\sigma_\mathrm{1D} = \sqrt{\langle v_z^2 \rangle - \langle v_z \rangle^2}`.
 
 Available Functions in Expressions
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
