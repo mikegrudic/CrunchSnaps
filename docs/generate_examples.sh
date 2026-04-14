@@ -38,7 +38,8 @@ run sigmagas_inferno.png "$SNAP" --res=$RES --cmap=inferno --outputfolder="$OUT"
 run slice_temperature.png "$SNAP" --tasks='Slice(Temperature)' --res=$RES --outputfolder="$OUT"
 
 # Slice(PlasmaBeta) with RdBu_r
-run slice_plasmabeta.png "$SNAP" --tasks='Slice(PlasmaBeta)' --res=$RES --cmap=RdBu_r --outputfolder="$OUT"
+# NOTE: --unit_B=1e4 because this snapshot stores B in Tesla, not Gauss
+run slice_plasmabeta.png "$SNAP" --tasks='Slice(PlasmaBeta)' --res=$RES --cmap=RdBu_r --unit_B=1e4 --outputfolder="$OUT"
 
 # ProjectedAverage(Temperature)
 run projectedavg_temperature.png "$SNAP" --tasks='ProjectedAverage(Temperature)' --res=$RES --outputfolder="$OUT"
@@ -56,6 +57,7 @@ run sigmagas_pantilt.png "$SNAP" --res=$RES --pan=45 --tilt=15 --outputfolder="$
 run sigmagas_densest.png "$SNAP" --res=$RES --center=densest --rmax=5 --outputfolder="$OUT"
 
 # Slice(MachNumber) with inferno
+# MachNumber doesn't depend on B units, but keep consistent
 run slice_machnumber.png "$SNAP" --tasks='Slice(MachNumber)' --res=$RES --cmap=inferno --outputfolder="$OUT"
 
 # Matplotlib backend

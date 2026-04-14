@@ -45,6 +45,10 @@ Options:
     --realstars_max_lum=<f>      Maximum stellar luminosity in realistic PSF rendering [default: 1.0e3]
     --realstars_opacity=<f>      Opacity scaling factor for realstars [default: 1.0]
     --supersample=<N>            Anti-aliasing supersampling factor for Slice renders [default: 2]
+    --unit_length=<f>            Override UnitLength_In_CGS from snapshot header
+    --unit_mass=<f>              Override UnitMass_In_CGS from snapshot header
+    --unit_velocity=<f>          Override UnitVelocity_In_CGS from snapshot header
+    --unit_B=<f>                 Magnetic field unit in Gauss (default: 1, i.e. B stored in Gauss)
     --make_movie                 Stitch rendered frames into a 24fps mp4 movie using ffmpeg
     --fps=<N>                    Frames per second for movie [default: 24]
 """
@@ -154,6 +158,18 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
             "no_colorbar": input["--no_colorbar"],
         }
     )
+
+    # Unit overrides — injected into snapshot headers at load time
+    unit_overrides = {}
+    if input["--unit_length"]:
+        unit_overrides["UnitLength_In_CGS"] = float(input["--unit_length"])
+    if input["--unit_mass"]:
+        unit_overrides["UnitMass_In_CGS"] = float(input["--unit_mass"])
+    if input["--unit_velocity"]:
+        unit_overrides["UnitVelocity_In_CGS"] = float(input["--unit_velocity"])
+    if input["--unit_B"]:
+        unit_overrides["UnitB_In_Gauss"] = float(input["--unit_B"])
+    common_params["_unit_overrides"] = unit_overrides
 
     common_params["pan"] = float(input["--pan"])
     common_params["tilt"] = float(input["--tilt"])

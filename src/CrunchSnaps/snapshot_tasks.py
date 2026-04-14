@@ -1178,10 +1178,12 @@ def register_field_fallback(name, expr):
     FIELD_FALLBACKS[name] = expr
 
 
-# Built-in derived fields (Gaussian CGS conventions matching GIZMO)
-register_derived_field("MagneticPressure", "norm(MagneticField)**2 / (8*pi)")
-register_derived_field("PlasmaBeta", "Pressure / MagneticPressure")
-register_derived_field("AlfvenSpeed", "norm(MagneticField) / sqrt(4*pi*Density)")
+# Built-in derived fields (Gaussian CGS conventions matching GIZMO).
+# UnitB_In_Gauss defaults to 1 (B already in Gauss).  Set it in the snapshot
+# header or via --set to handle non-Gauss B fields.
+register_derived_field("MagneticPressure", "(norm(MagneticField) * UnitB_In_Gauss)**2 / (8*pi)")
+register_derived_field("PlasmaBeta", "Pressure * UnitEnergyDensity_In_CGS / MagneticPressure")
+register_derived_field("AlfvenSpeed", "norm(MagneticField) * UnitB_In_Gauss / sqrt(4*pi*Density*UnitDensity_In_CGS)")
 register_derived_field("MachNumber", "norm(Velocities) / SoundSpeed")
 register_derived_field("JeansLength", "SoundSpeed / sqrt(G * Density)")
 register_derived_field("ThermalEnergy", "Masses * InternalEnergy")
@@ -1256,7 +1258,7 @@ _TOKEN_RE = re.compile(r"(?<!\d)[A-Za-z_]\w*")
 _UNIT_NAMES = {
     "UnitLength_In_CGS", "UnitMass_In_CGS", "UnitVelocity_In_CGS",
     "UnitEnergyDensity_In_CGS", "UnitDensity_In_CGS",
-    "UnitTime_In_CGS", "UnitEnergy_In_CGS",
+    "UnitTime_In_CGS", "UnitEnergy_In_CGS", "UnitB_In_Gauss",
 }
 
 _EXPR_BUILTINS = {
@@ -1299,7 +1301,7 @@ def _extract_field_names(expr):
     return sorted(base_fields)
 
 
-def _eval_field_expr(expr, snapdata, _cache=None):
+def _eval_field_expr(expr, snapdata, _cache=None, unit_overrides=None):
     """Evaluate a field expression against loaded PartType0 snapshot data.
 
     Field names (e.g. 'Masses', 'Temperature') are resolved to their
@@ -1324,11 +1326,12 @@ def _eval_field_expr(expr, snapdata, _cache=None):
     }
     ns.update(_CONSTANTS)
 
-    # Add code-unit conversion factors from snapshot header
+    # Add code-unit conversion factors from snapshot header, with CLI overrides
     header = snapdata.get("Header", {})
-    UL = header.get("UnitLength_In_CGS", 1.0)
-    UM = header.get("UnitMass_In_CGS", 1.0)
-    UV = header.get("UnitVelocity_In_CGS", 1.0)
+    ov = unit_overrides or {}
+    UL = ov.get("UnitLength_In_CGS", header.get("UnitLength_In_CGS", 1.0))
+    UM = ov.get("UnitMass_In_CGS", header.get("UnitMass_In_CGS", 1.0))
+    UV = ov.get("UnitVelocity_In_CGS", header.get("UnitVelocity_In_CGS", 1.0))
     ns["UnitLength_In_CGS"] = UL
     ns["UnitMass_In_CGS"] = UM
     ns["UnitVelocity_In_CGS"] = UV
@@ -1336,6 +1339,7 @@ def _eval_field_expr(expr, snapdata, _cache=None):
     ns["UnitDensity_In_CGS"] = UM / UL**3
     ns["UnitTime_In_CGS"] = UL / UV
     ns["UnitEnergy_In_CGS"] = UM * UV**2
+    ns["UnitB_In_Gauss"] = ov.get("UnitB_In_Gauss", header.get("UnitB_In_Gauss", 1.0))
 
     tokens = _TOKEN_RE.findall(expr)
     for name in set(tokens) - _EXPR_BUILTINS:
@@ -1347,7 +1351,7 @@ def _eval_field_expr(expr, snapdata, _cache=None):
 
         # 1) Explicit derived field — always computed from expression
         if name in DERIVED_FIELDS:
-            _cache[name] = _eval_field_expr(DERIVED_FIELDS[name], snapdata, _cache)
+            _cache[name] = _eval_field_expr(DERIVED_FIELDS[name], snapdata, _cache, unit_overrides)
             ns[name] = _cache[name]
             continue
 
@@ -1359,7 +1363,7 @@ def _eval_field_expr(expr, snapdata, _cache=None):
 
         # 3) Fallback expression — used when snapshot field is missing
         if name in FIELD_FALLBACKS:
-            _cache[name] = _eval_field_expr(FIELD_FALLBACKS[name], snapdata, _cache)
+            _cache[name] = _eval_field_expr(FIELD_FALLBACKS[name], snapdata, _cache, unit_overrides)
             ns[name] = _cache[name]
             continue
 
@@ -1445,7 +1449,8 @@ class SinkVisCustomField(SinkVis):
             return
         from meshoid import Meshoid
 
-        f = _eval_field_expr(self._field_expr, snapdata)
+        f = _eval_field_expr(self._field_expr, snapdata,
+                             unit_overrides=self.params.get("_unit_overrides"))
 
         # Handle vector fields: if f has multiple columns, take magnitude
         if f.ndim > 1:
