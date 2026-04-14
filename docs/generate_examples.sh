@@ -55,6 +55,9 @@ run sigmagas_pantilt.png "$SNAP" --res=$RES --pan=45 --tilt=15 --outputfolder="$
 # Center on densest, zoomed in
 run sigmagas_densest.png "$SNAP" --res=$RES --center=densest --rmax=5 --outputfolder="$OUT"
 
+# Slice(MachNumber) with inferno
+run slice_machnumber.png "$SNAP" --tasks='Slice(MachNumber)' --res=$RES --cmap=inferno --outputfolder="$OUT"
+
 # Slice(Entropy) with plasma
 run slice_entropy.png "$SNAP" --tasks='Slice(Entropy)' --res=$RES --cmap=plasma --outputfolder="$OUT"
 

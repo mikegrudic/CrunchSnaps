@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "CrunchSnaps"
-version = "0.13"
+version = "0.13.1"
 description = "Package for making publication-quality visualizations of GIZMO simulation data"
 readme = "README.md"
 license = "MIT"

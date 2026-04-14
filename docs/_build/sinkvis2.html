@@ -194,62 +194,38 @@ space (for positive quantities) and anti-aliasing via supersampling
 <p>Expressions can reference any <code class="docutils literal notranslate"><span class="pre">PartType0</span></code> field by name (<code class="docutils literal notranslate"><span class="pre">Masses</span></code>,
 <code class="docutils literal notranslate"><span class="pre">Temperature</span></code>, <code class="docutils literal notranslate"><span class="pre">Density</span></code>, <code class="docutils literal notranslate"><span class="pre">Velocities</span></code>, etc.), use arithmetic
 operators, and call numpy functions.</p>
-<table class="docutils align-default">
-<colgroup>
-<col style="width: 50.0%" />
-<col style="width: 50.0%" />
-</colgroup>
-<tbody>
-<tr class="row-odd"><td><figure class="align-default" id="id3">
-<a class="reference internal image-reference" href="_images/slice_temperature.png"><img alt="_images/slice_temperature.png" src="_images/slice_temperature.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(Temperature)</span></code></span><a class="headerlink" href="#id3" title="Link to this image"></a></p>
-</figcaption>
-</figure>
-</td>
-<td><figure class="align-default" id="id4">
-<a class="reference internal image-reference" href="_images/surfacedensity_thermal.png"><img alt="_images/surfacedensity_thermal.png" src="_images/surfacedensity_thermal.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(Masses*InternalEnergy)</span></code> with magma</span><a class="headerlink" href="#id4" title="Link to this image"></a></p>
-</figcaption>
-</figure>
-</td>
-</tr>
-<tr class="row-even"><td><figure class="align-default" id="id5">
-<a class="reference internal image-reference" href="_images/projectedavg_temperature.png"><img alt="_images/projectedavg_temperature.png" src="_images/projectedavg_temperature.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">ProjectedAverage(Temperature)</span></code></span><a class="headerlink" href="#id5" title="Link to this image"></a></p>
-</figcaption>
-</figure>
-</td>
-<td><figure class="align-default" id="id6">
-<a class="reference internal image-reference" href="_images/slice_entropy.png"><img alt="_images/slice_entropy.png" src="_images/slice_entropy.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(Entropy)</span></code> — derived field, plasma cmap</span><a class="headerlink" href="#id6" title="Link to this image"></a></p>
-</figcaption>
-</figure>
-</td>
-</tr>
-</tbody>
-</table>
-<p>Examples:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Temperature slice</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(Temperature)&#39;</span>
-
-<span class="c1"># Column density of thermal energy</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SurfaceDensity</span><span class="p">(</span><span class="n">Masses</span><span class="o">*</span><span class="n">InternalEnergy</span><span class="p">)</span>
-
-<span class="c1"># Projected average of log density</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">ProjectedAverage</span><span class="p">(</span><span class="n">log10</span><span class="p">(</span><span class="n">Density</span><span class="p">))</span>
-
-<span class="c1"># Multiple tasks at once</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SigmaGas</span> <span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span> <span class="n">Slice</span><span class="p">(</span><span class="n">PlasmaBeta</span><span class="p">)</span>
+<p>Temperature slice:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(Temperature)&#39;</span>
 </pre></div>
 </div>
+<figure class="align-center">
+<a class="reference internal image-reference" href="_images/slice_temperature.png"><img alt="_images/slice_temperature.png" src="_images/slice_temperature.png" style="width: 400px;" />
+</a>
+</figure>
+<p>Thermal energy surface density with magma colormap:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;SurfaceDensity(Masses*InternalEnergy)&#39;</span> <span class="o">--</span><span class="n">cmap</span><span class="o">=</span><span class="n">magma</span>
+</pre></div>
+</div>
+<figure class="align-center">
+<a class="reference internal image-reference" href="_images/surfacedensity_thermal.png"><img alt="_images/surfacedensity_thermal.png" src="_images/surfacedensity_thermal.png" style="width: 400px;" />
+</a>
+</figure>
+<p>Mass-weighted projected average of temperature:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;ProjectedAverage(Temperature)&#39;</span>
+</pre></div>
+</div>
+<figure class="align-center">
+<a class="reference internal image-reference" href="_images/projectedavg_temperature.png"><img alt="_images/projectedavg_temperature.png" src="_images/projectedavg_temperature.png" style="width: 400px;" />
+</a>
+</figure>
+<p>Entropy slice (derived field) with plasma colormap:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(Entropy)&#39;</span> <span class="o">--</span><span class="n">cmap</span><span class="o">=</span><span class="n">plasma</span>
+</pre></div>
+</div>
+<figure class="align-center">
+<a class="reference internal image-reference" href="_images/slice_entropy.png"><img alt="_images/slice_entropy.png" src="_images/slice_entropy.png" style="width: 400px;" />
+</a>
+</figure>
 <section id="available-functions-in-expressions">
 <h3>Available Functions in Expressions<a class="headerlink" href="#available-functions-in-expressions" title="Link to this heading"></a></h3>
 <p>The following numpy functions are available in expressions:</p>
@@ -359,13 +335,6 @@ derived fields.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(PlasmaBeta)&#39;</span> <span class="s1">&#39;Slice(MachNumber)&#39;</span>
 </pre></div>
 </div>
-<figure class="align-center" id="id7">
-<a class="reference internal image-reference" href="_images/slice_plasmabeta.png"><img alt="_images/slice_plasmabeta.png" src="_images/slice_plasmabeta.png" style="width: 400px;" />
-</a>
-<figcaption>
-<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(PlasmaBeta)</span></code> — a derived field using <code class="docutils literal notranslate"><span class="pre">RdBu_r</span></code> colormap.</span><a class="headerlink" href="#id7" title="Link to this image"></a></p>
-</figcaption>
-</figure>
 </section>
 <section id="field-fallbacks">
 <h3>Field Fallbacks<a class="headerlink" href="#field-fallbacks" title="Link to this heading"></a></h3>
@@ -426,11 +395,11 @@ change:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="nb">dir</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span>   <span class="c1"># view along (1,1,0)</span>
 </pre></div>
 </div>
-<figure class="align-center" id="id8">
+<figure class="align-center" id="id3">
 <a class="reference internal image-reference" href="_images/sigmagas_xdir.png"><img alt="_images/sigmagas_xdir.png" src="_images/sigmagas_xdir.png" style="width: 400px;" />
 </a>
 <figcaption>
-<p><span class="caption-text">Surface density viewed along the x-axis (<code class="docutils literal notranslate"><span class="pre">--dir=x</span></code>).</span><a class="headerlink" href="#id8" title="Link to this image"></a></p>
+<p><span class="caption-text">Surface density viewed along the x-axis (<code class="docutils literal notranslate"><span class="pre">--dir=x</span></code>).</span><a class="headerlink" href="#id3" title="Link to this image"></a></p>
 </figcaption>
 </figure>
 </section>
@@ -450,11 +419,11 @@ the viewing direction automatically):</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">pan</span><span class="o">=</span><span class="mi">45</span> <span class="o">--</span><span class="n">tilt</span><span class="o">=</span><span class="mi">10</span>
 </pre></div>
 </div>
-<figure class="align-center" id="id9">
+<figure class="align-center" id="id4">
 <a class="reference internal image-reference" href="_images/sigmagas_pantilt.png"><img alt="_images/sigmagas_pantilt.png" src="_images/sigmagas_pantilt.png" style="width: 400px;" />
 </a>
 <figcaption>
-<p><span class="caption-text">Surface density with <code class="docutils literal notranslate"><span class="pre">--pan=45</span> <span class="pre">--tilt=15</span></code>.</span><a class="headerlink" href="#id9" title="Link to this image"></a></p>
+<p><span class="caption-text">Surface density with <code class="docutils literal notranslate"><span class="pre">--pan=45</span> <span class="pre">--tilt=15</span></code>.</span><a class="headerlink" href="#id4" title="Link to this image"></a></p>
 </figcaption>
 </figure>
 </section>

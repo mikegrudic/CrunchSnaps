@@ -97,43 +97,37 @@ Expressions can reference any ``PartType0`` field by name (``Masses``,
 ``Temperature``, ``Density``, ``Velocities``, etc.), use arithmetic
 operators, and call numpy functions.
 
-.. list-table::
-   :widths: 50 50
-   :header-rows: 0
+Temperature slice::
 
-   * - .. figure:: _static/examples/slice_temperature.png
-          :width: 100%
-
-          ``Slice(Temperature)``
-
-     - .. figure:: _static/examples/surfacedensity_thermal.png
-          :width: 100%
-
-          ``SurfaceDensity(Masses*InternalEnergy)`` with magma
-
-   * - .. figure:: _static/examples/projectedavg_temperature.png
-          :width: 100%
-
-          ``ProjectedAverage(Temperature)``
-
-     - .. figure:: _static/examples/slice_entropy.png
-          :width: 100%
-
-          ``Slice(Entropy)`` — derived field, plasma cmap
-
-Examples::
-
-    # Temperature slice
     SinkVis2 snapshot_*.hdf5 'Slice(Temperature)'
 
-    # Column density of thermal energy
-    SinkVis2 snapshot_*.hdf5 SurfaceDensity(Masses*InternalEnergy)
+.. figure:: _static/examples/slice_temperature.png
+   :width: 400px
+   :align: center
 
-    # Projected average of log density
-    SinkVis2 snapshot_*.hdf5 ProjectedAverage(log10(Density))
+Thermal energy surface density with magma colormap::
 
-    # Multiple tasks at once
-    SinkVis2 snapshot_*.hdf5 SigmaGas Slice(Temperature) Slice(PlasmaBeta)
+    SinkVis2 snapshot_*.hdf5 'SurfaceDensity(Masses*InternalEnergy)' --cmap=magma
+
+.. figure:: _static/examples/surfacedensity_thermal.png
+   :width: 400px
+   :align: center
+
+Mass-weighted projected average of temperature::
+
+    SinkVis2 snapshot_*.hdf5 'ProjectedAverage(Temperature)'
+
+.. figure:: _static/examples/projectedavg_temperature.png
+   :width: 400px
+   :align: center
+
+Entropy slice (derived field) with plasma colormap::
+
+    SinkVis2 snapshot_*.hdf5 'Slice(Entropy)' --cmap=plasma
+
+.. figure:: _static/examples/slice_entropy.png
+   :width: 400px
+   :align: center
 
 Available Functions in Expressions
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -214,9 +208,19 @@ Example::
 
     SinkVis2 snapshot_*.hdf5 'Slice(PlasmaBeta)' 'Slice(MachNumber)'
 
-.. figure:: _static/examples/slice_plasmabeta.png
-   :width: 400px
-   :align: center
+.. list-table::
+   :widths: 50 50
+   :header-rows: 0
+
+   * - .. figure:: _static/examples/slice_plasmabeta.png
+          :width: 100%
+
+          ``Slice(PlasmaBeta)`` with RdBu_r
+
+     - .. figure:: _static/examples/slice_machnumber.png
+          :width: 100%
+
+          ``Slice(MachNumber)`` with inferno
 
    ``Slice(PlasmaBeta)`` — a derived field using ``RdBu_r`` colormap.
 
