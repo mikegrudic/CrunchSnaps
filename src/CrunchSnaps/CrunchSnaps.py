@@ -33,6 +33,10 @@ def DoTasksForSimulation(
     if len(snaps) == 0 or len(task_types) == 0:
         return  # no work to do so just quit
 
+    # Resolve nproc=-1 to use all available CPUs
+    if nproc < 0:
+        nproc = os.cpu_count() or 1
+
     # Resolve threads=-1 to an actual count: total cores / nproc
     if nthreads < 0:
         nthreads = max(1, (os.cpu_count() or 1) // nproc)

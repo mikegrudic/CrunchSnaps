@@ -626,7 +626,7 @@ class SinkVis(Task):
             rotation=rotation, rotation_mode="anchor",
         )
         buf = io.BytesIO()
-        tmp_fig.savefig(buf, format="png", bbox_inches="tight", transparent=True, pad_inches=0.01, dpi=dpi)
+        tmp_fig.savefig(buf, format="png", bbox_inches="tight", transparent=True, pad_inches=0.05, dpi=dpi)
         plt.close(tmp_fig)
         buf.seek(0)
         return Image.open(buf).convert("RGBA")
@@ -640,34 +640,8 @@ class SinkVis(Task):
         W, H = img.size
         cmap = plt.get_cmap(self.params["cmap"])
 
-        # vertical colorbar geometry — right side, top-aligned, with room for tick labels
-        margin = int(W * 0.20)
-        bar_w = max(int(W * 0.025), 6)
-        bar_h = int(H * 0.45)
-        bar_x1 = W - margin
-        bar_y1 = int(H * 0.08)
-        bar_x2 = bar_x1 + bar_w
-        bar_y2 = bar_y1 + bar_h
-
-        # sample image brightness in the colorbar region to pick contrasting color
-        crop = (max(0, bar_x1 - int(W * 0.15)), max(0, bar_y1), min(W, bar_x2), min(H, bar_y2))
-        region = np.array(img.crop(crop))
-        luminance = 0.299 * region[:, :, 0] + 0.587 * region[:, :, 1] + 0.114 * region[:, :, 2]
-        text_color = "#FFFFFF" if luminance.mean() < 140 else "#000000"
-
-        # draw the vertical color gradient bar (top = vmax, bottom = vmin)
-        gradient = cmap(np.linspace(0, 1, bar_h))[::-1, :3]  # flip so top=vmax
-        gradient_col = (gradient * 255).astype(np.uint8)[:, None, :]  # (bar_h, 1, 3)
-        bar_arr = np.tile(gradient_col, (1, bar_w, 1))  # (bar_h, bar_w, 3)
-        bar_img = Image.fromarray(bar_arr, "RGB").convert("RGBA")
-        img.paste(bar_img, (bar_x1, bar_y1))
-
-        # draw border
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], outline=text_color, width=1)
-
-        # tick labels to the right of the bar
-        font_size = max(8, W // 55)
+        # Compute tick values first so we can measure their rendered labels
+        font_size = max(6, W // 80)
         log_vmin, log_vmax = np.log10(vmin), np.log10(vmax)
         tick_values = [vmin, vmax]
         tick_exp_min = int(np.ceil(log_vmin))
@@ -678,21 +652,62 @@ class SinkVis(Task):
                 tick_values.append(tv)
         tick_values.sort()
 
-        for tv in tick_values:
+        # Tick label formatting
+        def _format_tick(tv):
+            exp = int(np.floor(np.log10(np.abs(tv))))
+            coeff = tv / 10**exp
+            if abs(coeff - 1.0) < 0.01:
+                return r"$10^{%d}$" % exp
+            return r"$%.3g\times10^{%d}$" % (coeff, exp)
+
+        tick_labels_text = [_format_tick(tv) for tv in tick_values]
+
+        # Colorbar geometry — fixed margin, labels scaled to fit
+        bar_w = max(int(W * 0.025), 6)
+        tick_gap = 5
+        margin = int(W * 0.13)
+        max_label_w = margin - bar_w - tick_gap - 2  # available width for labels
+        # Measure label height from a sample
+        sample_label = self._render_latex_label(r"$10^{3}$", font_size, "#FFFFFF")
+        label_half_h = sample_label.size[1] // 2 + 2
+        bar_h = int(H * 0.45)
+        bar_x1 = W - margin
+        bar_y1 = max(label_half_h, int(H * 0.08))
+        bar_x2 = bar_x1 + bar_w
+        bar_y2 = min(H - label_half_h, bar_y1 + bar_h)
+        bar_h = bar_y2 - bar_y1
+
+        # Sample image brightness in the colorbar region to pick contrasting color
+        crop = (max(0, bar_x1 - int(W * 0.15)), max(0, bar_y1), min(W, bar_x2), min(H, bar_y2))
+        region = np.array(img.crop(crop))
+        luminance = 0.299 * region[:, :, 0] + 0.587 * region[:, :, 1] + 0.114 * region[:, :, 2]
+        text_color = "#FFFFFF" if luminance.mean() < 140 else "#000000"
+
+        # Draw the vertical color gradient bar (top = vmax, bottom = vmin)
+        gradient = cmap(np.linspace(0, 1, bar_h))[::-1, :3]
+        gradient_col = (gradient * 255).astype(np.uint8)[:, None, :]
+        bar_arr = np.tile(gradient_col, (1, bar_w, 1))
+        bar_img = Image.fromarray(bar_arr, "RGB").convert("RGBA")
+        img.paste(bar_img, (bar_x1, bar_y1))
+
+        # Draw border
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], outline=text_color, width=1)
+
+        # Draw tick labels, scaling down if too wide
+        for tv, label_text in zip(tick_values, tick_labels_text):
             frac = (np.log10(tv) - log_vmin) / (log_vmax - log_vmin)
             frac = np.clip(frac, 0, 1)
             tick_y = bar_y2 - int(frac * bar_h)
             draw.line([(bar_x2, tick_y), (bar_x2 + 3, tick_y)], fill=text_color, width=1)
-            exp = np.floor(np.log10(np.abs(tv)))
-            coeff = tv / 10**exp
-            if abs(coeff - 1.0) < 0.01:
-                tick_label = r"$10^{%d}$" % int(exp)
-            else:
-                tick_label = r"$%.3g\times10^{%d}$" % (coeff, int(exp))
-            tick_img = self._render_latex_label(tick_label, font_size, text_color)
+            tick_img = self._render_latex_label(label_text, font_size, text_color)
             tw, th = tick_img.size
-            paste_x = bar_x2 + 5
-            paste_y = tick_y - th // 2
+            if tw > max_label_w:
+                th = int(th * max_label_w / tw)
+                tw = max_label_w
+                tick_img = tick_img.resize((tw, th), Image.LANCZOS)
+            paste_x = bar_x2 + tick_gap
+            paste_y = np.clip(tick_y - th // 2, 0, H - th)
             img.paste(tick_img, (paste_x, paste_y), tick_img)
 
         # title label — rendered sideways (rotated 90°) to the left of the bar
@@ -859,6 +874,8 @@ class SinkVisCoolMap(SinkVis):
         if not "sigma_1D" in self.maps.keys():
             # need to apply coordinate transforms to z-velocity
             v = np.copy(snapdata["PartType0/Velocities"])
+            if hasattr(self, "_keep_mask"):
+                v = v[self._keep_mask]
             self.DoCoordinateTransform(v, contravariant=True)
             sigma_1D = (
                 GridSurfaceDensity(
@@ -894,10 +911,12 @@ class SinkVisCoolMap(SinkVis):
             cw = sigma_flat.cumsum() / sigma_flat.sum()
             self.params["limits"] = np.interp([0.01, 0.99], cw, sigma_flat)
         if self.params["v_limits"] is None:
-            #            Ekin_flat = np.sort((self.maps["sigma_gas"]*self.maps["sigma_1D"]**2).flatten()[self.maps["sigma_1D"].flatten().argsort()])
-            self.params["v_limits"] = np.percentile(
-                self.maps["sigma_1D"].flatten(), [0, 99]
-            )  # np.interp([0.0,0.95], Ekin_flat.cumsum()/Ekin_flat.sum(), np.sort(self.maps["sigma_1D"].flatten()))
+            # Energy-weighted percentiles: pixels with more kinetic energy count more
+            order = self.maps["sigma_1D"].ravel().argsort()
+            sigma_1D_sorted = self.maps["sigma_1D"].ravel()[order]
+            Ekin = (self.maps["sigma_gas"] * self.maps["sigma_1D"] ** 2).ravel()[order]
+            cw = Ekin.cumsum() / Ekin.sum()
+            self.params["v_limits"] = np.interp([0.0, 0.99], cw, sigma_1D_sorted)
         fgas = (np.log10(self.maps["sigma_gas"]) - np.log10(self.params["limits"][0])) / np.log10(
             self.params["limits"][1] / self.params["limits"][0]
         )
@@ -974,10 +993,11 @@ class SinkVisNarrowbandComposite(SinkVis):
             from skimage.color import rgb2hsv, hsv2rgb
             from meshoid.radiation import radtransfer
             # print("Generating SHO map...")
-            rho = snapdata["PartType0/Density"]
-            T = snapdata["PartType0/Temperature"]
-            fe = snapdata["PartType0/ElectronAbundance"]
-            hii = snapdata["PartType0/HII"]
+            _k = self._keep_mask if hasattr(self, "_keep_mask") else slice(None)
+            rho = snapdata["PartType0/Density"][_k]
+            T = snapdata["PartType0/Temperature"][_k]
+            fe = snapdata["PartType0/ElectronAbundance"][_k]
+            hii = snapdata["PartType0/HII"][_k]
             nH = rho * 30
             ne = nH * fe
 
@@ -1020,7 +1040,7 @@ class SinkVisNarrowbandComposite(SinkVis):
             pc_to_cm = _au.pc.to(_au.cm)
             msun_to_g = _ac.M_sun.cgs.value
 
-            lum = np.c_[j_B_Ha, j_OIII, j_SII] * pc_to_cm**3 * (snapdata["PartType0/Masses"] / rho)[:, None]
+            lum = np.c_[j_B_Ha, j_OIII, j_SII] * pc_to_cm**3 * (self.mass / rho)[:, None]
             #            lum = np.c_[j_NII,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None] #NII behaves much better for interpolation than Ha, mostly because it does not diverge in the limit of ne->inf, similar to OIII and SII
 
             # Here we normalize the emission, but it is done relative to the current emissions, so each snapshot has a different absolute normalization. If an absolute normalization is desired across snapshots, this part should be commented out and a vector should be used for SHO_RGB_norm to normalize individual channels
@@ -1427,9 +1447,15 @@ class SinkVisCustomField(SinkVis):
         n_jobs = self.params["threads"] if self.params["threads"] > 0 else -1
         M = Meshoid(self.pos, self.mass, self.hsml, n_jobs=n_jobs)
 
-        if self._render_mode in ("SurfaceDensity", "Projection"):
-            # Integral of f along sightlines
+        if self._render_mode == "SurfaceDensity":
+            # Surface density: f is an extensive/conserved quantity (e.g. Masses)
             result = M.SurfaceDensity(
+                f, center=np.zeros(3), size=2 * rmax, res=res,
+            ).T
+        elif self._render_mode == "Projection":
+            # Projection: f is a volume density / intensive quantity (e.g. Density)
+            # computes the line integral ∫ f dz
+            result = M.Projection(
                 f, center=np.zeros(3), size=2 * rmax, res=res,
             ).T
         elif self._render_mode == "ProjectedAverage":

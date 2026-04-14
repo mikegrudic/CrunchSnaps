@@ -61,12 +61,17 @@ Beyond the built-in tasks, you can render arbitrary field expressions using
 four render modes:
 
 ``SurfaceDensity(expr)``
-    Surface density of *expr* --- the line-of-sight integral of the volume
-    density of the given quantity.  E.g. ``SurfaceDensity(Masses)`` gives
-    mass surface density :math:`\Sigma = \int \rho\, dz`.
+    Surface density of an extensive (conserved) quantity.  *expr* should
+    be a per-particle quantity like ``Masses`` or ``Masses*InternalEnergy``.
+    Computes :math:`\int (f/V)\, dz` where :math:`V` is the cell volume.
+    E.g. ``SurfaceDensity(Masses)`` gives :math:`\Sigma = \int \rho\, dz`.
 
 ``Projection(expr)``
-    Alias for ``SurfaceDensity``.
+    Line-of-sight integral of a volume density / intensive quantity.
+    *expr* should be a volumetric quantity like ``Density``.
+    Computes :math:`\int f\, dz`.  E.g. ``Projection(Density)`` also
+    gives :math:`\Sigma`, and ``Projection(NumberDensity)`` gives column
+    number density.
 
 ``ProjectedAverage(expr)``
     Mass-weighted average of *expr* along the line of sight.
@@ -299,6 +304,7 @@ Parallelism
 
 ``--np``
     Number of worker processes for processing different snapshots in parallel.
+    Set to ``-1`` to use all available CPUs.
 
 ``--np_render``
     Number of threads per rendering call.  Defaults to ``-1``, which uses
@@ -348,7 +354,7 @@ Full Option Reference
         --tilt=<deg>                       Tilt angle in degrees [default: 0]
         --camera_distance=<D>              Camera distance for perspective [default: inf]
         --target_time=<f>                  Render single image at this simulation time
-        --np=<N>                           Number of worker processes [default: 1]
+        --np=<N>                           Number of worker processes (-1 = all CPUs) [default: 1]
         --np_render=<N>                    Render threads (-1 = auto) [default: -1]
         --interp_fac=<N>                   Interpolated frames per snapshot [default: 1]
         --supersample=<N>                  Anti-aliasing factor for Slice [default: 2]
