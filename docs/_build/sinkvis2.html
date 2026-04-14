@@ -58,6 +58,7 @@
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#camera-and-projection">Camera and Projection</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#viewing-direction">Viewing direction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#camera-up-vector">Camera up vector</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#pan-and-tilt">Pan and tilt</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#perspective-projection">Perspective projection</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#centering">Centering</a></li>
@@ -123,10 +124,17 @@ else is a task.  If no tasks are given, <code class="docutils literal notranslat
 <span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SigmaGas</span> <span class="o">--</span><span class="n">make_movie</span> <span class="o">--</span><span class="n">fps</span><span class="o">=</span><span class="mi">30</span>
 </pre></div>
 </div>
-<p>Tasks can also be specified with the <code class="docutils literal notranslate"><span class="pre">--tasks</span></code> flag for backwards
-compatibility:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">SigmaGas</span><span class="p">,</span><span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Shells like zsh interpret parentheses as glob qualifiers.  Quote task
+names that contain parentheses:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(Temperature)&#39;</span>
 </pre></div>
+</div>
+<p>Or use the <code class="docutils literal notranslate"><span class="pre">--tasks</span></code> flag, which avoids the issue:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span>
+</pre></div>
+</div>
 </div>
 </section>
 <section id="built-in-tasks">
@@ -141,6 +149,20 @@ compatibility:</p>
 images.</p>
 </dd>
 </dl>
+<figure class="align-center" id="id1">
+<a class="reference internal image-reference" href="_images/sigmagas_default.png"><img alt="_images/sigmagas_default.png" src="_images/sigmagas_default.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Default <code class="docutils literal notranslate"><span class="pre">SigmaGas</span></code> output (viridis colormap).</span><a class="headerlink" href="#id1" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+<figure class="align-center" id="id2">
+<a class="reference internal image-reference" href="_images/sigmagas_inferno.png"><img alt="_images/sigmagas_inferno.png" src="_images/sigmagas_inferno.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Same data with <code class="docutils literal notranslate"><span class="pre">--cmap=inferno</span></code>.</span><a class="headerlink" href="#id2" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 <p>Example:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SigmaGas</span> <span class="n">CoolMap</span>
 </pre></div>
@@ -151,11 +173,16 @@ images.</p>
 <p>Beyond the built-in tasks, you can render arbitrary field expressions using
 four render modes:</p>
 <dl class="simple">
-<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Surface density of <em>expr</em> — the line-of-sight integral of the volume
-density of the given quantity.  E.g. <code class="docutils literal notranslate"><span class="pre">SurfaceDensity(Masses)</span></code> gives
-mass surface density <span class="math notranslate nohighlight">\(\Sigma = \int \rho\, dz\)</span>.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Surface density of an extensive (conserved) quantity.  <em>expr</em> should
+be a per-particle quantity like <code class="docutils literal notranslate"><span class="pre">Masses</span></code> or <code class="docutils literal notranslate"><span class="pre">Masses*InternalEnergy</span></code>.
+Computes <span class="math notranslate nohighlight">\(\int (f/V)\, dz\)</span> where <span class="math notranslate nohighlight">\(V\)</span> is the cell volume.
+E.g. <code class="docutils literal notranslate"><span class="pre">SurfaceDensity(Masses)</span></code> gives <span class="math notranslate nohighlight">\(\Sigma = \int \rho\, dz\)</span>.</p>
 </dd>
-<dt><code class="docutils literal notranslate"><span class="pre">Projection(expr)</span></code></dt><dd><p>Alias for <code class="docutils literal notranslate"><span class="pre">SurfaceDensity</span></code>.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">Projection(expr)</span></code></dt><dd><p>Line-of-sight integral of a volume density / intensive quantity.
+<em>expr</em> should be a volumetric quantity like <code class="docutils literal notranslate"><span class="pre">Density</span></code>.
+Computes <span class="math notranslate nohighlight">\(\int f\, dz\)</span>.  E.g. <code class="docutils literal notranslate"><span class="pre">Projection(Density)</span></code> also
+gives <span class="math notranslate nohighlight">\(\Sigma\)</span>, and <code class="docutils literal notranslate"><span class="pre">Projection(NumberDensity)</span></code> gives column
+number density.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">ProjectedAverage(expr)</span></code></dt><dd><p>Mass-weighted average of <em>expr</em> along the line of sight.</p>
 </dd>
@@ -167,9 +194,51 @@ space (for positive quantities) and anti-aliasing via supersampling
 <p>Expressions can reference any <code class="docutils literal notranslate"><span class="pre">PartType0</span></code> field by name (<code class="docutils literal notranslate"><span class="pre">Masses</span></code>,
 <code class="docutils literal notranslate"><span class="pre">Temperature</span></code>, <code class="docutils literal notranslate"><span class="pre">Density</span></code>, <code class="docutils literal notranslate"><span class="pre">Velocities</span></code>, etc.), use arithmetic
 operators, and call numpy functions.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 50.0%" />
+<col style="width: 50.0%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><figure class="align-default" id="id3">
+<a class="reference internal image-reference" href="_images/slice_temperature.png"><img alt="_images/slice_temperature.png" src="_images/slice_temperature.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(Temperature)</span></code></span><a class="headerlink" href="#id3" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+</td>
+<td><figure class="align-default" id="id4">
+<a class="reference internal image-reference" href="_images/surfacedensity_thermal.png"><img alt="_images/surfacedensity_thermal.png" src="_images/surfacedensity_thermal.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(Masses*InternalEnergy)</span></code> with magma</span><a class="headerlink" href="#id4" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+</td>
+</tr>
+<tr class="row-even"><td><figure class="align-default" id="id5">
+<a class="reference internal image-reference" href="_images/projectedavg_temperature.png"><img alt="_images/projectedavg_temperature.png" src="_images/projectedavg_temperature.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">ProjectedAverage(Temperature)</span></code></span><a class="headerlink" href="#id5" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+</td>
+<td><figure class="align-default" id="id6">
+<a class="reference internal image-reference" href="_images/slice_entropy.png"><img alt="_images/slice_entropy.png" src="_images/slice_entropy.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(Entropy)</span></code> — derived field, plasma cmap</span><a class="headerlink" href="#id6" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+</td>
+</tr>
+</tbody>
+</table>
 <p>Examples:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Temperature slice</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(Temperature)&#39;</span>
 
 <span class="c1"># Column density of thermal energy</span>
 <span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SurfaceDensity</span><span class="p">(</span><span class="n">Masses</span><span class="o">*</span><span class="n">InternalEnergy</span><span class="p">)</span>
@@ -287,9 +356,16 @@ derived fields.</p>
 </tbody>
 </table>
 <p>Example:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">Slice</span><span class="p">(</span><span class="n">PlasmaBeta</span><span class="p">)</span> <span class="n">Slice</span><span class="p">(</span><span class="n">MachNumber</span><span class="p">)</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(PlasmaBeta)&#39;</span> <span class="s1">&#39;Slice(MachNumber)&#39;</span>
 </pre></div>
 </div>
+<figure class="align-center" id="id7">
+<a class="reference internal image-reference" href="_images/slice_plasmabeta.png"><img alt="_images/slice_plasmabeta.png" src="_images/slice_plasmabeta.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(PlasmaBeta)</span></code> — a derived field using <code class="docutils literal notranslate"><span class="pre">RdBu_r</span></code> colormap.</span><a class="headerlink" href="#id7" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 </section>
 <section id="field-fallbacks">
 <h3>Field Fallbacks<a class="headerlink" href="#field-fallbacks" title="Link to this heading"></a></h3>
@@ -350,6 +426,23 @@ change:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="nb">dir</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span>   <span class="c1"># view along (1,1,0)</span>
 </pre></div>
 </div>
+<figure class="align-center" id="id8">
+<a class="reference internal image-reference" href="_images/sigmagas_xdir.png"><img alt="_images/sigmagas_xdir.png" src="_images/sigmagas_xdir.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Surface density viewed along the x-axis (<code class="docutils literal notranslate"><span class="pre">--dir=x</span></code>).</span><a class="headerlink" href="#id8" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+</section>
+<section id="camera-up-vector">
+<h3>Camera up vector<a class="headerlink" href="#camera-up-vector" title="Link to this heading"></a></h3>
+<p>By default the up direction is inferred from the viewing direction.  Use
+<code class="docutils literal notranslate"><span class="pre">--camera_up</span></code> to set it explicitly (it will be orthogonalized against
+the viewing direction automatically):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Edge-on disk with rotation axis along z</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="nb">dir</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span> <span class="o">--</span><span class="n">camera_up</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span>
+</pre></div>
+</div>
 </section>
 <section id="pan-and-tilt">
 <h3>Pan and tilt<a class="headerlink" href="#pan-and-tilt" title="Link to this heading"></a></h3>
@@ -357,6 +450,13 @@ change:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">pan</span><span class="o">=</span><span class="mi">45</span> <span class="o">--</span><span class="n">tilt</span><span class="o">=</span><span class="mi">10</span>
 </pre></div>
 </div>
+<figure class="align-center" id="id9">
+<a class="reference internal image-reference" href="_images/sigmagas_pantilt.png"><img alt="_images/sigmagas_pantilt.png" src="_images/sigmagas_pantilt.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Surface density with <code class="docutils literal notranslate"><span class="pre">--pan=45</span> <span class="pre">--tilt=15</span></code>.</span><a class="headerlink" href="#id9" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 </section>
 <section id="perspective-projection">
 <h3>Perspective projection<a class="headerlink" href="#perspective-projection" title="Link to this heading"></a></h3>
@@ -368,6 +468,20 @@ change:</p>
 <section id="centering">
 <h3>Centering<a class="headerlink" href="#centering" title="Link to this heading"></a></h3>
 <p>Control the center of the image:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">..</span> <span class="n">figure</span><span class="p">::</span> <span class="n">_static</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">sigmagas_densest</span><span class="o">.</span><span class="n">png</span>
+</pre></div>
+</div>
+<blockquote>
+<div><dl class="field-list simple">
+<dt class="field-odd">width<span class="colon">:</span></dt>
+<dd class="field-odd"><p>400px</p>
+</dd>
+<dt class="field-even">align<span class="colon">:</span></dt>
+<dd class="field-even"><p>center</p>
+</dd>
+</dl>
+<p>Centered on the densest gas cell with <code class="docutils literal notranslate"><span class="pre">--center=densest</span> <span class="pre">--rmax=5</span></code>.</p>
+</div></blockquote>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">densest</span>       <span class="c1"># densest gas cell</span>
 <span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">massive</span>        <span class="c1"># most massive star</span>
 <span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">massive</span><span class="o">=</span><span class="mi">3</span>      <span class="c1"># 3rd most massive star</span>
@@ -411,7 +525,8 @@ smoother movies:</p>
 <section id="parallelism">
 <h2>Parallelism<a class="headerlink" href="#parallelism" title="Link to this heading"></a></h2>
 <dl class="simple">
-<dt><code class="docutils literal notranslate"><span class="pre">--np</span></code></dt><dd><p>Number of worker processes for processing different snapshots in parallel.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">--np</span></code></dt><dd><p>Number of worker processes for processing different snapshots in parallel.
+Set to <code class="docutils literal notranslate"><span class="pre">-1</span></code> to use all available CPUs.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">--np_render</span></code></dt><dd><p>Number of threads per rendering call.  Defaults to <code class="docutils literal notranslate"><span class="pre">-1</span></code>, which uses
 all available cores divided by <code class="docutils literal notranslate"><span class="pre">--np</span></code>.</p>
@@ -453,11 +568,12 @@ Options:
     --limits=&lt;min,max&gt;                 Colormap dynamic range
     --center=&lt;s&gt;                       Image center [default: None]
     --dir=&lt;x,y,z&gt;                      Viewing direction [default: z]
+    --camera_up=&lt;x,y,z&gt;                Camera up vector [default: None]
     --pan=&lt;deg&gt;                        Pan angle in degrees [default: 0]
     --tilt=&lt;deg&gt;                       Tilt angle in degrees [default: 0]
     --camera_distance=&lt;D&gt;              Camera distance for perspective [default: inf]
     --target_time=&lt;f&gt;                  Render single image at this simulation time
-    --np=&lt;N&gt;                           Number of worker processes [default: 1]
+    --np=&lt;N&gt;                           Number of worker processes (-1 = all CPUs) [default: 1]
     --np_render=&lt;N&gt;                    Render threads (-1 = auto) [default: -1]
     --interp_fac=&lt;N&gt;                   Interpolated frames per snapshot [default: 1]
     --supersample=&lt;N&gt;                  Anti-aliasing factor for Slice [default: 2]

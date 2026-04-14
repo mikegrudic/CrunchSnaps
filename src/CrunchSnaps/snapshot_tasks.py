@@ -632,96 +632,109 @@ class SinkVis(Task):
         return Image.open(buf).convert("RGBA")
 
     def _add_colorbar_to_image(self, vmin, vmax, label=None):
-        """Overlay a vertical colorbar on the in-memory PIL image."""
+        """Overlay a horizontal colorbar in the bottom-right of the in-memory PIL image."""
         from PIL import Image, ImageDraw
         from matplotlib import pyplot as plt
 
         img = self._pil_image
         W, H = img.size
         cmap = plt.get_cmap(self.params["cmap"])
-
-        # Compute tick values first so we can measure their rendered labels
         font_size = max(6, W // 80)
+        tick_gap = 3
+
+        # Compute tick values — integer powers of 10 between vmin and vmax,
+        # dropping any that would overlap with the endpoint labels
         log_vmin, log_vmax = np.log10(vmin), np.log10(vmax)
+        log_range = log_vmax - log_vmin
         tick_values = [vmin, vmax]
         tick_exp_min = int(np.ceil(log_vmin))
         tick_exp_max = int(np.floor(log_vmax))
+        # Require at least 15% of the bar between any two ticks
+        min_gap = 0.15
         for e in range(tick_exp_min, tick_exp_max + 1):
             tv = 10.0**e
-            if tv > vmin * 1.1 and tv < vmax * 0.9:
+            frac = (e - log_vmin) / log_range
+            if frac > min_gap and frac < (1 - min_gap):
                 tick_values.append(tv)
         tick_values.sort()
 
-        # Tick label formatting
+        # Format ticks
         def _format_tick(tv):
             exp = int(np.floor(np.log10(np.abs(tv))))
             coeff = tv / 10**exp
             if abs(coeff - 1.0) < 0.01:
                 return r"$10^{%d}$" % exp
-            return r"$%.3g\times10^{%d}$" % (coeff, exp)
+            return r"$%.2g\times10^{%d}$" % (coeff, exp)
 
         tick_labels_text = [_format_tick(tv) for tv in tick_values]
 
-        # Colorbar geometry — fixed margin, labels scaled to fit
-        bar_w = max(int(W * 0.025), 6)
-        tick_gap = 5
-        margin = int(W * 0.13)
-        max_label_w = margin - bar_w - tick_gap - 2  # available width for labels
-        # Measure label height from a sample
-        sample_label = self._render_latex_label(r"$10^{3}$", font_size, "#FFFFFF")
-        label_half_h = sample_label.size[1] // 2 + 2
-        bar_h = int(H * 0.45)
-        bar_x1 = W - margin
-        bar_y1 = max(label_half_h, int(H * 0.08))
-        bar_x2 = bar_x1 + bar_w
-        bar_y2 = min(H - label_half_h, bar_y1 + bar_h)
-        bar_h = bar_y2 - bar_y1
+        # Measure tick labels to size the bar
+        sample = self._render_latex_label(r"$10^{3}$", font_size, "#FFFFFF")
+        tick_h = sample.size[1]
+        max_tick_w = max(
+            self._render_latex_label(t, font_size, "#FFFFFF").size[0]
+            for t in tick_labels_text
+        )
 
-        # Sample image brightness in the colorbar region to pick contrasting color
-        crop = (max(0, bar_x1 - int(W * 0.15)), max(0, bar_y1), min(W, bar_x2), min(H, bar_y2))
+        # Horizontal bar geometry — bottom right
+        bar_h = max(int(H * 0.02), 6)
+        bar_w = int(W * 0.35)
+        margin_r = max(int(W * 0.04), 8)
+        margin_b = max(int(H * 0.04), 8)
+        bar_x2 = W - margin_r
+        bar_x1 = bar_x2 - bar_w
+        bar_y2 = H - margin_b
+        bar_y1 = bar_y2 - bar_h
+
+        # Sample image brightness to pick contrasting color
+        crop = (max(0, bar_x1), max(0, bar_y1 - tick_h - 10),
+                min(W, bar_x2), min(H, bar_y2 + tick_h + 10))
         region = np.array(img.crop(crop))
         luminance = 0.299 * region[:, :, 0] + 0.587 * region[:, :, 1] + 0.114 * region[:, :, 2]
         text_color = "#FFFFFF" if luminance.mean() < 140 else "#000000"
 
-        # Draw the vertical color gradient bar (top = vmax, bottom = vmin)
-        gradient = cmap(np.linspace(0, 1, bar_h))[::-1, :3]
-        gradient_col = (gradient * 255).astype(np.uint8)[:, None, :]
-        bar_arr = np.tile(gradient_col, (1, bar_w, 1))
+        # Draw horizontal gradient bar (left = vmin, right = vmax)
+        gradient = cmap(np.linspace(0, 1, bar_w))[:, :3]
+        gradient_row = (gradient * 255).astype(np.uint8)[None, :, :]
+        bar_arr = np.tile(gradient_row, (bar_h, 1, 1))
         bar_img = Image.fromarray(bar_arr, "RGB").convert("RGBA")
         img.paste(bar_img, (bar_x1, bar_y1))
 
-        # Draw border
+        # Border
         draw = ImageDraw.Draw(img)
         draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], outline=text_color, width=1)
 
-        # Draw tick labels, scaling down if too wide
+        # Tick labels below the bar
         for tv, label_text in zip(tick_values, tick_labels_text):
             frac = (np.log10(tv) - log_vmin) / (log_vmax - log_vmin)
             frac = np.clip(frac, 0, 1)
-            tick_y = bar_y2 - int(frac * bar_h)
-            draw.line([(bar_x2, tick_y), (bar_x2 + 3, tick_y)], fill=text_color, width=1)
+            tick_x = bar_x1 + int(frac * bar_w)
+            draw.line([(tick_x, bar_y2), (tick_x, bar_y2 + tick_gap)],
+                      fill=text_color, width=1)
             tick_img = self._render_latex_label(label_text, font_size, text_color)
             tw, th = tick_img.size
-            if tw > max_label_w:
-                th = int(th * max_label_w / tw)
-                tw = max_label_w
+            # Scale down if too wide
+            max_tw = bar_w // max(len(tick_values) - 1, 1)
+            if tw > max_tw:
+                th = int(th * max_tw / tw)
+                tw = max_tw
                 tick_img = tick_img.resize((tw, th), Image.LANCZOS)
-            paste_x = bar_x2 + tick_gap
-            paste_y = np.clip(tick_y - th // 2, 0, H - th)
+            paste_x = np.clip(tick_x - tw // 2, 0, W - tw)
+            paste_y = bar_y2 + tick_gap + 1
             img.paste(tick_img, (paste_x, paste_y), tick_img)
 
-        # title label — rendered sideways (rotated 90°) to the left of the bar
+        # Title label above the bar
         if label:
-            title_fontsize = max(6, W // 75)
+            title_fontsize = max(6, W // 90)
             title_latex = "$" + label + "$"
-            label_img = self._render_latex_label(title_latex, title_fontsize, text_color, rotation=90)
+            label_img = self._render_latex_label(title_latex, title_fontsize, text_color)
             lw, lh = label_img.size
-            if lh > bar_h:
-                lw = int(lw * bar_h / lh)
-                lh = bar_h
+            if lw > bar_w:
+                lh = int(lh * bar_w / lw)
+                lw = bar_w
                 label_img = label_img.resize((lw, lh), Image.LANCZOS)
-            label_x = bar_x1 - lw - 3
-            label_y = bar_y1 + bar_h // 2 - lh // 2
+            label_x = bar_x1 + bar_w // 2 - lw // 2
+            label_y = bar_y1 - lh - 2
             img.paste(label_img, (label_x, label_y), label_img)
 
     def has_required_maps(self):

@@ -50,6 +50,18 @@ The following built-in task names are available:
     Narrowband SII/H-alpha/OIII composite resembling Hubble SHO palette
     images.
 
+.. figure:: _static/examples/sigmagas_default.png
+   :width: 400px
+   :align: center
+
+   Default ``SigmaGas`` output (viridis colormap).
+
+.. figure:: _static/examples/sigmagas_inferno.png
+   :width: 400px
+   :align: center
+
+   Same data with ``--cmap=inferno``.
+
 Example::
 
     SinkVis2 snapshot_*.hdf5 SigmaGas CoolMap
@@ -85,10 +97,34 @@ Expressions can reference any ``PartType0`` field by name (``Masses``,
 ``Temperature``, ``Density``, ``Velocities``, etc.), use arithmetic
 operators, and call numpy functions.
 
+.. list-table::
+   :widths: 50 50
+   :header-rows: 0
+
+   * - .. figure:: _static/examples/slice_temperature.png
+          :width: 100%
+
+          ``Slice(Temperature)``
+
+     - .. figure:: _static/examples/surfacedensity_thermal.png
+          :width: 100%
+
+          ``SurfaceDensity(Masses*InternalEnergy)`` with magma
+
+   * - .. figure:: _static/examples/projectedavg_temperature.png
+          :width: 100%
+
+          ``ProjectedAverage(Temperature)``
+
+     - .. figure:: _static/examples/slice_entropy.png
+          :width: 100%
+
+          ``Slice(Entropy)`` — derived field, plasma cmap
+
 Examples::
 
     # Temperature slice
-    SinkVis2 snapshot_*.hdf5 Slice(Temperature)
+    SinkVis2 snapshot_*.hdf5 'Slice(Temperature)'
 
     # Column density of thermal energy
     SinkVis2 snapshot_*.hdf5 SurfaceDensity(Masses*InternalEnergy)
@@ -176,7 +212,13 @@ derived fields.
 
 Example::
 
-    SinkVis2 snapshot_*.hdf5 Slice(PlasmaBeta) Slice(MachNumber)
+    SinkVis2 snapshot_*.hdf5 'Slice(PlasmaBeta)' 'Slice(MachNumber)'
+
+.. figure:: _static/examples/slice_plasmabeta.png
+   :width: 400px
+   :align: center
+
+   ``Slice(PlasmaBeta)`` — a derived field using ``RdBu_r`` colormap.
 
 Field Fallbacks
 ^^^^^^^^^^^^^^^
@@ -231,6 +273,12 @@ Arbitrary directions can be specified as a vector::
 
     SinkVis2 snapshot_*.hdf5 --dir=1,1,0   # view along (1,1,0)
 
+.. figure:: _static/examples/sigmagas_xdir.png
+   :width: 400px
+   :align: center
+
+   Surface density viewed along the x-axis (``--dir=x``).
+
 Camera up vector
 ^^^^^^^^^^^^^^^^
 
@@ -248,6 +296,12 @@ Apply rotation about the Y and X axes::
 
     SinkVis2 snapshot_*.hdf5 --pan=45 --tilt=10
 
+.. figure:: _static/examples/sigmagas_pantilt.png
+   :width: 400px
+   :align: center
+
+   Surface density with ``--pan=45 --tilt=15``.
+
 Perspective projection
 ^^^^^^^^^^^^^^^^^^^^^^
 
@@ -259,6 +313,14 @@ Centering
 ^^^^^^^^^
 
 Control the center of the image::
+
+.. figure:: _static/examples/sigmagas_densest.png
+   :width: 400px
+   :align: center
+
+   Centered on the densest gas cell with ``--center=densest --rmax=5``.
+
+::
 
     SinkVis2 snapshot_*.hdf5 --center=densest       # densest gas cell
     SinkVis2 snapshot_*.hdf5 --center=massive        # most massive star

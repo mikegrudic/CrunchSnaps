@@ -108,15 +108,18 @@ in multiple places does not cause redundant computation.</p>
 <section id="render-modes">
 <h2>Render Modes<a class="headerlink" href="#render-modes" title="Link to this heading"></a></h2>
 <dl class="simple">
-<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Computes the surface density (line-of-sight integral of the volume
-density) of the quantity given by <em>expr</em>.  For example,
-<code class="docutils literal notranslate"><span class="pre">SurfaceDensity(Masses)</span></code> gives <span class="math notranslate nohighlight">\(\Sigma = \int \rho\, dz\)</span>
-and <code class="docutils literal notranslate"><span class="pre">SurfaceDensity(Masses*InternalEnergy)</span></code> gives the thermal
-energy surface density <span class="math notranslate nohighlight">\(\int \rho\, u\, dz\)</span>.  Uses SPH kernel
-integration via <code class="docutils literal notranslate"><span class="pre">meshoid.GridSurfaceDensity</span></code>.  Colormap limits are
-chosen with mass-weighted max-entropy optimization.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Computes the surface density of an extensive (conserved) quantity
+<span class="math notranslate nohighlight">\(\int (f/V)\, dz\)</span> via <code class="docutils literal notranslate"><span class="pre">Meshoid.SurfaceDensity</span></code>.
+<em>expr</em> should be a per-particle quantity (e.g. <code class="docutils literal notranslate"><span class="pre">Masses</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Masses*InternalEnergy</span></code>).  For example, <code class="docutils literal notranslate"><span class="pre">SurfaceDensity(Masses)</span></code>
+gives <span class="math notranslate nohighlight">\(\Sigma = \int \rho\, dz\)</span>.  Colormap limits are chosen
+with mass-weighted percentiles.</p>
 </dd>
-<dt><code class="docutils literal notranslate"><span class="pre">Projection(expr)</span></code></dt><dd><p>Alias for <code class="docutils literal notranslate"><span class="pre">SurfaceDensity</span></code>.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">Projection(expr)</span></code></dt><dd><p>Computes the line-of-sight integral of a volume density / intensive
+quantity <span class="math notranslate nohighlight">\(\int f\, dz\)</span> via <code class="docutils literal notranslate"><span class="pre">Meshoid.Projection</span></code>.
+<em>expr</em> should be a volumetric quantity (e.g. <code class="docutils literal notranslate"><span class="pre">Density</span></code>,
+<code class="docutils literal notranslate"><span class="pre">NumberDensity</span></code>).  For example, <code class="docutils literal notranslate"><span class="pre">Projection(Density)</span></code> also gives
+<span class="math notranslate nohighlight">\(\Sigma\)</span>.  Colormap limits use mass-weighted percentiles.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">ProjectedAverage(expr)</span></code></dt><dd><p>Computes the mass-weighted average
 <span class="math notranslate nohighlight">\(\int \rho\, \mathtt{expr}\, dz \;/\; \int \rho\, dz\)</span>
@@ -124,8 +127,10 @@ via <code class="docutils literal notranslate"><span class="pre">Meshoid.Project
 (per-pixel) weighting.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">Slice(expr)</span></code></dt><dd><p>Evaluates <em>expr</em> on the midplane (z = 0 in the camera frame) using
-<code class="docutils literal notranslate"><span class="pre">Meshoid.Slice</span></code>.  The slice is rendered at 4x supersampling and
-downsampled to anti-alias Voronoi cell boundaries.  Colormap limits
+<code class="docutils literal notranslate"><span class="pre">Meshoid.Slice</span></code> with order-1 linear reconstruction.  Positive
+quantities are reconstructed in log space to guarantee positivity.
+Anti-aliased via supersampling (default 2x, set with
+<code class="docutils literal notranslate"><span class="pre">--supersample</span></code>).  Colormap limits
 use uniform weighting.</p>
 </dd>
 </dl>

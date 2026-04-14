@@ -26,16 +26,19 @@ Render Modes
 ------------
 
 ``SurfaceDensity(expr)``
-    Computes the surface density (line-of-sight integral of the volume
-    density) of the quantity given by *expr*.  For example,
-    ``SurfaceDensity(Masses)`` gives :math:`\Sigma = \int \rho\, dz`
-    and ``SurfaceDensity(Masses*InternalEnergy)`` gives the thermal
-    energy surface density :math:`\int \rho\, u\, dz`.  Uses SPH kernel
-    integration via ``meshoid.GridSurfaceDensity``.  Colormap limits are
-    chosen with mass-weighted max-entropy optimization.
+    Computes the surface density of an extensive (conserved) quantity
+    :math:`\int (f/V)\, dz` via ``Meshoid.SurfaceDensity``.
+    *expr* should be a per-particle quantity (e.g. ``Masses``,
+    ``Masses*InternalEnergy``).  For example, ``SurfaceDensity(Masses)``
+    gives :math:`\Sigma = \int \rho\, dz`.  Colormap limits are chosen
+    with mass-weighted percentiles.
 
 ``Projection(expr)``
-    Alias for ``SurfaceDensity``.
+    Computes the line-of-sight integral of a volume density / intensive
+    quantity :math:`\int f\, dz` via ``Meshoid.Projection``.
+    *expr* should be a volumetric quantity (e.g. ``Density``,
+    ``NumberDensity``).  For example, ``Projection(Density)`` also gives
+    :math:`\Sigma`.  Colormap limits use mass-weighted percentiles.
 
 ``ProjectedAverage(expr)``
     Computes the mass-weighted average
@@ -45,8 +48,10 @@ Render Modes
 
 ``Slice(expr)``
     Evaluates *expr* on the midplane (z = 0 in the camera frame) using
-    ``Meshoid.Slice``.  The slice is rendered at 4x supersampling and
-    downsampled to anti-alias Voronoi cell boundaries.  Colormap limits
+    ``Meshoid.Slice`` with order-1 linear reconstruction.  Positive
+    quantities are reconstructed in log space to guarantee positivity.
+    Anti-aliased via supersampling (default 2x, set with
+    ``--supersample``).  Colormap limits
     use uniform weighting.
 
 Colormap Behavior
