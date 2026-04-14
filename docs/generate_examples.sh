@@ -58,6 +58,9 @@ run sigmagas_densest.png "$SNAP" --res=$RES --center=densest --rmax=5 --outputfo
 # Slice(MachNumber) with inferno
 run slice_machnumber.png "$SNAP" --tasks='Slice(MachNumber)' --res=$RES --cmap=inferno --outputfolder="$OUT"
 
+# Matplotlib backend
+run sigmagas_matplotlib.png "$SNAP" --res=$RES --backend=matplotlib --outputfolder="$OUT"
+
 # Slice(Entropy) with plasma
 run slice_entropy.png "$SNAP" --tasks='Slice(Entropy)' --res=$RES --cmap=plasma --outputfolder="$OUT"
 

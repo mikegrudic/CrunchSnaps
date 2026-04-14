@@ -347,6 +347,33 @@ When not specified, the default center is the box center, and the default
 field of view (``--rmax``) is determined from the mass-weighted spatial
 extent of the gas.
 
+Backends
+--------
+
+SinkVis2 supports two rendering backends:
+
+``PIL`` (default)
+    Renders images as raw pixel arrays using PIL/Pillow.  Produces clean
+    borderless images suitable for movies, compositing, and publication
+    figures.  Overlays (timestamp, size scale, colorbar) are drawn directly
+    onto the image.
+
+``matplotlib``
+    Renders using matplotlib with labeled axes, axis ticks, and a standard
+    matplotlib colorbar.  Useful for quick inspection and when you want
+    coordinate axes on the plot.
+
+::
+
+    SinkVis2 snapshot_*.hdf5 --backend=matplotlib
+
+.. figure:: _static/examples/sigmagas_matplotlib.png
+   :width: 400px
+   :align: center
+
+   Surface density rendered with the matplotlib backend, showing labeled
+   axes and a standard colorbar.
+
 Movies
 ------
 

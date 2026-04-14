@@ -64,6 +64,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#centering">Centering</a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#backends">Backends</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#movies">Movies</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#interpolated-movies">Interpolated movies</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#freeze-frame-rotation">Freeze-frame rotation</a></li>
@@ -491,6 +492,32 @@ the viewing direction automatically):</p>
 field of view (<code class="docutils literal notranslate"><span class="pre">--rmax</span></code>) is determined from the mass-weighted spatial
 extent of the gas.</p>
 </section>
+</section>
+<section id="backends">
+<h2>Backends<a class="headerlink" href="#backends" title="Link to this heading"></a></h2>
+<p>SinkVis2 supports two rendering backends:</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">PIL</span></code> (default)</dt><dd><p>Renders images as raw pixel arrays using PIL/Pillow.  Produces clean
+borderless images suitable for movies, compositing, and publication
+figures.  Overlays (timestamp, size scale, colorbar) are drawn directly
+onto the image.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">matplotlib</span></code></dt><dd><p>Renders using matplotlib with labeled axes, axis ticks, and a standard
+matplotlib colorbar.  Useful for quick inspection and when you want
+coordinate axes on the plot.</p>
+</dd>
+</dl>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">backend</span><span class="o">=</span><span class="n">matplotlib</span>
+</pre></div>
+</div>
+<figure class="align-center" id="id8">
+<a class="reference internal image-reference" href="_images/sigmagas_matplotlib.png"><img alt="_images/sigmagas_matplotlib.png" src="_images/sigmagas_matplotlib.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Surface density rendered with the matplotlib backend, showing labeled
+axes and a standard colorbar.</span><a class="headerlink" href="#id8" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 </section>
 <section id="movies">
 <h2>Movies<a class="headerlink" href="#movies" title="Link to this heading"></a></h2>

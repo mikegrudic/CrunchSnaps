@@ -1011,7 +1011,8 @@ class SinkVisNarrowbandComposite(SinkVis):
             T = snapdata["PartType0/Temperature"][_k]
             fe = snapdata["PartType0/ElectronAbundance"][_k]
             hii = snapdata["PartType0/HII"][_k]
-            nH = rho * 30
+            UnitDensity = snapdata["Header"].get("UnitMass_In_CGS", 1.989e33) / snapdata["Header"].get("UnitLength_In_CGS", 3.086e18)**3
+            nH = rho * UnitDensity / _ac.m_p.cgs.value
             ne = nH * fe
 
             # ne = np.clip(ne,None,np.percentile(ne,100*(1.0-100/len(ne))) ) #clip by 100th largest value in case we have few rogue cells with extremely large values
@@ -1546,7 +1547,18 @@ class SinkVisCustomField(SinkVis):
                 norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
             else:
                 norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
-            self.ax.pcolormesh(X, Y, data, norm=norm, cmap=self.params["cmap"])
+            from mpl_toolkits.axes_grid1 import make_axes_locatable
+            p = self.ax.pcolormesh(X, Y, data, norm=norm, cmap=self.params["cmap"])
             self.ax.set_aspect("equal")
+            divider = make_axes_locatable(self.ax)
+            cax = divider.append_axes("right", size="5%", pad=0.0)
+            cb_label = "$" + self._colorbar_label() + "$"
+            self.fig.colorbar(p, label=cb_label, cax=cax)
+            if self.params["camera_distance"] == np.inf:
+                self.ax.set_xlabel("X (pc)")
+                self.ax.set_ylabel("Y (pc)")
+            else:
+                self.ax.set_xlabel("X (rad)")
+                self.ax.set_ylabel("Y (rad)")
 
         super().MakeImages(snapdata)
