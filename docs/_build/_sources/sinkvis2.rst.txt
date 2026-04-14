@@ -203,6 +203,20 @@ derived fields.
      - ``norm(MagneticField)**2 / (8*pi) * Masses / Density``
    * - ``NumberDensity``
      - ``Density / m_p``
+   * - ``Entropy``
+     - ``Pressure / Density**(5/3)``
+   * - ``PhotonEnergyDensity_EUV``
+     - EUV photon energy density (eV/cm\ :sup:`3`)
+   * - ``PhotonEnergyDensity_FUV``
+     - FUV photon energy density (eV/cm\ :sup:`3`)
+   * - ``PhotonEnergyDensity_NUV``
+     - NUV photon energy density (eV/cm\ :sup:`3`)
+   * - ``PhotonEnergyDensity_ONIR``
+     - Optical/NIR photon energy density (eV/cm\ :sup:`3`)
+   * - ``PhotonEnergyDensity_FIR``
+     - FIR photon energy density (eV/cm\ :sup:`3`)
+   * - ``G0``
+     - FUV radiation field in Habing units
 
 Example::
 
