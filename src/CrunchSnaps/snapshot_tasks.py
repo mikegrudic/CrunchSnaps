@@ -1282,21 +1282,68 @@ register_derived_field("G0", "col(PhotonEnergy, 1) * Density / Masses * UnitEner
 FIELD_SYMBOLS = {}
 
 
-def register_field_symbol(name, latex):
+def register_field_symbol(name, latex, unit_func=None):
     r"""Register a LaTeX symbol for a field or expression.
 
-    >>> register_field_symbol("Temperature", r"T\;\mathrm{(K)}")
+    Parameters
+    ----------
+    name : str
+        Field name or expression.
+    latex : str
+        LaTeX symbol (without $ delimiters).
+    unit_func : callable, optional
+        A function ``f(header) -> str`` returning a LaTeX unit string
+        (e.g. ``r"\mathrm{g\,cm^{-3}}"``).  If provided, the unit is
+        appended in parentheses.
+
+    >>> register_field_symbol("Temperature", r"T", lambda h: r"\mathrm{K}")
     """
     FIELD_SYMBOLS[name] = latex
+    if unit_func is not None:
+        _FIELD_UNIT_FUNCS[name] = unit_func
+
+
+_FIELD_UNIT_FUNCS = {}
+
+
+def _density_unit(header):
+    """Return density unit label from header."""
+    if "UnitMass_In_CGS" in header:
+        UM = header["UnitMass_In_CGS"]
+    else:
+        UM = 1e10 * _ac.M_sun.cgs.value
+    if "UnitLength_In_CGS" in header:
+        UL = header["UnitLength_In_CGS"]
+    else:
+        UL = _au.kpc.to(_au.cm)
+    ratio_m = UM / _ac.M_sun.cgs.value
+    ratio_l = UL / _au.pc.to(_au.cm)
+    if abs(ratio_m - 1) < 0.01 and abs(ratio_l - 1) < 0.01:
+        return r"M_\odot\,\mathrm{pc}^{-3}"
+    if abs(ratio_m - 1e10) < 1e8 and abs(ratio_l / 1e3 - 1) < 0.01:
+        return r"10^{10}\,M_\odot\,\mathrm{kpc}^{-3}"
+    return r"\mathrm{code\;density}"
+
+
+def _velocity_unit(header):
+    if "UnitVelocity_In_CGS" in header:
+        UV = header["UnitVelocity_In_CGS"]
+    else:
+        UV = _au.km.to(_au.cm)
+    if abs(UV / _au.km.to(_au.cm) - 1) < 0.01:
+        return r"\mathrm{km\,s^{-1}}"
+    if abs(UV / 100.0 - 1) < 0.01:
+        return r"\mathrm{m\,s^{-1}}"
+    return r"\mathrm{code\;vel}"
 
 
 # Built-in symbols
-register_field_symbol("Density", r"\rho")
-register_field_symbol("Temperature", r"T\;\mathrm{(K)}")
+register_field_symbol("Density", r"\rho", _density_unit)
+register_field_symbol("Temperature", r"T", lambda h: r"\mathrm{K}")
 register_field_symbol("Pressure", r"P")
 register_field_symbol("InternalEnergy", r"u")
 register_field_symbol("Masses", r"M")
-register_field_symbol("SoundSpeed", r"c_s")
+register_field_symbol("SoundSpeed", r"c_s", _velocity_unit)
 register_field_symbol("MagneticPressure", r"P_B")
 register_field_symbol("PlasmaBeta", r"\beta")
 register_field_symbol("AlfvenSpeed", r"v_A")
@@ -1530,7 +1577,13 @@ class SinkVisCustomField(SinkVis):
 
         # Wrap in σ(...) for WeightedVariance mode
         if self._render_mode == "WeightedVariance":
-            return r"\sigma(" + inner + ")"
+            inner = r"\sigma(" + inner + ")"
+
+        # Append unit label if registered and header available
+        if header and expr in _FIELD_UNIT_FUNCS:
+            unit = _FIELD_UNIT_FUNCS[expr](header)
+            inner += r"\;(" + unit + ")"
+
         return inner
 
     def GenerateMaps(self, snapdata):
