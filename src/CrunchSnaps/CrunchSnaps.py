@@ -308,12 +308,33 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
     idx1, idx2 = {}, {}
     for ptype in "PartType0", "PartType5":
         ids1 = snapdata_buffer[t1].get(ptype + "/ParticleIDs")
-        id1 = np.array(ids1) if ids1 is not None else np.array([])
+        id1 = np.asarray(ids1) if ids1 is not None else np.empty(0, dtype=np.int64)
         ids2 = snapdata_buffer[t2].get(ptype + "/ParticleIDs")
-        id2 = np.array(ids2) if ids2 is not None else np.array([])
-        common_ids = np.intersect1d(id1, id2)
-        idx1[ptype] = np.isin(np.sort(id1), common_ids)
-        idx2[ptype] = np.isin(np.sort(id2), common_ids)
+        id2 = np.asarray(ids2) if ids2 is not None else np.empty(0, dtype=np.int64)
+        # IDs are already sorted by GetSnapData (sort_by_id=True), so we use
+        # searchsorted instead of intersect1d+isin+sort, which is ~5-10x faster
+        # on the 20M+ element arrays typical for STARFORGE snapshots.
+        # GetSnapData remaps duplicate IDs to -1 as a sentinel; we exclude
+        # those from the intersection because there is no way to pair the
+        # i-th -1 in id1 with the i-th -1 in id2 meaningfully (and if the
+        # counts differ, the resulting masks select different cell counts
+        # and the downstream f2 - f1 broadcast fails).
+        if len(id1) and len(id2):
+            pos = np.searchsorted(id2, id1)
+            m1 = np.zeros(len(id1), dtype=bool)
+            in_range = pos < len(id2)
+            m1[in_range] = id2[pos[in_range]] == id1[in_range]
+            m1 &= id1 != -1
+            idx1[ptype] = m1
+            pos = np.searchsorted(id1, id2)
+            m2 = np.zeros(len(id2), dtype=bool)
+            in_range = pos < len(id1)
+            m2[in_range] = id1[pos[in_range]] == id2[in_range]
+            m2 &= id2 != -1
+            idx2[ptype] = m2
+        else:
+            idx1[ptype] = np.zeros(len(id1), dtype=bool)
+            idx2[ptype] = np.zeros(len(id2), dtype=bool)
 
     for field in snapdata_buffer[t1].keys():
         if field in stuff_to_skip or field not in snapdata_buffer[t2]:
@@ -324,35 +345,55 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
         if ptype not in idx1 or ptype not in idx2:
             continue
         f1, f2 = snapdata_buffer[t1][field][idx1[ptype]], snapdata_buffer[t2][field][idx2[ptype]]
-        wt1 = (
-            (t2 - t) / (t2 - t1) * np.ones_like(f1)
-        )  # relative weights, can be set individually for each cell, for now we just use the same time linear weight for all cells
+        # Scalar weights — the per-cell broadcast was never actually customized
+        # and a (24M, 3) float64 np.ones_like() costs ~555 MiB per field.
+        wt1 = (t2 - t) / (t2 - t1)
         wt2 = 1.0 - wt1
+        # f1, f2 are fresh allocations from boolean indexing, so safe to mutate in-place.
         if field in stuff_to_leave_as_is:
-            interpolated_data[field] = f1.copy()
+            interpolated_data[field] = f1
         elif field in stuff_to_keep_lowest:
-            interpolated_data[field] = f1.copy()
             ind2 = np.abs(f1) > np.abs(f2)
-            interpolated_data[field][ind2] = f2[ind2]
+            f1[ind2] = f2[ind2]
+            interpolated_data[field] = f1
         else:
             if field in stuff_to_interp_log:
                 positive = (f1 > 0) & (f2 > 0)
-
                 # we interpolate linearily for cells where the value in either snapashots is non-positive, log for the rest
                 if np.any(~positive):
-                    interpolated_data[field] = f1 * wt1 + f2 * wt2
-                    interpolated_data[field][positive] = np.exp(
-                        np.log(f1[positive]) * wt1[positive] + np.log(f2[positive]) * wt2[positive]
-                    )
+                    f1 *= wt1
+                    f2 *= wt2
+                    f1 += f2  # f1 now holds the linear interpolant
+                    # overwrite the positive-only entries with the log interpolant
+                    p1, p2 = np.log(snapdata_buffer[t1][field][idx1[ptype]][positive]), np.log(snapdata_buffer[t2][field][idx2[ptype]][positive])
+                    p1 *= wt1
+                    p2 *= wt2
+                    p1 += p2
+                    np.exp(p1, out=p1)
+                    f1[positive] = p1
+                    interpolated_data[field] = f1
                 else:
-                    interpolated_data[field] = np.exp(np.log(f1) * wt1 + np.log(f2) * wt2)
+                    np.log(f1, out=f1)
+                    np.log(f2, out=f2)
+                    f1 *= wt1
+                    f2 *= wt2
+                    f1 += f2
+                    np.exp(f1, out=f1)
+                    interpolated_data[field] = f1
             else:  # interpolate everything else linearily
                 if "Coordinates" in field:  # special behaviour to handle periodic BCs
-                    dx = f2 - f1
-                    dx = NearestImage(dx, snapdata_buffer[t1]["Header"]["BoxSize"])
-                    interpolated_data[field] = (f1 + wt2 * dx) % (snapdata_buffer[t1]["Header"]["BoxSize"])
+                    boxsize = snapdata_buffer[t1]["Header"]["BoxSize"]
+                    dx = f2 - f1  # one full-size temp
+                    dx = NearestImage(dx, boxsize)
+                    dx *= wt2
+                    dx += f1
+                    np.mod(dx, boxsize, out=dx)
+                    interpolated_data[field] = dx
                 else:
-                    interpolated_data[field] = f1 * wt1 + f2 * wt2
+                    f1 *= wt1
+                    f2 *= wt2
+                    f1 += f2
+                    interpolated_data[field] = f1
 
     return interpolated_data
 

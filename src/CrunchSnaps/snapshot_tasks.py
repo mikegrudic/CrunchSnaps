@@ -852,8 +852,8 @@ class SinkVisCoolMap(SinkVis):
             ).T
             np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])
         if not "sigma_1D" in self.maps.keys():
-            # need to apply coordinate transforms to z-velocity
-            v = np.copy(snapdata["PartType0/Velocities"])
+            # need to apply coordinate transforms to z-velocity; cull to match self.pos/self.mass
+            v = np.copy(snapdata["PartType0/Velocities"])[self._keep_mask]
             self.DoCoordinateTransform(v, contravariant=True)
             sigma_1D = (
                 GridSurfaceDensity(
