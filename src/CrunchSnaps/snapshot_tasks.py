@@ -4,6 +4,7 @@ from astropy import constants as _ac, units as _au
 from .misc_functions import *
 from os.path import isfile
 import json
+import hashlib
 import os
 
 
@@ -78,6 +79,7 @@ class SinkVis(Task):
             "center_on_densest": False,
             "realstars": True,
             "realstars_opacity": 1.0,
+            "time_offset": 0,
             "realstars_max_lum": 1e7,
             "realstars_lum_exp": 1.0,
             "realstars_background": 0,
@@ -88,6 +90,8 @@ class SinkVis(Task):
             "camera_up": None,
             "index": None,
             "no_stars": False,
+            "star_legend": False,
+            "tight_bbox": True,
             "overwrite": True,
             "unit_scalefac": 1,
             "outputfolder": ".",
@@ -127,7 +131,14 @@ class SinkVis(Task):
                 dump[k] = self.params[k].tolist()
             else:
                 dump[k] = self.params[k]
-        self.params_hash = str(hash(json.dumps(dump, sort_keys=True)))
+        # Use md5 rather than the built-in hash(): Python's hash() of strings is
+        # PYTHONHASHSEED-salted per interpreter, so cache filenames would differ
+        # between runs (callers used to work around this with an os.execv re-exec
+        # setting PYTHONHASHSEED=0). md5 is deterministic across runs and Python
+        # versions, removing that requirement.
+        self.params_hash = hashlib.md5(
+            json.dumps(dump, sort_keys=True).encode()
+        ).hexdigest()
 
         mapdir = self.params["outputfolder"] + "/.maps"
         while not os.path.isdir(mapdir):
@@ -346,7 +357,13 @@ class SinkVis(Task):
             from matplotlib import pyplot as plt
             rmax = self.params["rmax"]
             self.ax.set(xlim=[-rmax, rmax], ylim=[-rmax, rmax])
-            plt.savefig(self.params["filename_incomplete"], bbox_inches="tight", dpi=400)
+            # When rendering a movie the per-frame PNG dimensions and the
+            # axes position within them must stay constant; bbox_inches="tight"
+            # crops to the rendered content, so tick-label width changes
+            # (e.g. "0.005" -> "5e-05") produce different image sizes. Opt
+            # out via tight_bbox=False to preserve fixed dimensions.
+            bbox = "tight" if self.params["tight_bbox"] else None
+            plt.savefig(self.params["filename_incomplete"], bbox_inches=bbox, dpi=400)
             plt.close()
         elif self.params["backend"] == "PIL":
             self._pil_image.convert("RGB").save(self.params["filename_incomplete"])
@@ -367,7 +384,7 @@ class SinkVis(Task):
             unit_time_in_s = header["UnitLength_In_CGS"] / header["UnitVelocity_In_CGS"]
         else:
             unit_time_in_s = _au.kpc.to(_au.cm) / (_au.km.to(_au.cm))  # kpc/(km/s) in seconds
-        time_Myr = self.params["Time"] * unit_time_in_s / _au.Myr.to(_au.s)
+        time_Myr = (self.params["Time"] - self.params["time_offset"]) * unit_time_in_s / _au.Myr.to(_au.s)
         if time_Myr >= 1e-2:
             time_text = "%3.2gMyr" % (time_Myr)
         elif time_Myr >= 1e-4:
@@ -382,7 +399,17 @@ class SinkVis(Task):
             font = _get_font(gridres // 12)
             draw.text((gridres / 16, gridres / 24), time_text, font=font)
         elif self.params["backend"] == "matplotlib":
-            self.ax.text(-self.params["rmax"] * 0.85, self.params["rmax"] * 0.85, time_text, color="#FFFFFF")
+            import matplotlib.patheffects as path_effects
+            txt = self.ax.text(
+                0.05, 0.95, time_text,
+                transform=self.ax.transAxes,
+                color="white", fontsize=10, fontweight="bold",
+                ha="left", va="top",
+            )
+            txt.set_path_effects([
+                path_effects.Stroke(linewidth=1.5, foreground="black"),
+                path_effects.Normal(),
+            ])
 
     def AddSizeScaleToImage(self, header):
         #        if self.params["camera_distance"] < np.inf: return
@@ -473,6 +500,7 @@ class SinkVis(Task):
                     d.ellipse(coords, pen, p)
                 d.flush()
         elif self.params["backend"] == "matplotlib":
+            self.DoCoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))
             star_size = np.log10(m_star / self.params["sink_scale"]) + 2
             star_size[m_star < self.params["sink_scale"]] = 0
             colors = np.array([self.GetStarColor(m) for m in m_star]) / 255
@@ -486,6 +514,31 @@ class SinkVis(Task):
                 facecolor=colors,
                 marker="*",
             )
+
+            if self.params["star_legend"]:
+                # Stellar-mass key in the bottom-left, styled after
+                # starforge_tools.plots.star_markers.plot_star_legend but using
+                # CrunchSnaps' own size/color scheme so the legend markers
+                # match the rendered stars.
+                for m_dummy in (1, 10, 100, 1000):
+                    s_dummy = (np.log10(m_dummy / self.params["sink_scale"]) + 2) * 5
+                    self.ax.scatter(
+                        [np.inf], [np.inf],
+                        s=s_dummy,
+                        facecolor=np.array(self.GetStarColor(m_dummy)) / 255,
+                        edgecolor=self.Star_Edge_Color(),
+                        lw=0.1,
+                        marker="*",
+                        label=r"$%g\,M_\odot$" % m_dummy,
+                    )
+                ledge = self.ax.legend(
+                    loc=3, frameon=True, facecolor="black",
+                    labelspacing=0.1, fontsize=6, edgecolor="white",
+                )
+                ledge.get_frame().set_linewidth(0.5)
+                ledge.get_frame().set_alpha(0.5)
+                for txt in ledge.get_texts():
+                    txt.set_color("white")
 
     def Star_Edge_Color(self):
         if self.params["cmap"] in ("afmhot", "inferno", "Blues"):

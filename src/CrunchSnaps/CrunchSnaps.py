@@ -182,7 +182,7 @@ def DoParamsPass(chunk, id_mask=None):
         if np.all([t.TaskDone for t in task_instances]):
             continue
         time = task_params[0][i]["Time"]
-        if task_params[0][i]["sparse_snaps"]:
+        if task_params[0][i].get("sparse_snaps", False):
             if np.any(time == snaptimes):
                 print("%d: Forcing interpolation for time %g" % (process_num, time))
                 time += 1e-6 * np.ptp(
@@ -245,7 +245,8 @@ def DoParamsPass(chunk, id_mask=None):
                     % (process_num, time, t1, t2)
                 )
                 snapdata_for_thistime = SnapInterpolate(
-                    time, t1, t2, snapdata_buffer, sparse_snaps=task_params[0][i]["sparse_snaps"]
+                    time, t1, t2, snapdata_buffer,
+                    sparse_snaps=task_params[0][i].get("sparse_snaps", False),
                 )
             else:
                 print(
