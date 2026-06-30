@@ -45,6 +45,7 @@ Options:
     --realstars_max_lum=<f>      Maximum stellar luminosity in realistic PSF rendering [default: 1.0e3]
     --realstars_opacity=<f>      Opacity scaling factor for realstars [default: 1.0]
     --supersample=<N>            Anti-aliasing supersampling factor for Slice renders [default: 2]
+    --order=<N>                  Reconstruction order for Slice renders (0=nearest, 1=linear) [default: 0]
     --unit_length=<f>            Override UnitLength_In_CGS from snapshot header
     --unit_mass=<f>              Override UnitMass_In_CGS from snapshot header
     --unit_velocity=<f>          Override UnitVelocity_In_CGS from snapshot header

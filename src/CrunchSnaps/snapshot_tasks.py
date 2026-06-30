@@ -98,6 +98,7 @@ class SinkVis(Task):
             "SHO_RGB_norm": 0,
             "outflow_only": False,
             "no_colorbar": False,
+            "order": 0,
         }
 
         self.AssignDefaultParams()
@@ -124,6 +125,7 @@ class SinkVis(Task):
             "realstars_max_lum",
             "realstars_lum_exp",
             "realstars_opacity",
+            "order",
         ]
         dump = {}
         for k in self.params_that_affect_maps:
@@ -1820,9 +1822,10 @@ class SinkVisCustomField(SinkVis):
             # For positive quantities, slice in log space to guarantee positivity
             positive = np.all(f > 0)
             slice_f = np.log(f) if positive else f
+            recon_order = int(self.params.get("order", 0))
             hi_res = M.Slice(
                 slice_f, center=np.zeros(3), size=2 * rmax, res=res * ss,
-                order=1, slope_limiter=True,
+                order=recon_order, slope_limiter=True,
             ).T
             if positive:
                 hi_res = np.exp(hi_res)
