@@ -684,10 +684,15 @@ class SinkVis(Task):
         buf.seek(0)
         return Image.open(buf).convert("RGBA")
 
-    def _add_colorbar_to_image(self, vmin, vmax, label=None):
+    def _add_colorbar_to_image(self, vmin, vmax, label=None, log_scale=True):
         """Overlay a vertical colorbar on the in-memory PIL image."""
         from PIL import Image, ImageDraw
         from matplotlib import pyplot as plt
+
+        if not (np.isfinite(vmin) and np.isfinite(vmax) and vmax > vmin):
+            return
+        if log_scale and vmin <= 0:
+            log_scale = False
 
         img = self._pil_image
         W, H = img.size
@@ -721,18 +726,23 @@ class SinkVis(Task):
 
         # tick labels to the right of the bar
         font_size = max(8, W // 55)
-        log_vmin, log_vmax = np.log10(vmin), np.log10(vmax)
-        tick_values = [vmin, vmax]
-        tick_exp_min = int(np.ceil(log_vmin))
-        tick_exp_max = int(np.floor(log_vmax))
-        for e in range(tick_exp_min, tick_exp_max + 1):
-            tv = 10.0**e
-            if tv > vmin * 1.1 and tv < vmax * 0.9:
-                tick_values.append(tv)
-        tick_values.sort()
+        if log_scale:
+            log_vmin, log_vmax = np.log10(vmin), np.log10(vmax)
+            tick_values = [vmin, vmax]
+            for e in range(int(np.ceil(log_vmin)), int(np.floor(log_vmax)) + 1):
+                tv = 10.0**e
+                if tv > vmin * 1.1 and tv < vmax * 0.9:
+                    tick_values.append(tv)
+            tick_values.sort()
+            tick_frac = lambda tv: (np.log10(tv) - log_vmin) / (log_vmax - log_vmin)
+        else:
+            tick_values = list(np.linspace(vmin, vmax, 5))
+            tick_frac = lambda tv: (tv - vmin) / (vmax - vmin)
 
         for tv in tick_values:
-            frac = (np.log10(tv) - log_vmin) / (log_vmax - log_vmin)
+            frac = tick_frac(tv)
+            if not np.isfinite(frac):
+                continue
             frac = np.clip(frac, 0, 1)
             tick_y = bar_y2 - int(frac * bar_h)
             draw.line([(bar_x2, tick_y), (bar_x2 + 3, tick_y)], fill=text_color, width=1)
@@ -833,6 +843,10 @@ class SinkVisSigmaGas(SinkVis):
             from mpl_toolkits.axes_grid1 import make_axes_locatable
             matplotlib.use("Agg")
             self.fig, self.ax = plt.subplots(figsize=(4, 4))
+            # Explicit margins so the Y label, colorbar, and the colorbar's own
+            # "Σ_gas" label all fit without bbox_inches="tight" needing to crop
+            # to content (which would make per-frame PNG dimensions vary).
+            self.fig.subplots_adjust(left=0.16, right=0.82, top=0.95, bottom=0.12)
             X = Y = np.linspace(-self.params["rmax"], self.params["rmax"], self.params["res"])
             X, Y = np.meshgrid(X, Y)
             p = self.ax.pcolormesh(
@@ -845,7 +859,7 @@ class SinkVisSigmaGas(SinkVis):
             self.ax.set_aspect("equal")
 
             divider = make_axes_locatable(self.ax)
-            cax = divider.append_axes("right", size="5%", pad=0.0)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
             self.fig.colorbar(p, label=r"$\Sigma_{\rm gas}$ $(\rm M_\odot\,pc^{-2})$", cax=cax)
             if self.params["camera_distance"] == np.inf:
                 self.ax.set_xlabel("X (pc)")
@@ -1202,6 +1216,8 @@ register_derived_field("ThermalEnergy", "Masses * InternalEnergy")
 register_derived_field("KineticEnergy", "0.5 * Masses * norm(Velocities)**2")
 register_derived_field("MagneticEnergy", "norm(MagneticField)**2 / (8*pi) * Masses / Density")
 register_derived_field("NumberDensity", "Density / m_p")
+register_derived_field("dx", "cbrt(Masses/Density)")
+register_derived_field("DivergenceError", "abs(Div(MagneticField))*cbrt(Masses/Density)/norm(MagneticField)")
 
 # LaTeX symbols for colorbar labels.  Keys can be snapshot field names,
 # derived field names, or full expression strings.
@@ -1242,8 +1258,10 @@ register_field_fallback("Temperature", "(5./3 - 1) * InternalEnergy * m_p / k_B"
 
 # Tokens that are builtins, NOT field names
 _EXPR_BUILTINS = {
-    "abs", "sqrt", "norm", "log", "log2", "log10", "exp",
+    "np",
+    "abs", "sqrt", "cbrt", "norm", "log", "log2", "log10", "exp",
     "sin", "cos", "tan", "minimum", "maximum", "clip", "where",
+    "Div", "Curl",
 } | set(_CONSTANTS.keys())
 
 
@@ -1281,12 +1299,38 @@ def _extract_field_names(expr):
     return sorted(base_fields)
 
 
-def _eval_field_expr(expr, snapdata, _cache=None):
+def _op_needs_meshoid(name):
+    def _op(*args, **kwargs):
+        raise RuntimeError(
+            f"'{name}()' requires particle positions; use it inside a "
+            f"Slice/SurfaceDensity/Projection/ProjectedAverage render task."
+        )
+    return _op
+
+
+def _mask_snapdata(snapdata, mask):
+    """Return a shallow copy of snapdata with PartType0 particle arrays filtered by mask."""
+    n_all = mask.size
+    result = {}
+    for k, v in snapdata.items():
+        if (k.startswith("PartType0/") and v is not None
+                and isinstance(v, np.ndarray)
+                and v.ndim >= 1 and len(v) == n_all):
+            result[k] = v[mask]
+        else:
+            result[k] = v
+    return result
+
+
+def _eval_field_expr(expr, snapdata, _cache=None, _extra_ns=None):
     """Evaluate a field expression against loaded PartType0 snapshot data.
 
     Field names (e.g. 'Masses', 'Temperature') are resolved to their
     PartType0 arrays.  Derived fields are evaluated recursively and cached
     within the call tree.  Numpy ufuncs and physical constants are available.
+
+    Pass ``_extra_ns`` to inject additional names (e.g. ``Div`` and ``Curl``
+    bound to a :class:`meshoid.Meshoid` instance).
     """
     if _cache is None:
         _cache = {}
@@ -1295,13 +1339,18 @@ def _eval_field_expr(expr, snapdata, _cache=None):
         return np.sqrt(np.sum(np.asarray(x) ** 2, axis=-1))
 
     ns = {
-        "np": np, "abs": np.abs, "sqrt": np.sqrt, "norm": _norm,
+        "np": np, "abs": np.abs, "sqrt": np.sqrt, "cbrt": np.cbrt,
+        "norm": _norm,
         "log": np.log, "log2": np.log2, "log10": np.log10,
         "exp": np.exp, "sin": np.sin, "cos": np.cos, "tan": np.tan,
         "minimum": np.minimum, "maximum": np.maximum,
         "clip": np.clip, "where": np.where,
+        "Div": _op_needs_meshoid("Div"),
+        "Curl": _op_needs_meshoid("Curl"),
     }
     ns.update(_CONSTANTS)
+    if _extra_ns:
+        ns.update(_extra_ns)
 
     tokens = re.findall(r"[A-Za-z_]\w*", expr)
     for name in set(tokens) - _EXPR_BUILTINS:
@@ -1313,7 +1362,7 @@ def _eval_field_expr(expr, snapdata, _cache=None):
 
         # 1) Explicit derived field — always computed from expression
         if name in DERIVED_FIELDS:
-            _cache[name] = _eval_field_expr(DERIVED_FIELDS[name], snapdata, _cache)
+            _cache[name] = _eval_field_expr(DERIVED_FIELDS[name], snapdata, _cache, _extra_ns)
             ns[name] = _cache[name]
             continue
 
@@ -1334,6 +1383,20 @@ def _eval_field_expr(expr, snapdata, _cache=None):
             f"a derived field, a fallback, or a builtin"
         )
     return eval(expr, {"__builtins__": {}}, ns)
+
+
+def _expr_needs_meshoid(expr, _seen=None):
+    """Return True if expr (after expanding derived fields) contains Div or Curl."""
+    if re.search(r'\b(Div|Curl)\b', expr):
+        return True
+    if _seen is None:
+        _seen = set()
+    for name in re.findall(r"[A-Za-z_]\w*", expr):
+        if name in DERIVED_FIELDS and name not in _seen:
+            _seen.add(name)
+            if _expr_needs_meshoid(DERIVED_FIELDS[name], _seen):
+                return True
+    return False
 
 
 def parse_custom_task(spec):
@@ -1360,7 +1423,8 @@ class SinkVisCustomField(SinkVis):
     def __init__(self, params):
         self._render_mode = params["_render_mode"]
         self._field_expr = params["_field_expr"]
-        self._map_key = f"{self._render_mode}_{self._field_expr}"
+        _safe = re.sub(r"[^\w]", "_", self._field_expr)
+        self._map_key = f"{self._render_mode}_{_safe}"
         self.required_maps = set([self._map_key])
         super().__init__(params)
         if self.TaskDone:
@@ -1411,19 +1475,43 @@ class SinkVisCustomField(SinkVis):
             return
         from meshoid import Meshoid
 
-        f = _eval_field_expr(self._field_expr, snapdata)
-
-        # Handle vector fields: if f has multiple columns, take magnitude
-        if f.ndim > 1:
-            f = np.sqrt(np.sum(f ** 2, axis=1))
-
-        # Apply the same cull mask that SetupCoordsAndWeights applied to pos/mass/hsml
-        if hasattr(self, "_keep_mask"):
-            f = f[self._keep_mask]
+        # Div/Curl need the full particle neighbourhood — culling to the view
+        # box removes neighbours and zeroes out kernel sums at the boundary.
+        # When the expression contains them, build a Meshoid from ALL particles
+        # in the transformed frame and evaluate on the full (unmasked) arrays,
+        # then mask the scalar result down to the render region afterward.
+        if _expr_needs_meshoid(self._field_expr):
+            # Div/Curl are coordinate-invariant: compute in the original frame
+            # so that field vectors (e.g. MagneticField) and position offsets
+            # are in the same basis.  Applying DoCoordinateTransform to positions
+            # but not to the vector field would mix frames and zero the kernel sums.
+            # Use a larger des_ngb than the default so the gradient regression
+            # always has enough well-distributed neighbours (avoids singular matrices).
+            M_diff = Meshoid(
+                snapdata["PartType0/Coordinates"],
+                snapdata["PartType0/Masses"],
+                des_ngb=64,
+            )
+            f = _eval_field_expr(
+                self._field_expr, snapdata,
+                _extra_ns={"Div": M_diff.Div, "Curl": M_diff.Curl},
+            )
+            if f.ndim > 1:
+                f = np.sqrt(np.sum(f ** 2, axis=1))
+            if hasattr(self, "_keep_mask"):
+                f = f[self._keep_mask]
+        else:
+            # No differential operators: evaluate on the already-masked
+            # particle set for efficiency.
+            mask = getattr(self, "_keep_mask", None)
+            eval_snapdata = _mask_snapdata(snapdata, mask) if mask is not None else snapdata
+            f = _eval_field_expr(self._field_expr, eval_snapdata)
+            if f.ndim > 1:
+                f = np.sqrt(np.sum(f ** 2, axis=1))
 
         res = self.params["res"]
         rmax = self.params["rmax"]
-        # Build a Meshoid from the already-transformed coordinates
+        # Render Meshoid always uses the culled, transformed particle set
         M = Meshoid(self.pos, self.mass, self.hsml)
 
         if self._render_mode in ("SurfaceDensity", "Projection"):
@@ -1482,18 +1570,26 @@ class SinkVisCustomField(SinkVis):
             rgba = plt.get_cmap(self.params["cmap"])(np.flipud(f))
             self._pil_image = Image.fromarray((rgba * 255).astype(np.uint8), "RGBA")
             if not self.params["no_colorbar"]:
-                self._add_colorbar_to_image(vmin, vmax, label=self._colorbar_label())
+                self._add_colorbar_to_image(
+                    vmin, vmax, label=self._colorbar_label(),
+                    log_scale=bool(positive.all()),
+                )
         elif self.params["backend"] == "matplotlib":
             import matplotlib
+            from mpl_toolkits.axes_grid1 import make_axes_locatable
             matplotlib.use("Agg")
             self.fig, self.ax = plt.subplots(figsize=(4, 4))
+            self.fig.subplots_adjust(left=0.16, right=0.82, top=0.95, bottom=0.12)
             X = Y = np.linspace(-self.params["rmax"], self.params["rmax"], self.params["res"])
             X, Y = np.meshgrid(X, Y)
             if positive.all():
                 norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
             else:
                 norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
-            self.ax.pcolormesh(X, Y, data, norm=norm, cmap=self.params["cmap"])
+            p = self.ax.pcolormesh(X, Y, data, norm=norm, cmap=self.params["cmap"])
             self.ax.set_aspect("equal")
+            divider = make_axes_locatable(self.ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            self.fig.colorbar(p, label="$" + self._colorbar_label() + "$", cax=cax)
 
         super().MakeImages(snapdata)
