@@ -1217,7 +1217,7 @@ register_derived_field("KineticEnergy", "0.5 * Masses * norm(Velocities)**2")
 register_derived_field("MagneticEnergy", "norm(MagneticField)**2 / (8*pi) * Masses / Density")
 register_derived_field("NumberDensity", "Density / m_p")
 register_derived_field("dx", "cbrt(Masses/Density)")
-register_derived_field("DivergenceError", "abs(Div(MagneticField))*cbrt(Masses/Density)/norm(MagneticField)")
+register_derived_field("DivergenceError", "abs(DivergenceOfMagneticField)*cbrt(Masses/Density)/norm(MagneticField)")
 
 # LaTeX symbols for colorbar labels.  Keys can be snapshot field names,
 # derived field names, or full expression strings.
@@ -1254,6 +1254,7 @@ register_field_symbol("MagneticEnergy", r"E_B")
 register_field_fallback("Pressure", "(5./3 - 1) * Density * InternalEnergy")
 register_field_fallback("SoundSpeed", "sqrt(5./3 * (5./3 - 1) * InternalEnergy)")
 register_field_fallback("Temperature", "(5./3 - 1) * InternalEnergy * m_p / k_B")
+register_field_fallback("DivergenceOfMagneticField", "Div(MagneticField)")
 
 
 # Tokens that are builtins, NOT field names
@@ -1385,17 +1386,29 @@ def _eval_field_expr(expr, snapdata, _cache=None, _extra_ns=None):
     return eval(expr, {"__builtins__": {}}, ns)
 
 
-def _expr_needs_meshoid(expr, _seen=None):
-    """Return True if expr (after expanding derived fields) contains Div or Curl."""
+def _expr_needs_meshoid(expr, snapdata=None, _seen=None):
+    """Return True if expr (after expanding derived fields and fallbacks) contains Div or Curl.
+
+    When snapdata is provided, fallback expressions are only followed for fields
+    that are actually absent from the snapshot — if the snapshot already has the
+    field, no Meshoid is needed to compute it.
+    """
     if re.search(r'\b(Div|Curl)\b', expr):
         return True
     if _seen is None:
         _seen = set()
     for name in re.findall(r"[A-Za-z_]\w*", expr):
-        if name in DERIVED_FIELDS and name not in _seen:
-            _seen.add(name)
-            if _expr_needs_meshoid(DERIVED_FIELDS[name], _seen):
+        if name in _seen:
+            continue
+        _seen.add(name)
+        if name in DERIVED_FIELDS:
+            if _expr_needs_meshoid(DERIVED_FIELDS[name], snapdata, _seen):
                 return True
+        elif name in FIELD_FALLBACKS:
+            # Only follow the fallback if the snapshot doesn't supply the field directly
+            if snapdata is None or f"PartType0/{name}" not in snapdata:
+                if _expr_needs_meshoid(FIELD_FALLBACKS[name], snapdata, _seen):
+                    return True
     return False
 
 
@@ -1480,7 +1493,7 @@ class SinkVisCustomField(SinkVis):
         # When the expression contains them, build a Meshoid from ALL particles
         # in the transformed frame and evaluate on the full (unmasked) arrays,
         # then mask the scalar result down to the render region afterward.
-        if _expr_needs_meshoid(self._field_expr):
+        if _expr_needs_meshoid(self._field_expr, snapdata):
             # Div/Curl are coordinate-invariant: compute in the original frame
             # so that field vectors (e.g. MagneticField) and position offsets
             # are in the same basis.  Applying DoCoordinateTransform to positions
