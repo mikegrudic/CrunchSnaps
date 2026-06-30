@@ -99,6 +99,10 @@ def _resolve_task(spec):
         extra = {"_render_mode": render_mode, "_field_expr": field_expr}
         return CrunchSnaps.SinkVisCustomField, extra, prefix
 
+    # Bare derived-field name (e.g. 'DivergenceError') — default to Slice
+    if spec in CrunchSnaps.DERIVED_FIELDS:
+        return _resolve_task(f"Slice({spec})")
+
     raise ValueError(
         f"Unknown task '{spec}'. Use a built-in name ({', '.join(taskdict)}) "
         f"or a custom expression like SurfaceDensity(Masses*Temperature)"

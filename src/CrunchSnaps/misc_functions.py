@@ -229,6 +229,7 @@ def get_snapshot_time_dict(snaps, save_to_file=True):
 
     if exists(snaptimes_path):
         snapnums, snaptimes = np.atleast_2d(np.loadtxt(snaptimes_path).T)
+        snapnums = snapnums.astype(int)  # loadtxt returns float64; keep snapnums as ints so index stays int
     snaptime_dict = dict(zip(snapnums, snaptimes))
 
     do_snapshot_pass = False
