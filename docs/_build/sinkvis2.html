@@ -16,10 +16,11 @@
       <script src="_static/documentation_options.js?v=086c1757"></script>
       <script src="_static/doctools.js?v=9bcbadda"></script>
       <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Custom Tasks In Depth" href="custom_tasks.html" />
+    <link rel="next" title="Camera-File Movies" href="camera_movies.html" />
     <link rel="prev" title="Installation" href="installation.html" /> 
 </head>
 
@@ -57,11 +58,13 @@
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#camera-and-projection">Camera and Projection</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#viewing-direction">Viewing direction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#camera-up-vector">Camera up vector</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#pan-and-tilt">Pan and tilt</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#perspective-projection">Perspective projection</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#centering">Centering</a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#backends">Backends</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#movies">Movies</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#interpolated-movies">Interpolated movies</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#freeze-frame-rotation">Freeze-frame rotation</a></li>
@@ -72,6 +75,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#full-option-reference">Full Option Reference</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="camera_movies.html">Camera-File Movies</a></li>
 <li class="toctree-l1"><a class="reference internal" href="custom_tasks.html">Custom Tasks In Depth</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
 </ul>
@@ -105,22 +109,38 @@
 <p><code class="docutils literal notranslate"><span class="pre">SinkVis2</span></code> renders images and movies from GIZMO simulation snapshots.</p>
 <section id="basic-usage">
 <h2>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading"></a></h2>
-<p>Render surface density images for a sequence of snapshots:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span>
+<p>Tasks (what to plot) are given as positional arguments after the snapshot
+files.  Anything ending in <code class="docutils literal notranslate"><span class="pre">.hdf5</span></code> is treated as a snapshot; everything
+else is a task.  If no tasks are given, <code class="docutils literal notranslate"><span class="pre">SigmaGas</span></code> is the default.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Default surface density</span>
+<span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span>
+
+<span class="c1"># Surface density + temperature slice</span>
+<span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SigmaGas</span> <span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span>
+
+<span class="c1"># Just a temperature slice, higher resolution, inferno colormap</span>
+<span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span> <span class="o">--</span><span class="n">res</span><span class="o">=</span><span class="mi">2048</span> <span class="o">--</span><span class="n">cmap</span><span class="o">=</span><span class="n">inferno</span>
+
+<span class="c1"># Make a movie</span>
+<span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SigmaGas</span> <span class="o">--</span><span class="n">make_movie</span> <span class="o">--</span><span class="n">fps</span><span class="o">=</span><span class="mi">30</span>
 </pre></div>
 </div>
-<p>Render at higher resolution with the <code class="docutils literal notranslate"><span class="pre">inferno</span></code> colormap:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">res</span><span class="o">=</span><span class="mi">2048</span> <span class="o">--</span><span class="n">cmap</span><span class="o">=</span><span class="n">inferno</span>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Shells like zsh interpret parentheses as glob qualifiers.  Quote task
+names that contain parentheses:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(Temperature)&#39;</span>
 </pre></div>
 </div>
-<p>Make a movie:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">make_movie</span> <span class="o">--</span><span class="n">fps</span><span class="o">=</span><span class="mi">30</span>
+<p>Or use the <code class="docutils literal notranslate"><span class="pre">--tasks</span></code> flag, which avoids the issue:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">output</span><span class="o">/</span><span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span>
 </pre></div>
+</div>
 </div>
 </section>
 <section id="built-in-tasks">
 <h2>Built-in Tasks<a class="headerlink" href="#built-in-tasks" title="Link to this heading"></a></h2>
-<p>Select tasks with <code class="docutils literal notranslate"><span class="pre">--tasks</span></code>.  Multiple tasks can be comma-separated.</p>
+<p>The following built-in task names are available:</p>
 <dl class="simple">
 <dt><code class="docutils literal notranslate"><span class="pre">SigmaGas</span></code> (default)</dt><dd><p>Gas surface density map with colorbar.</p>
 </dd>
@@ -130,8 +150,22 @@
 images.</p>
 </dd>
 </dl>
+<figure class="align-center" id="id1">
+<a class="reference internal image-reference" href="_images/sigmagas_default.png"><img alt="_images/sigmagas_default.png" src="_images/sigmagas_default.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Default <code class="docutils literal notranslate"><span class="pre">SigmaGas</span></code> output (viridis colormap).</span><a class="headerlink" href="#id1" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+<figure class="align-center" id="id2">
+<a class="reference internal image-reference" href="_images/sigmagas_inferno.png"><img alt="_images/sigmagas_inferno.png" src="_images/sigmagas_inferno.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Same data with <code class="docutils literal notranslate"><span class="pre">--cmap=inferno</span></code>.</span><a class="headerlink" href="#id2" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 <p>Example:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">SigmaGas</span><span class="p">,</span><span class="n">CoolMap</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="n">SigmaGas</span> <span class="n">CoolMap</span>
 </pre></div>
 </div>
 </section>
@@ -140,32 +174,81 @@ images.</p>
 <p>Beyond the built-in tasks, you can render arbitrary field expressions using
 four render modes:</p>
 <dl class="simple">
-<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Line-of-sight integral of <em>expr</em> (column density).</p>
+<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Surface density of an extensive (conserved) quantity.  <em>expr</em> should
+be a per-particle quantity like <code class="docutils literal notranslate"><span class="pre">Masses</span></code> or <code class="docutils literal notranslate"><span class="pre">Masses*InternalEnergy</span></code>.
+Computes <span class="math notranslate nohighlight">\(\int (f/V)\, dz\)</span> where <span class="math notranslate nohighlight">\(V\)</span> is the cell volume.
+E.g. <code class="docutils literal notranslate"><span class="pre">SurfaceDensity(Masses)</span></code> gives <span class="math notranslate nohighlight">\(\Sigma = \int \rho\, dz\)</span>.</p>
 </dd>
-<dt><code class="docutils literal notranslate"><span class="pre">Projection(expr)</span></code></dt><dd><p>Alias for <code class="docutils literal notranslate"><span class="pre">SurfaceDensity</span></code>.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">Projection(expr)</span></code></dt><dd><p>Line-of-sight integral of a volume density / intensive quantity.
+<em>expr</em> should be a volumetric quantity like <code class="docutils literal notranslate"><span class="pre">Density</span></code>.
+Computes <span class="math notranslate nohighlight">\(\int f\, dz\)</span>.  E.g. <code class="docutils literal notranslate"><span class="pre">Projection(Density)</span></code> also
+gives <span class="math notranslate nohighlight">\(\Sigma\)</span>, and <code class="docutils literal notranslate"><span class="pre">Projection(NumberDensity)</span></code> gives column
+number density.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">ProjectedAverage(expr)</span></code></dt><dd><p>Mass-weighted average of <em>expr</em> along the line of sight.</p>
 </dd>
-<dt><code class="docutils literal notranslate"><span class="pre">Slice(expr)</span></code></dt><dd><p>Midplane slice of <em>expr</em> (anti-aliased at 4x supersampling).</p>
+<dt><code class="docutils literal notranslate"><span class="pre">WeightedVariance(expr)</span></code></dt><dd><p>Mass-weighted projected variance of <em>expr</em>:
+<span class="math notranslate nohighlight">\(\sigma(f) = \sqrt{\langle f^2 \rangle - \langle f \rangle^2}\)</span>,
+where <span class="math notranslate nohighlight">\(\langle \cdot \rangle\)</span> denotes a mass-weighted projected
+average.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">Sigma1D(expr)</span></code></dt><dd><p>Line-of-sight velocity dispersion — the mass-weighted variance of the
+line-of-sight velocity component:
+<span class="math notranslate nohighlight">\(\sigma_\mathrm{1D} = \sqrt{\langle v_z^2 \rangle - \langle v_z \rangle^2}\)</span>.
+The <em>expr</em> argument is ignored (it always uses velocities).</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">Slice(expr)</span></code></dt><dd><p>Midplane slice of <em>expr</em>, with order-1 linear reconstruction in log
+space (for positive quantities) and anti-aliasing via supersampling
+(default 2x, controllable with <code class="docutils literal notranslate"><span class="pre">--supersample</span></code>).</p>
 </dd>
 </dl>
 <p>Expressions can reference any <code class="docutils literal notranslate"><span class="pre">PartType0</span></code> field by name (<code class="docutils literal notranslate"><span class="pre">Masses</span></code>,
 <code class="docutils literal notranslate"><span class="pre">Temperature</span></code>, <code class="docutils literal notranslate"><span class="pre">Density</span></code>, <code class="docutils literal notranslate"><span class="pre">Velocities</span></code>, etc.), use arithmetic
 operators, and call numpy functions.</p>
-<p>Examples:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Temperature slice</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">)</span>
-
-<span class="c1"># Column density of thermal energy</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">SurfaceDensity</span><span class="p">(</span><span class="n">Masses</span><span class="o">*</span><span class="n">InternalEnergy</span><span class="p">)</span>
-
-<span class="c1"># Projected average of log density</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">ProjectedAverage</span><span class="p">(</span><span class="n">log10</span><span class="p">(</span><span class="n">Density</span><span class="p">))</span>
-
-<span class="c1"># Multiple tasks at once</span>
-<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">SigmaGas</span><span class="p">,</span><span class="n">Slice</span><span class="p">(</span><span class="n">Temperature</span><span class="p">),</span><span class="n">Slice</span><span class="p">(</span><span class="n">PlasmaBeta</span><span class="p">)</span>
+<p>Temperature slice:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(Temperature)&#39;</span>
 </pre></div>
 </div>
+<figure class="align-center">
+<a class="reference internal image-reference" href="_images/slice_temperature.png"><img alt="_images/slice_temperature.png" src="_images/slice_temperature.png" style="width: 400px;" />
+</a>
+</figure>
+<p>Thermal energy surface density with magma colormap:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;SurfaceDensity(Masses*InternalEnergy)&#39;</span> <span class="o">--</span><span class="n">cmap</span><span class="o">=</span><span class="n">magma</span>
+</pre></div>
+</div>
+<figure class="align-center">
+<a class="reference internal image-reference" href="_images/surfacedensity_thermal.png"><img alt="_images/surfacedensity_thermal.png" src="_images/surfacedensity_thermal.png" style="width: 400px;" />
+</a>
+</figure>
+<p>Mass-weighted projected average of temperature:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;ProjectedAverage(Temperature)&#39;</span>
+</pre></div>
+</div>
+<figure class="align-center">
+<a class="reference internal image-reference" href="_images/projectedavg_temperature.png"><img alt="_images/projectedavg_temperature.png" src="_images/projectedavg_temperature.png" style="width: 400px;" />
+</a>
+</figure>
+<p>Entropy slice (derived field) with plasma colormap:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(Entropy)&#39;</span> <span class="o">--</span><span class="n">cmap</span><span class="o">=</span><span class="n">plasma</span>
+</pre></div>
+</div>
+<figure class="align-center">
+<a class="reference internal image-reference" href="_images/slice_entropy.png"><img alt="_images/slice_entropy.png" src="_images/slice_entropy.png" style="width: 400px;" />
+</a>
+</figure>
+<p>Line-of-sight velocity dispersion:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Sigma1D(Velocities)&#39;</span> <span class="o">--</span><span class="n">cmap</span><span class="o">=</span><span class="n">magma</span>
+</pre></div>
+</div>
+<figure class="align-center" id="id3">
+<a class="reference internal image-reference" href="_images/sigma1d_velocities.png"><img alt="_images/sigma1d_velocities.png" src="_images/sigma1d_velocities.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Mass-weighted line-of-sight velocity dispersion
+<span class="math notranslate nohighlight">\(\sigma_\mathrm{1D} = \sqrt{\langle v_z^2 \rangle - \langle v_z \rangle^2}\)</span>.</span><a class="headerlink" href="#id3" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 <section id="available-functions-in-expressions">
 <h3>Available Functions in Expressions<a class="headerlink" href="#available-functions-in-expressions" title="Link to this heading"></a></h3>
 <p>The following numpy functions are available in expressions:</p>
@@ -269,12 +352,47 @@ derived fields.</p>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">NumberDensity</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">Density</span> <span class="pre">/</span> <span class="pre">m_p</span></code></p></td>
 </tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Entropy</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Pressure</span> <span class="pre">/</span> <span class="pre">Density**(5/3)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PhotonEnergyDensity_EUV</span></code></p></td>
+<td><p>EUV photon energy density (eV/cm<sup>3</sup>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PhotonEnergyDensity_FUV</span></code></p></td>
+<td><p>FUV photon energy density (eV/cm<sup>3</sup>)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PhotonEnergyDensity_NUV</span></code></p></td>
+<td><p>NUV photon energy density (eV/cm<sup>3</sup>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PhotonEnergyDensity_ONIR</span></code></p></td>
+<td><p>Optical/NIR photon energy density (eV/cm<sup>3</sup>)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PhotonEnergyDensity_FIR</span></code></p></td>
+<td><p>FIR photon energy density (eV/cm<sup>3</sup>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">G0</span></code></p></td>
+<td><p>FUV radiation field in Habing units</p></td>
+</tr>
 </tbody>
 </table>
 <p>Example:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="n">Slice</span><span class="p">(</span><span class="n">PlasmaBeta</span><span class="p">),</span><span class="n">Slice</span><span class="p">(</span><span class="n">MachNumber</span><span class="p">)</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="s1">&#39;Slice(PlasmaBeta)&#39;</span> <span class="s1">&#39;Slice(MachNumber)&#39;</span>
 </pre></div>
 </div>
+<figure class="align-center" id="id4">
+<a class="reference internal image-reference" href="_images/slice_plasmabeta.png"><img alt="_images/slice_plasmabeta.png" src="_images/slice_plasmabeta.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(PlasmaBeta)</span></code> with RdBu_r colormap.</span><a class="headerlink" href="#id4" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+<figure class="align-center" id="id5">
+<a class="reference internal image-reference" href="_images/slice_machnumber.png"><img alt="_images/slice_machnumber.png" src="_images/slice_machnumber.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">Slice(MachNumber)</span></code> with inferno colormap.</span><a class="headerlink" href="#id5" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 </section>
 <section id="field-fallbacks">
 <h3>Field Fallbacks<a class="headerlink" href="#field-fallbacks" title="Link to this heading"></a></h3>
@@ -335,6 +453,23 @@ change:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="nb">dir</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span>   <span class="c1"># view along (1,1,0)</span>
 </pre></div>
 </div>
+<figure class="align-center" id="id6">
+<a class="reference internal image-reference" href="_images/sigmagas_xdir.png"><img alt="_images/sigmagas_xdir.png" src="_images/sigmagas_xdir.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Surface density viewed along the x-axis (<code class="docutils literal notranslate"><span class="pre">--dir=x</span></code>).</span><a class="headerlink" href="#id6" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+</section>
+<section id="camera-up-vector">
+<h3>Camera up vector<a class="headerlink" href="#camera-up-vector" title="Link to this heading"></a></h3>
+<p>By default the up direction is inferred from the viewing direction.  Use
+<code class="docutils literal notranslate"><span class="pre">--camera_up</span></code> to set it explicitly (it will be orthogonalized against
+the viewing direction automatically):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Edge-on disk with rotation axis along z</span>
+<span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="nb">dir</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span> <span class="o">--</span><span class="n">camera_up</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span>
+</pre></div>
+</div>
 </section>
 <section id="pan-and-tilt">
 <h3>Pan and tilt<a class="headerlink" href="#pan-and-tilt" title="Link to this heading"></a></h3>
@@ -342,6 +477,13 @@ change:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">pan</span><span class="o">=</span><span class="mi">45</span> <span class="o">--</span><span class="n">tilt</span><span class="o">=</span><span class="mi">10</span>
 </pre></div>
 </div>
+<figure class="align-center" id="id7">
+<a class="reference internal image-reference" href="_images/sigmagas_pantilt.png"><img alt="_images/sigmagas_pantilt.png" src="_images/sigmagas_pantilt.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Surface density with <code class="docutils literal notranslate"><span class="pre">--pan=45</span> <span class="pre">--tilt=15</span></code>.</span><a class="headerlink" href="#id7" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 </section>
 <section id="perspective-projection">
 <h3>Perspective projection<a class="headerlink" href="#perspective-projection" title="Link to this heading"></a></h3>
@@ -353,6 +495,13 @@ change:</p>
 <section id="centering">
 <h3>Centering<a class="headerlink" href="#centering" title="Link to this heading"></a></h3>
 <p>Control the center of the image:</p>
+<figure class="align-center" id="id8">
+<a class="reference internal image-reference" href="_images/sigmagas_densest.png"><img alt="_images/sigmagas_densest.png" src="_images/sigmagas_densest.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Centered on the densest gas cell with <code class="docutils literal notranslate"><span class="pre">--center=densest</span> <span class="pre">--rmax=5</span></code>.</span><a class="headerlink" href="#id8" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">densest</span>       <span class="c1"># densest gas cell</span>
 <span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">massive</span>        <span class="c1"># most massive star</span>
 <span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">center</span><span class="o">=</span><span class="n">massive</span><span class="o">=</span><span class="mi">3</span>      <span class="c1"># 3rd most massive star</span>
@@ -365,6 +514,32 @@ change:</p>
 field of view (<code class="docutils literal notranslate"><span class="pre">--rmax</span></code>) is determined from the mass-weighted spatial
 extent of the gas.</p>
 </section>
+</section>
+<section id="backends">
+<h2>Backends<a class="headerlink" href="#backends" title="Link to this heading"></a></h2>
+<p>SinkVis2 supports two rendering backends:</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">PIL</span></code> (default)</dt><dd><p>Renders images as raw pixel arrays using PIL/Pillow.  Produces clean
+borderless images suitable for movies, compositing, and publication
+figures.  Overlays (timestamp, size scale, colorbar) are drawn directly
+onto the image.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">matplotlib</span></code></dt><dd><p>Renders using matplotlib with labeled axes, axis ticks, and a standard
+matplotlib colorbar.  Useful for quick inspection and when you want
+coordinate axes on the plot.</p>
+</dd>
+</dl>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SinkVis2</span> <span class="n">snapshot_</span><span class="o">*.</span><span class="n">hdf5</span> <span class="o">--</span><span class="n">backend</span><span class="o">=</span><span class="n">matplotlib</span>
+</pre></div>
+</div>
+<figure class="align-center" id="id9">
+<a class="reference internal image-reference" href="_images/sigmagas_matplotlib.png"><img alt="_images/sigmagas_matplotlib.png" src="_images/sigmagas_matplotlib.png" style="width: 400px;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Surface density rendered with the matplotlib backend, showing labeled
+axes and a standard colorbar.</span><a class="headerlink" href="#id9" title="Link to this image"></a></p>
+</figcaption>
+</figure>
 </section>
 <section id="movies">
 <h2>Movies<a class="headerlink" href="#movies" title="Link to this heading"></a></h2>
@@ -396,10 +571,11 @@ smoother movies:</p>
 <section id="parallelism">
 <h2>Parallelism<a class="headerlink" href="#parallelism" title="Link to this heading"></a></h2>
 <dl class="simple">
-<dt><code class="docutils literal notranslate"><span class="pre">--np</span></code></dt><dd><p>Number of worker processes for processing different snapshots in parallel.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">--np</span></code></dt><dd><p>Number of worker processes for processing different snapshots in parallel.
+Set to <code class="docutils literal notranslate"><span class="pre">-1</span></code> to use all available CPUs.</p>
 </dd>
-<dt><code class="docutils literal notranslate"><span class="pre">--np_render</span></code></dt><dd><p>Number of OpenMP threads per rendering call.  Set to <code class="docutils literal notranslate"><span class="pre">-1</span></code> to use all
-available cores divided by <code class="docutils literal notranslate"><span class="pre">--np</span></code>.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">--np_render</span></code></dt><dd><p>Number of threads per rendering call.  Defaults to <code class="docutils literal notranslate"><span class="pre">-1</span></code>, which uses
+all available cores divided by <code class="docutils literal notranslate"><span class="pre">--np</span></code>.</p>
 </dd>
 </dl>
 <p>Example: 4 snapshot workers, each using 4 render threads:</p>
@@ -423,23 +599,30 @@ temperature, using the AMUSE fresco algorithm.</p>
 <section id="full-option-reference">
 <h2>Full Option Reference<a class="headerlink" href="#full-option-reference" title="Link to this heading"></a></h2>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Usage:
-SinkVis2 &lt;files&gt; ... [options]
+SinkVis2 &lt;args&gt; ... [options]
+
+Positional arguments are split automatically: .hdf5 files are snapshots,
+everything else is a task (e.g. SigmaGas, Slice(Temperature)).
+If no tasks are given, defaults to SigmaGas.
 
 Options:
     -h --help                         Show this screen.
-    --tasks=&lt;task1,task2...&gt;           Comma-separated list of tasks [default: SigmaGas]
+    --tasks=&lt;task1,task2...&gt;           Alternative to positional task args
     --rmax=&lt;pc&gt;                        Half-width of the field of view
     --res=&lt;N&gt;                          Image resolution in pixels [default: 1024]
     --cmap=&lt;name&gt;                      Colormap name [default: viridis]
     --limits=&lt;min,max&gt;                 Colormap dynamic range
     --center=&lt;s&gt;                       Image center [default: None]
     --dir=&lt;x,y,z&gt;                      Viewing direction [default: z]
+    --camera_up=&lt;x,y,z&gt;                Camera up vector [default: None]
     --pan=&lt;deg&gt;                        Pan angle in degrees [default: 0]
     --tilt=&lt;deg&gt;                       Tilt angle in degrees [default: 0]
     --camera_distance=&lt;D&gt;              Camera distance for perspective [default: inf]
-    --np=&lt;N&gt;                           Number of worker processes [default: 1]
-    --np_render=&lt;N&gt;                    Render threads per process [default: 1]
+    --target_time=&lt;f&gt;                  Render single image at this simulation time
+    --np=&lt;N&gt;                           Number of worker processes (-1 = all CPUs) [default: 1]
+    --np_render=&lt;N&gt;                    Render threads (-1 = auto) [default: -1]
     --interp_fac=&lt;N&gt;                   Interpolated frames per snapshot [default: 1]
+    --supersample=&lt;N&gt;                  Anti-aliasing factor for Slice [default: 2]
     --make_movie                       Encode frames into an mp4 movie
     --fps=&lt;N&gt;                          Movie frame rate [default: 24]
     --outputfolder=&lt;name&gt;              Output directory [default: .]
@@ -461,7 +644,6 @@ Options:
     --cool_cmap=&lt;name&gt;                CoolMap colormap [default: magma]
     --v_limits=&lt;min,max&gt;              CoolMap velocity dispersion range
     --SHO_RGB_norm=&lt;f&gt;                Narrowband normalization [default: 0.0]
-    --highlight_wind=&lt;f&gt;              Wind particle mass boost [default: 1]
     --id_mask=&lt;file&gt;                  Particle ID filter (.npy file)
 </pre></div>
 </div>
@@ -473,7 +655,7 @@ Options:
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="installation.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="custom_tasks.html" class="btn btn-neutral float-right" title="Custom Tasks In Depth" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="camera_movies.html" class="btn btn-neutral float-right" title="Camera-File Movies" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

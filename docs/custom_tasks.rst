@@ -26,12 +26,19 @@ Render Modes
 ------------
 
 ``SurfaceDensity(expr)``
-    Computes :math:`\int \mathtt{expr}\, dz` along each sightline using
-    SPH kernel integration (``meshoid.GridSurfaceDensity``).  Colormap
-    limits are chosen with mass-weighted max-entropy optimization.
+    Computes the surface density of an extensive (conserved) quantity
+    :math:`\int (f/V)\, dz` via ``Meshoid.SurfaceDensity``.
+    *expr* should be a per-particle quantity (e.g. ``Masses``,
+    ``Masses*InternalEnergy``).  For example, ``SurfaceDensity(Masses)``
+    gives :math:`\Sigma = \int \rho\, dz`.  Colormap limits are chosen
+    with mass-weighted percentiles.
 
 ``Projection(expr)``
-    Alias for ``SurfaceDensity``.
+    Computes the line-of-sight integral of a volume density / intensive
+    quantity :math:`\int f\, dz` via ``Meshoid.Projection``.
+    *expr* should be a volumetric quantity (e.g. ``Density``,
+    ``NumberDensity``).  For example, ``Projection(Density)`` also gives
+    :math:`\Sigma`.  Colormap limits use mass-weighted percentiles.
 
 ``ProjectedAverage(expr)``
     Computes the mass-weighted average
@@ -39,10 +46,24 @@ Render Modes
     via ``Meshoid.ProjectedAverage``.  Colormap limits use uniform
     (per-pixel) weighting.
 
+``WeightedVariance(expr)``
+    Computes the mass-weighted projected variance
+    :math:`\sigma(f) = \sqrt{\langle f^2 \rangle - \langle f \rangle^2}`.
+    Uses two ``Meshoid.ProjectedAverage`` calls internally.  Colormap
+    limits use uniform weighting.
+
+``Sigma1D(expr)``
+    Line-of-sight velocity dispersion.  Computes
+    :math:`\sigma_\mathrm{1D} = \sqrt{\langle v_z^2 \rangle - \langle v_z \rangle^2}`
+    where :math:`v_z` is the line-of-sight velocity after camera
+    coordinate transformation.  The *expr* argument is unused.
+
 ``Slice(expr)``
     Evaluates *expr* on the midplane (z = 0 in the camera frame) using
-    ``Meshoid.Slice``.  The slice is rendered at 4x supersampling and
-    downsampled to anti-alias Voronoi cell boundaries.  Colormap limits
+    ``Meshoid.Slice`` with order-1 linear reconstruction.  Positive
+    quantities are reconstructed in log space to guarantee positivity.
+    Anti-aliased via supersampling (default 2x, set with
+    ``--supersample``).  Colormap limits
     use uniform weighting.
 
 Colormap Behavior

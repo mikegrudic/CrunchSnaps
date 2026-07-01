@@ -1,7 +1,11 @@
 Installation
 ============
 
-Install from source::
+Install from PyPI::
+
+    pip install CrunchSnaps
+
+Or from source::
 
     git clone https://github.com/mikegrudic/CrunchSnaps
     cd CrunchSnaps

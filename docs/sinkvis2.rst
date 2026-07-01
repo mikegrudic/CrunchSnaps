@@ -6,22 +6,39 @@ SinkVis2 Command-Line Tool
 Basic Usage
 -----------
 
-Render surface density images for a sequence of snapshots::
+Tasks (what to plot) are given as positional arguments after the snapshot
+files.  Anything ending in ``.hdf5`` is treated as a snapshot; everything
+else is a task.  If no tasks are given, ``SigmaGas`` is the default.
 
+::
+
+    # Default surface density
     SinkVis2 output/snapshot_*.hdf5
 
-Render at higher resolution with the ``inferno`` colormap::
+    # Surface density + temperature slice
+    SinkVis2 output/snapshot_*.hdf5 SigmaGas Slice(Temperature)
 
-    SinkVis2 output/snapshot_*.hdf5 --res=2048 --cmap=inferno
+    # Just a temperature slice, higher resolution, inferno colormap
+    SinkVis2 output/snapshot_*.hdf5 Slice(Temperature) --res=2048 --cmap=inferno
 
-Make a movie::
+    # Make a movie
+    SinkVis2 output/snapshot_*.hdf5 SigmaGas --make_movie --fps=30
 
-    SinkVis2 output/snapshot_*.hdf5 --make_movie --fps=30
+.. note::
+
+   Shells like zsh interpret parentheses as glob qualifiers.  Quote task
+   names that contain parentheses::
+
+       SinkVis2 output/snapshot_*.hdf5 'Slice(Temperature)'
+
+   Or use the ``--tasks`` flag, which avoids the issue::
+
+       SinkVis2 output/snapshot_*.hdf5 --tasks=Slice(Temperature)
 
 Built-in Tasks
 --------------
 
-Select tasks with ``--tasks``.  Multiple tasks can be comma-separated.
+The following built-in task names are available:
 
 ``SigmaGas`` (default)
     Gas surface density map with colorbar.
@@ -33,9 +50,21 @@ Select tasks with ``--tasks``.  Multiple tasks can be comma-separated.
     Narrowband SII/H-alpha/OIII composite resembling Hubble SHO palette
     images.
 
+.. figure:: _static/examples/sigmagas_default.png
+   :width: 400px
+   :align: center
+
+   Default ``SigmaGas`` output (viridis colormap).
+
+.. figure:: _static/examples/sigmagas_inferno.png
+   :width: 400px
+   :align: center
+
+   Same data with ``--cmap=inferno``.
+
 Example::
 
-    SinkVis2 snapshot_*.hdf5 --tasks=SigmaGas,CoolMap
+    SinkVis2 snapshot_*.hdf5 SigmaGas CoolMap
 
 Custom Field Tasks
 ------------------
@@ -44,34 +73,84 @@ Beyond the built-in tasks, you can render arbitrary field expressions using
 four render modes:
 
 ``SurfaceDensity(expr)``
-    Line-of-sight integral of *expr* (column density).
+    Surface density of an extensive (conserved) quantity.  *expr* should
+    be a per-particle quantity like ``Masses`` or ``Masses*InternalEnergy``.
+    Computes :math:`\int (f/V)\, dz` where :math:`V` is the cell volume.
+    E.g. ``SurfaceDensity(Masses)`` gives :math:`\Sigma = \int \rho\, dz`.
 
 ``Projection(expr)``
-    Alias for ``SurfaceDensity``.
+    Line-of-sight integral of a volume density / intensive quantity.
+    *expr* should be a volumetric quantity like ``Density``.
+    Computes :math:`\int f\, dz`.  E.g. ``Projection(Density)`` also
+    gives :math:`\Sigma`, and ``Projection(NumberDensity)`` gives column
+    number density.
 
 ``ProjectedAverage(expr)``
     Mass-weighted average of *expr* along the line of sight.
 
+``WeightedVariance(expr)``
+    Mass-weighted projected variance of *expr*:
+    :math:`\sigma(f) = \sqrt{\langle f^2 \rangle - \langle f \rangle^2}`,
+    where :math:`\langle \cdot \rangle` denotes a mass-weighted projected
+    average.
+
+``Sigma1D(expr)``
+    Line-of-sight velocity dispersion — the mass-weighted variance of the
+    line-of-sight velocity component:
+    :math:`\sigma_\mathrm{1D} = \sqrt{\langle v_z^2 \rangle - \langle v_z \rangle^2}`.
+    The *expr* argument is ignored (it always uses velocities).
+
 ``Slice(expr)``
-    Midplane slice of *expr* (anti-aliased at 4x supersampling).
+    Midplane slice of *expr*, with order-1 linear reconstruction in log
+    space (for positive quantities) and anti-aliasing via supersampling
+    (default 2x, controllable with ``--supersample``).
 
 Expressions can reference any ``PartType0`` field by name (``Masses``,
 ``Temperature``, ``Density``, ``Velocities``, etc.), use arithmetic
 operators, and call numpy functions.
 
-Examples::
+Temperature slice::
 
-    # Temperature slice
-    SinkVis2 snapshot_*.hdf5 --tasks=Slice(Temperature)
+    SinkVis2 snapshot_*.hdf5 'Slice(Temperature)'
 
-    # Column density of thermal energy
-    SinkVis2 snapshot_*.hdf5 --tasks=SurfaceDensity(Masses*InternalEnergy)
+.. figure:: _static/examples/slice_temperature.png
+   :width: 400px
+   :align: center
 
-    # Projected average of log density
-    SinkVis2 snapshot_*.hdf5 --tasks=ProjectedAverage(log10(Density))
+Thermal energy surface density with magma colormap::
 
-    # Multiple tasks at once
-    SinkVis2 snapshot_*.hdf5 --tasks=SigmaGas,Slice(Temperature),Slice(PlasmaBeta)
+    SinkVis2 snapshot_*.hdf5 'SurfaceDensity(Masses*InternalEnergy)' --cmap=magma
+
+.. figure:: _static/examples/surfacedensity_thermal.png
+   :width: 400px
+   :align: center
+
+Mass-weighted projected average of temperature::
+
+    SinkVis2 snapshot_*.hdf5 'ProjectedAverage(Temperature)'
+
+.. figure:: _static/examples/projectedavg_temperature.png
+   :width: 400px
+   :align: center
+
+Entropy slice (derived field) with plasma colormap::
+
+    SinkVis2 snapshot_*.hdf5 'Slice(Entropy)' --cmap=plasma
+
+.. figure:: _static/examples/slice_entropy.png
+   :width: 400px
+   :align: center
+
+Line-of-sight velocity dispersion::
+
+    SinkVis2 snapshot_*.hdf5 'Sigma1D(Velocities)' --cmap=magma
+
+.. figure:: _static/examples/sigma1d_velocities.png
+   :width: 400px
+   :align: center
+
+   Mass-weighted line-of-sight velocity dispersion
+   :math:`\sigma_\mathrm{1D} = \sqrt{\langle v_z^2 \rangle - \langle v_z \rangle^2}`.
 
 Available Functions in Expressions
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -147,10 +226,36 @@ derived fields.
      - ``norm(MagneticField)**2 / (8*pi) * Masses / Density``
    * - ``NumberDensity``
      - ``Density / m_p``
+   * - ``Entropy``
+     - ``Pressure / Density**(5/3)``
+   * - ``PhotonEnergyDensity_EUV``
+     - EUV photon energy density (eV/cm\ :sup:`3`)
+   * - ``PhotonEnergyDensity_FUV``
+     - FUV photon energy density (eV/cm\ :sup:`3`)
+   * - ``PhotonEnergyDensity_NUV``
+     - NUV photon energy density (eV/cm\ :sup:`3`)
+   * - ``PhotonEnergyDensity_ONIR``
+     - Optical/NIR photon energy density (eV/cm\ :sup:`3`)
+   * - ``PhotonEnergyDensity_FIR``
+     - FIR photon energy density (eV/cm\ :sup:`3`)
+   * - ``G0``
+     - FUV radiation field in Habing units
 
 Example::
 
-    SinkVis2 snapshot_*.hdf5 --tasks=Slice(PlasmaBeta),Slice(MachNumber)
+    SinkVis2 snapshot_*.hdf5 'Slice(PlasmaBeta)' 'Slice(MachNumber)'
+
+.. figure:: _static/examples/slice_plasmabeta.png
+   :width: 400px
+   :align: center
+
+   ``Slice(PlasmaBeta)`` with RdBu_r colormap.
+
+.. figure:: _static/examples/slice_machnumber.png
+   :width: 400px
+   :align: center
+
+   ``Slice(MachNumber)`` with inferno colormap.
 
 Field Fallbacks
 ^^^^^^^^^^^^^^^
@@ -205,12 +310,34 @@ Arbitrary directions can be specified as a vector::
 
     SinkVis2 snapshot_*.hdf5 --dir=1,1,0   # view along (1,1,0)
 
+.. figure:: _static/examples/sigmagas_xdir.png
+   :width: 400px
+   :align: center
+
+   Surface density viewed along the x-axis (``--dir=x``).
+
+Camera up vector
+^^^^^^^^^^^^^^^^
+
+By default the up direction is inferred from the viewing direction.  Use
+``--camera_up`` to set it explicitly (it will be orthogonalized against
+the viewing direction automatically)::
+
+    # Edge-on disk with rotation axis along z
+    SinkVis2 snapshot_*.hdf5 --dir=0,1,0 --camera_up=0,0,1
+
 Pan and tilt
 ^^^^^^^^^^^^
 
 Apply rotation about the Y and X axes::
 
     SinkVis2 snapshot_*.hdf5 --pan=45 --tilt=10
+
+.. figure:: _static/examples/sigmagas_pantilt.png
+   :width: 400px
+   :align: center
+
+   Surface density with ``--pan=45 --tilt=15``.
 
 Perspective projection
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -222,7 +349,15 @@ Set a finite camera distance for perspective (non-orthographic) rendering::
 Centering
 ^^^^^^^^^
 
-Control the center of the image::
+Control the center of the image:
+
+.. figure:: _static/examples/sigmagas_densest.png
+   :width: 400px
+   :align: center
+
+   Centered on the densest gas cell with ``--center=densest --rmax=5``.
+
+::
 
     SinkVis2 snapshot_*.hdf5 --center=densest       # densest gas cell
     SinkVis2 snapshot_*.hdf5 --center=massive        # most massive star
@@ -234,6 +369,33 @@ Control the center of the image::
 When not specified, the default center is the box center, and the default
 field of view (``--rmax``) is determined from the mass-weighted spatial
 extent of the gas.
+
+Backends
+--------
+
+SinkVis2 supports two rendering backends:
+
+``PIL`` (default)
+    Renders images as raw pixel arrays using PIL/Pillow.  Produces clean
+    borderless images suitable for movies, compositing, and publication
+    figures.  Overlays (timestamp, size scale, colorbar) are drawn directly
+    onto the image.
+
+``matplotlib``
+    Renders using matplotlib with labeled axes, axis ticks, and a standard
+    matplotlib colorbar.  Useful for quick inspection and when you want
+    coordinate axes on the plot.
+
+::
+
+    SinkVis2 snapshot_*.hdf5 --backend=matplotlib
+
+.. figure:: _static/examples/sigmagas_matplotlib.png
+   :width: 400px
+   :align: center
+
+   Surface density rendered with the matplotlib backend, showing labeled
+   axes and a standard colorbar.
 
 Movies
 ------
@@ -268,10 +430,11 @@ Parallelism
 
 ``--np``
     Number of worker processes for processing different snapshots in parallel.
+    Set to ``-1`` to use all available CPUs.
 
 ``--np_render``
-    Number of OpenMP threads per rendering call.  Set to ``-1`` to use all
-    available cores divided by ``--np``.
+    Number of threads per rendering call.  Defaults to ``-1``, which uses
+    all available cores divided by ``--np``.
 
 Example: 4 snapshot workers, each using 4 render threads::
 
@@ -297,23 +460,30 @@ Full Option Reference
 .. code-block:: text
 
     Usage:
-    SinkVis2 <files> ... [options]
+    SinkVis2 <args> ... [options]
+
+    Positional arguments are split automatically: .hdf5 files are snapshots,
+    everything else is a task (e.g. SigmaGas, Slice(Temperature)).
+    If no tasks are given, defaults to SigmaGas.
 
     Options:
         -h --help                         Show this screen.
-        --tasks=<task1,task2...>           Comma-separated list of tasks [default: SigmaGas]
+        --tasks=<task1,task2...>           Alternative to positional task args
         --rmax=<pc>                        Half-width of the field of view
         --res=<N>                          Image resolution in pixels [default: 1024]
         --cmap=<name>                      Colormap name [default: viridis]
         --limits=<min,max>                 Colormap dynamic range
         --center=<s>                       Image center [default: None]
         --dir=<x,y,z>                      Viewing direction [default: z]
+        --camera_up=<x,y,z>                Camera up vector [default: None]
         --pan=<deg>                        Pan angle in degrees [default: 0]
         --tilt=<deg>                       Tilt angle in degrees [default: 0]
         --camera_distance=<D>              Camera distance for perspective [default: inf]
-        --np=<N>                           Number of worker processes [default: 1]
-        --np_render=<N>                    Render threads per process [default: 1]
+        --target_time=<f>                  Render single image at this simulation time
+        --np=<N>                           Number of worker processes (-1 = all CPUs) [default: 1]
+        --np_render=<N>                    Render threads (-1 = auto) [default: -1]
         --interp_fac=<N>                   Interpolated frames per snapshot [default: 1]
+        --supersample=<N>                  Anti-aliasing factor for Slice [default: 2]
         --make_movie                       Encode frames into an mp4 movie
         --fps=<N>                          Movie frame rate [default: 24]
         --outputfolder=<name>              Output directory [default: .]
@@ -335,5 +505,4 @@ Full Option Reference
         --cool_cmap=<name>                CoolMap colormap [default: magma]
         --v_limits=<min,max>              CoolMap velocity dispersion range
         --SHO_RGB_norm=<f>                Narrowband normalization [default: 0.0]
-        --highlight_wind=<f>              Wind particle mass boost [default: 1]
         --id_mask=<file>                  Particle ID filter (.npy file)

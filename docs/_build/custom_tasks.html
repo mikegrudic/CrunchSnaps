@@ -21,7 +21,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="API Reference" href="api.html" />
-    <link rel="prev" title="SinkVis2 Command-Line Tool" href="sinkvis2.html" /> 
+    <link rel="prev" title="Camera-File Movies" href="camera_movies.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -47,6 +47,7 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sinkvis2.html">SinkVis2 Command-Line Tool</a></li>
+<li class="toctree-l1"><a class="reference internal" href="camera_movies.html">Camera-File Movies</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Custom Tasks In Depth</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#expression-evaluation">Expression Evaluation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#render-modes">Render Modes</a></li>
@@ -107,20 +108,39 @@ in multiple places does not cause redundant computation.</p>
 <section id="render-modes">
 <h2>Render Modes<a class="headerlink" href="#render-modes" title="Link to this heading"></a></h2>
 <dl class="simple">
-<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Computes <span class="math notranslate nohighlight">\(\int \mathtt{expr}\, dz\)</span> along each sightline using
-SPH kernel integration (<code class="docutils literal notranslate"><span class="pre">meshoid.GridSurfaceDensity</span></code>).  Colormap
-limits are chosen with mass-weighted max-entropy optimization.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code></dt><dd><p>Computes the surface density of an extensive (conserved) quantity
+<span class="math notranslate nohighlight">\(\int (f/V)\, dz\)</span> via <code class="docutils literal notranslate"><span class="pre">Meshoid.SurfaceDensity</span></code>.
+<em>expr</em> should be a per-particle quantity (e.g. <code class="docutils literal notranslate"><span class="pre">Masses</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Masses*InternalEnergy</span></code>).  For example, <code class="docutils literal notranslate"><span class="pre">SurfaceDensity(Masses)</span></code>
+gives <span class="math notranslate nohighlight">\(\Sigma = \int \rho\, dz\)</span>.  Colormap limits are chosen
+with mass-weighted percentiles.</p>
 </dd>
-<dt><code class="docutils literal notranslate"><span class="pre">Projection(expr)</span></code></dt><dd><p>Alias for <code class="docutils literal notranslate"><span class="pre">SurfaceDensity</span></code>.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">Projection(expr)</span></code></dt><dd><p>Computes the line-of-sight integral of a volume density / intensive
+quantity <span class="math notranslate nohighlight">\(\int f\, dz\)</span> via <code class="docutils literal notranslate"><span class="pre">Meshoid.Projection</span></code>.
+<em>expr</em> should be a volumetric quantity (e.g. <code class="docutils literal notranslate"><span class="pre">Density</span></code>,
+<code class="docutils literal notranslate"><span class="pre">NumberDensity</span></code>).  For example, <code class="docutils literal notranslate"><span class="pre">Projection(Density)</span></code> also gives
+<span class="math notranslate nohighlight">\(\Sigma\)</span>.  Colormap limits use mass-weighted percentiles.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">ProjectedAverage(expr)</span></code></dt><dd><p>Computes the mass-weighted average
 <span class="math notranslate nohighlight">\(\int \rho\, \mathtt{expr}\, dz \;/\; \int \rho\, dz\)</span>
 via <code class="docutils literal notranslate"><span class="pre">Meshoid.ProjectedAverage</span></code>.  Colormap limits use uniform
 (per-pixel) weighting.</p>
 </dd>
+<dt><code class="docutils literal notranslate"><span class="pre">WeightedVariance(expr)</span></code></dt><dd><p>Computes the mass-weighted projected variance
+<span class="math notranslate nohighlight">\(\sigma(f) = \sqrt{\langle f^2 \rangle - \langle f \rangle^2}\)</span>.
+Uses two <code class="docutils literal notranslate"><span class="pre">Meshoid.ProjectedAverage</span></code> calls internally.  Colormap
+limits use uniform weighting.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">Sigma1D(expr)</span></code></dt><dd><p>Line-of-sight velocity dispersion.  Computes
+<span class="math notranslate nohighlight">\(\sigma_\mathrm{1D} = \sqrt{\langle v_z^2 \rangle - \langle v_z \rangle^2}\)</span>
+where <span class="math notranslate nohighlight">\(v_z\)</span> is the line-of-sight velocity after camera
+coordinate transformation.  The <em>expr</em> argument is unused.</p>
+</dd>
 <dt><code class="docutils literal notranslate"><span class="pre">Slice(expr)</span></code></dt><dd><p>Evaluates <em>expr</em> on the midplane (z = 0 in the camera frame) using
-<code class="docutils literal notranslate"><span class="pre">Meshoid.Slice</span></code>.  The slice is rendered at 4x supersampling and
-downsampled to anti-alias Voronoi cell boundaries.  Colormap limits
+<code class="docutils literal notranslate"><span class="pre">Meshoid.Slice</span></code> with order-1 linear reconstruction.  Positive
+quantities are reconstructed in log space to guarantee positivity.
+Anti-aliased via supersampling (default 2x, set with
+<code class="docutils literal notranslate"><span class="pre">--supersample</span></code>).  Colormap limits
 use uniform weighting.</p>
 </dd>
 </dl>
@@ -232,7 +252,7 @@ The snapshot value is always preferred when available:</p>
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="sinkvis2.html" class="btn btn-neutral float-left" title="SinkVis2 Command-Line Tool" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="camera_movies.html" class="btn btn-neutral float-left" title="Camera-File Movies" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="api.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

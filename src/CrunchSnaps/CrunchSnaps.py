@@ -33,6 +33,10 @@ def DoTasksForSimulation(
     if len(snaps) == 0 or len(task_types) == 0:
         return  # no work to do so just quit
 
+    # Resolve nproc=-1 to use all available CPUs
+    if nproc < 0:
+        nproc = os.cpu_count() or 1
+
     # Resolve threads=-1 to an actual count: total cores / nproc
     if nthreads < 0:
         nthreads = max(1, (os.cpu_count() or 1) // nproc)
@@ -471,6 +475,10 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None, sort_by_
                 snapdata[field] = np.int_(F[read_field][:])
             else:
                 snapdata[field] = np.float32(F[read_field][:])
+
+            if "Coordinates" in field:
+                boxsize = snapdata["Header"]["BoxSize"]
+                np.mod(snapdata[field], boxsize, out=snapdata[field])
 
             if cosmological:
                 ascale = time

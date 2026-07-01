@@ -98,6 +98,7 @@ class SinkVis(Task):
             "SHO_RGB_norm": 0,
             "outflow_only": False,
             "no_colorbar": False,
+            "order": 0,
         }
 
         self.AssignDefaultParams()
@@ -124,6 +125,7 @@ class SinkVis(Task):
             "realstars_max_lum",
             "realstars_lum_exp",
             "realstars_opacity",
+            "order",
         ]
         dump = {}
         for k in self.params_that_affect_maps:
@@ -191,7 +193,10 @@ class SinkVis(Task):
                 "PartType0/KernelMaxRadius",
             ]
         if any((self.params[k] for k in ("center", "center_on_star", "center_on_ID", "center_on_densest"))):
-            self.RequiredSnapdata += ["PartType0/Density", "PartType0/Coordinates"]
+            self.RequiredSnapdata += [
+                "PartType0/Density", "PartType0/Coordinates",
+                "PartType0/Masses", "PartType0/KernelMaxRadius",
+            ]
         if self.params["outflow_only"]:
             self.RequiredSnapdata += ["PartType0/Velocities", "PartType5/Velocities"]
         # check if we have maps already saved
@@ -380,17 +385,26 @@ class SinkVis(Task):
     def AddTimestampToImage(self, header):
         if self.params["no_timestamp"]:
             return
-        if "UnitLength_In_CGS" in header.keys():
-            unit_time_in_s = header["UnitLength_In_CGS"] / header["UnitVelocity_In_CGS"]
+        # Detect cosmological simulations: Time is scale factor, show redshift
+        z = header.get("Redshift", 0)
+        time = self.params["Time"]
+        if "Redshift" in header and abs(time * (1 + z) - 1.0) < 1e-6:
+            if z < 10:
+                time_text = "z=%.2g" % z
+            else:
+                time_text = "z=%.3g" % z
         else:
-            unit_time_in_s = _au.kpc.to(_au.cm) / (_au.km.to(_au.cm))  # kpc/(km/s) in seconds
-        time_Myr = (self.params["Time"] - self.params["time_offset"]) * unit_time_in_s / _au.Myr.to(_au.s)
-        if time_Myr >= 1e-2:
-            time_text = "%3.2gMyr" % (time_Myr)
-        elif time_Myr >= 1e-4:
-            time_text = "%3.2gkyr" % (time_Myr * 1e3)
-        else:
-            time_text = "%3.2gyr" % (time_Myr * 1e6)
+            if "UnitLength_In_CGS" in header.keys():
+                unit_time_in_s = header["UnitLength_In_CGS"] / header["UnitVelocity_In_CGS"]
+            else:
+                unit_time_in_s = _au.kpc.to(_au.cm) / (_au.km.to(_au.cm))
+            time_Myr = time * unit_time_in_s / _au.Myr.to(_au.s)
+            if time_Myr >= 1e-2:
+                time_text = "%3.2gMyr" % (time_Myr)
+            elif time_Myr >= 1e-4:
+                time_text = "%3.2gkyr" % (time_Myr * 1e3)
+            else:
+                time_text = "%3.2gyr" % (time_Myr * 1e6)
 
         if self.params["backend"] == "PIL":
             from PIL import ImageDraw
@@ -423,9 +437,10 @@ class SinkVis(Task):
         gridres = self.params["res"]
         font = _get_font(gridres // 12)
         if "UnitLength_In_CGS" in header.keys():
-            r = self.params["rmax"] * header["UnitLength_In_CGS"] / _au.pc.to(_au.cm)  # in pc
+            UL = header["UnitLength_In_CGS"]
         else:
-            r = self.params["rmax"]
+            UL = _au.kpc.to(_au.cm)  # GADGET default: kpc
+        r = self.params["rmax"] * UL / _au.pc.to(_au.cm)  # in pc
         if self.params["camera_distance"] < np.inf:
             r = self.params["rmax"] * self.params["camera_distance"]  # * self.params["unit_scalefac"]
         if r * 2 > 1000:
@@ -568,7 +583,10 @@ class SinkVis(Task):
 
         match self.params["center"]:
             case "densest":
-                rho = snapdata["PartType0/Masses"] / snapdata["PartType0/KernelMaxRadius"] ** 3
+                if "PartType0/Density" in snapdata and snapdata["PartType0/Density"] is not None:
+                    rho = snapdata["PartType0/Density"]
+                else:
+                    rho = snapdata["PartType0/Masses"] / snapdata["PartType0/KernelMaxRadius"] ** 3
                 self.params["center"] = snapdata["PartType0/Coordinates"][rho.argmax()]
             case "median":
                 self.params["center"] = np.median(snapdata["PartType0/Coordinates"], axis=0)
@@ -582,7 +600,10 @@ class SinkVis(Task):
                         snapdata["PartType5/Sink_Mass"].argsort()[::-1]
                     ][num - 1]
                 else:
-                    rho = snapdata["PartType0/Masses"] / snapdata["PartType0/KernelMaxRadius"] ** 3
+                    if "PartType0/Density" in snapdata and snapdata["PartType0/Density"] is not None:
+                        rho = snapdata["PartType0/Density"]
+                    else:
+                        rho = snapdata["PartType0/Masses"] / snapdata["PartType0/KernelMaxRadius"] ** 3
                     self.params["center"] = snapdata["PartType0/Coordinates"][rho.argmax()]
             case x if "ID" in x:
                 if "=" in self.params["center"]:
@@ -679,13 +700,13 @@ class SinkVis(Task):
             rotation=rotation, rotation_mode="anchor",
         )
         buf = io.BytesIO()
-        tmp_fig.savefig(buf, format="png", bbox_inches="tight", transparent=True, pad_inches=0.01, dpi=dpi)
+        tmp_fig.savefig(buf, format="png", bbox_inches="tight", transparent=True, pad_inches=0.05, dpi=dpi)
         plt.close(tmp_fig)
         buf.seek(0)
         return Image.open(buf).convert("RGBA")
 
     def _add_colorbar_to_image(self, vmin, vmax, label=None, log_scale=True):
-        """Overlay a vertical colorbar on the in-memory PIL image."""
+        """Overlay a horizontal colorbar in the bottom-right of the in-memory PIL image."""
         from PIL import Image, ImageDraw
         from matplotlib import pyplot as plt
 
@@ -697,34 +718,72 @@ class SinkVis(Task):
         img = self._pil_image
         W, H = img.size
         cmap = plt.get_cmap(self.params["cmap"])
+        font_size = max(6, W // 80)
+        tick_gap = 3
 
-        # vertical colorbar geometry — right side, top-aligned, with room for tick labels
-        margin = int(W * 0.20)
-        bar_w = max(int(W * 0.025), 6)
-        bar_h = int(H * 0.45)
-        bar_x1 = W - margin
-        bar_y1 = int(H * 0.08)
-        bar_x2 = bar_x1 + bar_w
-        bar_y2 = bar_y1 + bar_h
+        # Compute tick values — integer powers of 10 between vmin and vmax,
+        # dropping any that would overlap with the endpoint labels
+        log_vmin, log_vmax = np.log10(vmin), np.log10(vmax)
+        log_range = log_vmax - log_vmin
+        tick_values = [vmin, vmax]
+        tick_exp_min = int(np.ceil(log_vmin))
+        tick_exp_max = int(np.floor(log_vmax))
+        # Require at least 15% of the bar between any two ticks
+        min_gap = 0.15
+        for e in range(tick_exp_min, tick_exp_max + 1):
+            tv = 10.0**e
+            frac = (e - log_vmin) / log_range
+            if frac > min_gap and frac < (1 - min_gap):
+                tick_values.append(tv)
+        tick_values.sort()
 
-        # sample image brightness in the colorbar region to pick contrasting color
-        crop = (max(0, bar_x1 - int(W * 0.15)), max(0, bar_y1), min(W, bar_x2), min(H, bar_y2))
+        # Format ticks
+        def _format_tick(tv):
+            exp = int(np.floor(np.log10(np.abs(tv))))
+            coeff = tv / 10**exp
+            if abs(coeff - 1.0) < 0.01:
+                return r"$10^{%d}$" % exp
+            return r"$%.2g\times10^{%d}$" % (coeff, exp)
+
+        tick_labels_text = [_format_tick(tv) for tv in tick_values]
+
+        # Measure tick labels to size the bar
+        sample = self._render_latex_label(r"$10^{3}$", font_size, "#FFFFFF")
+        tick_h = sample.size[1]
+        max_tick_w = max(
+            self._render_latex_label(t, font_size, "#FFFFFF").size[0]
+            for t in tick_labels_text
+        )
+
+        # Horizontal bar geometry — bottom right
+        bar_h = max(int(H * 0.02), 6)
+        bar_w = int(W * 0.35)
+        margin_r = max(int(W * 0.04), 8)
+        margin_b = max(int(H * 0.04), 8)
+        bar_x2 = W - margin_r
+        bar_x1 = bar_x2 - bar_w
+        bar_y2 = H - margin_b
+        bar_y1 = bar_y2 - bar_h
+
+        # Sample image brightness to pick contrasting color
+        crop = (max(0, bar_x1), max(0, bar_y1 - tick_h - 10),
+                min(W, bar_x2), min(H, bar_y2 + tick_h + 10))
         region = np.array(img.crop(crop))
         luminance = 0.299 * region[:, :, 0] + 0.587 * region[:, :, 1] + 0.114 * region[:, :, 2]
         text_color = "#FFFFFF" if luminance.mean() < 140 else "#000000"
 
-        # draw the vertical color gradient bar (top = vmax, bottom = vmin)
-        gradient = cmap(np.linspace(0, 1, bar_h))[::-1, :3]  # flip so top=vmax
-        gradient_col = (gradient * 255).astype(np.uint8)[:, None, :]  # (bar_h, 1, 3)
-        bar_arr = np.tile(gradient_col, (1, bar_w, 1))  # (bar_h, bar_w, 3)
+        # Draw horizontal gradient bar (left = vmin, right = vmax)
+        gradient = cmap(np.linspace(0, 1, bar_w))[:, :3]
+        gradient_row = (gradient * 255).astype(np.uint8)[None, :, :]
+        bar_arr = np.tile(gradient_row, (bar_h, 1, 1))
         bar_img = Image.fromarray(bar_arr, "RGB").convert("RGBA")
         img.paste(bar_img, (bar_x1, bar_y1))
 
-        # draw border
+        # Border
         draw = ImageDraw.Draw(img)
         draw.rectangle([bar_x1, bar_y1, bar_x2, bar_y2], outline=text_color, width=1)
 
-        # tick labels to the right of the bar
+        # Tick labels below the bar
         font_size = max(8, W // 55)
         if log_scale:
             log_vmin, log_vmax = np.log10(vmin), np.log10(vmax)
@@ -743,29 +802,86 @@ class SinkVis(Task):
             frac = tick_frac(tv)
             if not np.isfinite(frac):
                 continue
+            label_text = _format_tick(tv)
             frac = np.clip(frac, 0, 1)
-            tick_y = bar_y2 - int(frac * bar_h)
-            draw.line([(bar_x2, tick_y), (bar_x2 + 3, tick_y)], fill=text_color, width=1)
-            tick_label = r"$%.2g$" % tv
-            tick_img = self._render_latex_label(tick_label, font_size, text_color)
+            tick_x = bar_x1 + int(frac * bar_w)
+            draw.line([(tick_x, bar_y2), (tick_x, bar_y2 + tick_gap)],
+                      fill=text_color, width=1)
+            tick_img = self._render_latex_label(label_text, font_size, text_color)
             tw, th = tick_img.size
-            paste_x = bar_x2 + 5
-            paste_y = tick_y - th // 2
+            # Scale down if too wide
+            max_tw = bar_w // max(len(tick_values) - 1, 1)
+            if tw > max_tw:
+                th = int(th * max_tw / tw)
+                tw = max_tw
+                tick_img = tick_img.resize((tw, th), Image.LANCZOS)
+            paste_x = np.clip(tick_x - tw // 2, 0, W - tw)
+            paste_y = bar_y2 + tick_gap + 1
             img.paste(tick_img, (paste_x, paste_y), tick_img)
 
-        # title label — rendered sideways (rotated 90°) to the left of the bar
+        # Title label above the bar
         if label:
-            title_fontsize = max(6, W // 75)
+            title_fontsize = max(6, W // 90)
             title_latex = "$" + label + "$"
-            label_img = self._render_latex_label(title_latex, title_fontsize, text_color, rotation=90)
+            label_img = self._render_latex_label(title_latex, title_fontsize, text_color)
             lw, lh = label_img.size
-            if lh > bar_h:
-                lw = int(lw * bar_h / lh)
-                lh = bar_h
+            if lw > bar_w:
+                lh = int(lh * bar_w / lw)
+                lw = bar_w
                 label_img = label_img.resize((lw, lh), Image.LANCZOS)
-            label_x = bar_x1 - lw - 3
-            label_y = bar_y1 + bar_h // 2 - lh // 2
+            label_x = bar_x1 + bar_w // 2 - lw // 2
+            label_y = bar_y1 - lh - 2
             img.paste(label_img, (label_x, label_y), label_img)
+
+    @staticmethod
+    def _length_unit_label(header):
+        """Return a human-readable label for the code length unit."""
+        if "UnitLength_In_CGS" in header:
+            UL = header["UnitLength_In_CGS"]
+        else:
+            UL = _au.kpc.to(_au.cm)  # GADGET default
+        ratio = UL / _au.pc.to(_au.cm)
+        if abs(ratio - 1.0) < 0.01:
+            return "pc"
+        elif abs(ratio - 1e3) < 10:
+            return "kpc"
+        elif abs(ratio - 1e6) < 1e4:
+            return "Mpc"
+        elif abs(ratio * _au.pc.to(_au.AU) - 1.0) < 0.01:
+            return "AU"
+        return "code length"
+
+    @staticmethod
+    def _velocity_unit_label(header):
+        """Return a human-readable label for the code velocity unit."""
+        if "UnitVelocity_In_CGS" in header:
+            UV = header["UnitVelocity_In_CGS"]
+        else:
+            UV = _au.km.to(_au.cm)  # GADGET default
+        ratio = UV / _au.km.to(_au.cm)
+        if abs(ratio - 1.0) < 0.01:
+            return r"\mathrm{km\,s^{-1}}"
+        ratio_ms = UV / 100.0
+        if abs(ratio_ms - 1.0) < 0.01:
+            return r"\mathrm{m\,s^{-1}}"
+        return r"\mathrm{code\;vel}"
+
+    @staticmethod
+    def _surface_density_unit_label(header):
+        """Return a label for code mass / code length^2."""
+        if "UnitMass_In_CGS" in header:
+            UM = header["UnitMass_In_CGS"]
+        else:
+            UM = 1e10 * _ac.M_sun.cgs.value  # GADGET default
+        ratio = UM / _ac.M_sun.cgs.value
+        if abs(ratio - 1.0) < 0.01:
+            mass_label = r"M_\odot"
+        elif abs(ratio - 1e10) < 1e8:
+            mass_label = r"10^{10}\,M_\odot"
+        else:
+            mass_label = r"\mathrm{code\;mass}"
+        length_label = SinkVis._length_unit_label(header)
+        return r"\Sigma_{\rm gas}\;\left(" + mass_label + r"\," + length_label + r"^{-2}\right)"
 
     def has_required_maps(self):
         return np.all([i in self.maps for i in self.required_maps])
@@ -816,10 +932,10 @@ class SinkVisSigmaGas(SinkVis):
 
     def MakeImages(self, snapdata):
         if self.params["limits"] is None:
-            sigma = self.maps["sigma_gas"]
-            self.params["limits"] = np.array(max_entropy_limits(
-                sigma.ravel(), sigma.ravel(), log_scale=True
-            ))
+            # Mass-weighted 1st/99th percentiles for surface density
+            sigma_flat = np.sort(self.maps["sigma_gas"].ravel())
+            cw = sigma_flat.cumsum() / sigma_flat.sum()
+            self.params["limits"] = np.interp([0.01, 0.99], cw, sigma_flat)
 
         vmin, vmax = self.params["limits"]
         if vmax > vmin:
@@ -837,7 +953,7 @@ class SinkVisSigmaGas(SinkVis):
             if not self.params["no_colorbar"]:
                 self._add_colorbar_to_image(
                     vmin, vmax,
-                    label=r"\Sigma_{\rm gas}\,\left(M_\odot\,\rm pc^{-2}\right)",
+                    label=self._surface_density_unit_label(snapdata["Header"]),
                 )
         elif self.params["backend"] == "matplotlib":
             from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -860,10 +976,11 @@ class SinkVisSigmaGas(SinkVis):
 
             divider = make_axes_locatable(self.ax)
             cax = divider.append_axes("right", size="5%", pad=0.05)
-            self.fig.colorbar(p, label=r"$\Sigma_{\rm gas}$ $(\rm M_\odot\,pc^{-2})$", cax=cax)
+            self.fig.colorbar(p, label="$" + self._surface_density_unit_label(snapdata["Header"]) + "$", cax=cax)
             if self.params["camera_distance"] == np.inf:
-                self.ax.set_xlabel("X (pc)")
-                self.ax.set_ylabel("Y (pc)")
+                lu = self._length_unit_label(snapdata["Header"])
+                self.ax.set_xlabel(f"X ({lu})")
+                self.ax.set_ylabel(f"Y ({lu})")
             else:
                 self.ax.set_xlabel("X (rad)")
                 self.ax.set_ylabel("Y (rad)")
@@ -919,8 +1036,10 @@ class SinkVisCoolMap(SinkVis):
             ).T
             np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])
         if not "sigma_1D" in self.maps.keys():
-            # need to apply coordinate transforms to z-velocity; cull to match self.pos/self.mass
-            v = np.copy(snapdata["PartType0/Velocities"])[self._keep_mask]
+            # need to apply coordinate transforms to z-velocity
+            v = np.copy(snapdata["PartType0/Velocities"])
+            if hasattr(self, "_keep_mask"):
+                v = v[self._keep_mask]
             self.DoCoordinateTransform(v, contravariant=True)
             sigma_1D = (
                 GridSurfaceDensity(
@@ -951,15 +1070,17 @@ class SinkVisCoolMap(SinkVis):
 
     def MakeImages(self, snapdata):
         if self.params["limits"] is None:
-            sigma = self.maps["sigma_gas"]
-            self.params["limits"] = np.array(max_entropy_limits(
-                sigma.ravel(), sigma.ravel(), log_scale=True
-            ))
+            # Mass-weighted 1st/99th percentiles for surface density
+            sigma_flat = np.sort(self.maps["sigma_gas"].ravel())
+            cw = sigma_flat.cumsum() / sigma_flat.sum()
+            self.params["limits"] = np.interp([0.01, 0.99], cw, sigma_flat)
         if self.params["v_limits"] is None:
-            #            Ekin_flat = np.sort((self.maps["sigma_gas"]*self.maps["sigma_1D"]**2).flatten()[self.maps["sigma_1D"].flatten().argsort()])
-            self.params["v_limits"] = np.percentile(
-                self.maps["sigma_1D"].flatten(), [0, 99]
-            )  # np.interp([0.0,0.95], Ekin_flat.cumsum()/Ekin_flat.sum(), np.sort(self.maps["sigma_1D"].flatten()))
+            # Energy-weighted percentiles: pixels with more kinetic energy count more
+            order = self.maps["sigma_1D"].ravel().argsort()
+            sigma_1D_sorted = self.maps["sigma_1D"].ravel()[order]
+            Ekin = (self.maps["sigma_gas"] * self.maps["sigma_1D"] ** 2).ravel()[order]
+            cw = Ekin.cumsum() / Ekin.sum()
+            self.params["v_limits"] = np.interp([0.0, 0.99], cw, sigma_1D_sorted)
         fgas = (np.log10(self.maps["sigma_gas"]) - np.log10(self.params["limits"][0])) / np.log10(
             self.params["limits"][1] / self.params["limits"][0]
         )
@@ -1036,11 +1157,13 @@ class SinkVisNarrowbandComposite(SinkVis):
             from skimage.color import rgb2hsv, hsv2rgb
             from meshoid.radiation import radtransfer
             # print("Generating SHO map...")
-            rho = snapdata["PartType0/Density"]
-            T = snapdata["PartType0/Temperature"]
-            fe = snapdata["PartType0/ElectronAbundance"]
-            hii = snapdata["PartType0/HII"]
-            nH = rho * 30
+            _k = self._keep_mask if hasattr(self, "_keep_mask") else slice(None)
+            rho = snapdata["PartType0/Density"][_k]
+            T = snapdata["PartType0/Temperature"][_k]
+            fe = snapdata["PartType0/ElectronAbundance"][_k]
+            hii = snapdata["PartType0/HII"][_k]
+            UnitDensity = snapdata["Header"].get("UnitMass_In_CGS", 1.989e33) / snapdata["Header"].get("UnitLength_In_CGS", 3.086e18)**3
+            nH = rho * UnitDensity / _ac.m_p.cgs.value
             ne = nH * fe
 
             # ne = np.clip(ne,None,np.percentile(ne,100*(1.0-100/len(ne))) ) #clip by 100th largest value in case we have few rogue cells with extremely large values
@@ -1082,7 +1205,7 @@ class SinkVisNarrowbandComposite(SinkVis):
             pc_to_cm = _au.pc.to(_au.cm)
             msun_to_g = _ac.M_sun.cgs.value
 
-            lum = np.c_[j_B_Ha, j_OIII, j_SII] * pc_to_cm**3 * (snapdata["PartType0/Masses"] / rho)[:, None]
+            lum = np.c_[j_B_Ha, j_OIII, j_SII] * pc_to_cm**3 * (self.mass / rho)[:, None]
             #            lum = np.c_[j_NII,j_OIII,j_SII] * pc_to_cm**3 *  (snapdata["PartType0/Masses"]/rho)[:,None] #NII behaves much better for interpolation than Ha, mostly because it does not diverge in the limit of ne->inf, similar to OIII and SII
 
             # Here we normalize the emission, but it is done relative to the current emissions, so each snapshot has a different absolute normalization. If an absolute normalization is desired across snapshots, this part should be commented out and a vector should be used for SHO_RGB_norm to normalize individual channels
@@ -1250,21 +1373,68 @@ register_derived_field("DivergenceError", "abs(DivergenceOfMagneticField)*cbrt(M
 FIELD_SYMBOLS = {}
 
 
-def register_field_symbol(name, latex):
+def register_field_symbol(name, latex, unit_func=None):
     r"""Register a LaTeX symbol for a field or expression.
 
-    >>> register_field_symbol("Temperature", r"T\;\mathrm{(K)}")
+    Parameters
+    ----------
+    name : str
+        Field name or expression.
+    latex : str
+        LaTeX symbol (without $ delimiters).
+    unit_func : callable, optional
+        A function ``f(header) -> str`` returning a LaTeX unit string
+        (e.g. ``r"\mathrm{g\,cm^{-3}}"``).  If provided, the unit is
+        appended in parentheses.
+
+    >>> register_field_symbol("Temperature", r"T", lambda h: r"\mathrm{K}")
     """
     FIELD_SYMBOLS[name] = latex
+    if unit_func is not None:
+        _FIELD_UNIT_FUNCS[name] = unit_func
+
+
+_FIELD_UNIT_FUNCS = {}
+
+
+def _density_unit(header):
+    """Return density unit label from header."""
+    if "UnitMass_In_CGS" in header:
+        UM = header["UnitMass_In_CGS"]
+    else:
+        UM = 1e10 * _ac.M_sun.cgs.value
+    if "UnitLength_In_CGS" in header:
+        UL = header["UnitLength_In_CGS"]
+    else:
+        UL = _au.kpc.to(_au.cm)
+    ratio_m = UM / _ac.M_sun.cgs.value
+    ratio_l = UL / _au.pc.to(_au.cm)
+    if abs(ratio_m - 1) < 0.01 and abs(ratio_l - 1) < 0.01:
+        return r"M_\odot\,\mathrm{pc}^{-3}"
+    if abs(ratio_m - 1e10) < 1e8 and abs(ratio_l / 1e3 - 1) < 0.01:
+        return r"10^{10}\,M_\odot\,\mathrm{kpc}^{-3}"
+    return r"\mathrm{code\;density}"
+
+
+def _velocity_unit(header):
+    if "UnitVelocity_In_CGS" in header:
+        UV = header["UnitVelocity_In_CGS"]
+    else:
+        UV = _au.km.to(_au.cm)
+    if abs(UV / _au.km.to(_au.cm) - 1) < 0.01:
+        return r"\mathrm{km\,s^{-1}}"
+    if abs(UV / 100.0 - 1) < 0.01:
+        return r"\mathrm{m\,s^{-1}}"
+    return r"\mathrm{code\;vel}"
 
 
 # Built-in symbols
-register_field_symbol("Density", r"\rho")
-register_field_symbol("Temperature", r"T\;\mathrm{(K)}")
+register_field_symbol("Density", r"\rho", _density_unit)
+register_field_symbol("Temperature", r"T", lambda h: r"\mathrm{K}")
 register_field_symbol("Pressure", r"P")
 register_field_symbol("InternalEnergy", r"u")
 register_field_symbol("Masses", r"M")
-register_field_symbol("SoundSpeed", r"c_s")
+register_field_symbol("SoundSpeed", r"c_s", _velocity_unit)
 register_field_symbol("MagneticPressure", r"P_B")
 register_field_symbol("PlasmaBeta", r"\beta")
 register_field_symbol("AlfvenSpeed", r"v_A")
@@ -1276,22 +1446,42 @@ register_field_symbol("n_H", r"n_\mathrm{H}\;\mathrm{(cm^{-3})}")
 register_field_symbol("ThermalEnergy", r"E_\mathrm{th}")
 register_field_symbol("KineticEnergy", r"E_\mathrm{kin}")
 register_field_symbol("MagneticEnergy", r"E_B")
+register_field_symbol("Entropy", r"P/\rho^{\gamma}")
+register_field_symbol("Sigma1D", r"\sigma_\mathrm{1D}")
+register_field_symbol("PhotonEnergyDensity_EUV", r"u_\mathrm{EUV}\;\mathrm{(eV\,cm^{-3})}")
+register_field_symbol("PhotonEnergyDensity_FUV", r"u_\mathrm{FUV}\;\mathrm{(eV\,cm^{-3})}")
+register_field_symbol("PhotonEnergyDensity_NUV", r"u_\mathrm{NUV}\;\mathrm{(eV\,cm^{-3})}")
+register_field_symbol("PhotonEnergyDensity_ONIR", r"u_\mathrm{ONIR}\;\mathrm{(eV\,cm^{-3})}")
+register_field_symbol("PhotonEnergyDensity_FIR", r"u_\mathrm{FIR}\;\mathrm{(eV\,cm^{-3})}")
+register_field_symbol("G0", r"G_0")
 
 
 # Built-in fallbacks for fields that GIZMO may or may not write
+# Pressure fallback stays in code units (Density * velocity^2)
 register_field_fallback("Pressure", "(5./3 - 1) * Density * InternalEnergy")
+# SoundSpeed: InternalEnergy is in code velocity^2, cs is in code velocity
 register_field_fallback("SoundSpeed", "sqrt(5./3 * (5./3 - 1) * InternalEnergy)")
-register_field_fallback("Temperature", "(5./3 - 1) * InternalEnergy * m_p / k_B")
+# Temperature must be in Kelvin: convert InternalEnergy from code to CGS first
+register_field_fallback("Temperature", "(5./3 - 1) * InternalEnergy * UnitVelocity_In_CGS**2 * m_p / k_B")
 register_field_fallback("DivergenceOfMagneticField", "Div(MagneticField)")
 
 
+# Regex to extract identifier tokens, skipping the 'e'/'E' in scientific notation
+_TOKEN_RE = re.compile(r"(?<!\d)[A-Za-z_]\w*")
+
 # Tokens that are builtins, NOT field names
+_UNIT_NAMES = {
+    "UnitLength_In_CGS", "UnitMass_In_CGS", "UnitVelocity_In_CGS",
+    "UnitEnergyDensity_In_CGS", "UnitDensity_In_CGS",
+    "UnitTime_In_CGS", "UnitEnergy_In_CGS", "UnitB_In_Gauss",
+}
+
 _EXPR_BUILTINS = {
     "np",
-    "abs", "sqrt", "cbrt", "norm", "log", "log2", "log10", "exp",
+    "abs", "sqrt", "cbrt", "norm", "col", "log", "log2", "log10", "exp",
     "sin", "cos", "tan", "minimum", "maximum", "clip", "where",
     "Div", "Curl",
-} | set(_CONSTANTS.keys())
+} | set(_CONSTANTS.keys()) | _UNIT_NAMES
 
 
 def _extract_field_names(expr):
@@ -1301,7 +1491,7 @@ def _extract_field_names(expr):
     Returns all snapshot fields that *might* be needed — both the primary
     field and any fields its fallback expression requires.
     """
-    tokens = re.findall(r"[A-Za-z_]\w*", expr)
+    tokens = _TOKEN_RE.findall( expr)
     raw = set(t for t in tokens if t not in _EXPR_BUILTINS)
 
     base_fields = set()
@@ -1322,7 +1512,7 @@ def _extract_field_names(expr):
                 # since we won't know until runtime which is available.
                 base_fields.add(name)
                 if name in FIELD_FALLBACKS:
-                    sub = re.findall(r"[A-Za-z_]\w*", FIELD_FALLBACKS[name])
+                    sub = _TOKEN_RE.findall( FIELD_FALLBACKS[name])
                     _resolve(t for t in sub if t not in _EXPR_BUILTINS)
 
     _resolve(raw)
@@ -1352,7 +1542,7 @@ def _mask_snapdata(snapdata, mask):
     return result
 
 
-def _eval_field_expr(expr, snapdata, _cache=None, _extra_ns=None):
+def _eval_field_expr(expr, snapdata, _cache=None, unit_overrides=None, _extra_ns=None):
     """Evaluate a field expression against loaded PartType0 snapshot data.
 
     Field names (e.g. 'Masses', 'Temperature') are resolved to their
@@ -1368,9 +1558,12 @@ def _eval_field_expr(expr, snapdata, _cache=None, _extra_ns=None):
     def _norm(x):
         return np.sqrt(np.sum(np.asarray(x) ** 2, axis=-1))
 
+    def _col(arr, i):
+        return np.asarray(arr)[:, int(i)]
+
     ns = {
         "np": np, "abs": np.abs, "sqrt": np.sqrt, "cbrt": np.cbrt,
-        "norm": _norm,
+        "norm": _norm, "col": _col,
         "log": np.log, "log2": np.log2, "log10": np.log10,
         "exp": np.exp, "sin": np.sin, "cos": np.cos, "tan": np.tan,
         "minimum": np.minimum, "maximum": np.maximum,
@@ -1382,7 +1575,26 @@ def _eval_field_expr(expr, snapdata, _cache=None, _extra_ns=None):
     if _extra_ns:
         ns.update(_extra_ns)
 
-    tokens = re.findall(r"[A-Za-z_]\w*", expr)
+    # Add code-unit conversion factors from snapshot header, with CLI overrides
+    header = snapdata.get("Header", {})
+    ov = unit_overrides or {}
+    # GADGET defaults: kpc, 10^10 Msun, km/s
+    _default_UL = _au.kpc.to(_au.cm)
+    _default_UM = 1e10 * _ac.M_sun.cgs.value
+    _default_UV = _au.km.to(_au.cm)
+    UL = ov.get("UnitLength_In_CGS", header.get("UnitLength_In_CGS", _default_UL))
+    UM = ov.get("UnitMass_In_CGS", header.get("UnitMass_In_CGS", _default_UM))
+    UV = ov.get("UnitVelocity_In_CGS", header.get("UnitVelocity_In_CGS", _default_UV))
+    ns["UnitLength_In_CGS"] = UL
+    ns["UnitMass_In_CGS"] = UM
+    ns["UnitVelocity_In_CGS"] = UV
+    ns["UnitEnergyDensity_In_CGS"] = UM * UV**2 / UL**3
+    ns["UnitDensity_In_CGS"] = UM / UL**3
+    ns["UnitTime_In_CGS"] = UL / UV
+    ns["UnitEnergy_In_CGS"] = UM * UV**2
+    ns["UnitB_In_Gauss"] = ov.get("UnitB_In_Gauss", header.get("UnitB_In_Gauss", 1.0))
+
+    tokens = _TOKEN_RE.findall(expr)
     for name in set(tokens) - _EXPR_BUILTINS:
         if name in ns:
             continue
@@ -1408,7 +1620,7 @@ def _eval_field_expr(expr, snapdata, _cache=None, _extra_ns=None):
 
         # 3) Fallback expression — used when snapshot field is missing
         if name in FIELD_FALLBACKS:
-            _cache[name] = _eval_field_expr(FIELD_FALLBACKS[name], snapdata, _cache)
+            _cache[name] = _eval_field_expr(FIELD_FALLBACKS[name], snapdata, _cache, unit_overrides)
             ns[name] = _cache[name]
             continue
 
@@ -1451,7 +1663,7 @@ def parse_custom_task(spec):
 
     Returns (render_mode, field_expr) or None if not a custom task.
     """
-    m = re.match(r"^(SurfaceDensity|Projection|ProjectedAverage|Slice)\((.+)\)$", spec)
+    m = re.match(r"^(SurfaceDensity|Projection|ProjectedAverage|WeightedVariance|Sigma1D|Slice)\((.+)\)$", spec)
     if m:
         return m.group(1), m.group(2)
     return None
@@ -1504,18 +1716,35 @@ class SinkVisCustomField(SinkVis):
         for name in _extract_field_names(self._field_expr):
             self.RequiredSnapdata.append("PartType0/" + name)
 
-    def _colorbar_label(self):
+    def _colorbar_label(self, header=None):
         """Return a LaTeX string for the colorbar title."""
+        # Sigma1D has its own symbol with velocity units
+        if self._render_mode == "Sigma1D":
+            sym = FIELD_SYMBOLS.get("Sigma1D", r"\sigma_\mathrm{1D}")
+            if header:
+                vel_unit = self._velocity_unit_label(header)
+                sym += r"\;(" + vel_unit + ")"
+            return sym
+
         expr = self._field_expr
         # Check for exact match on the expression or field name
         if expr in FIELD_SYMBOLS:
-            return FIELD_SYMBOLS[expr]
-        # For simple single-field expressions, look up the field
-        tokens = [t for t in re.findall(r"[A-Za-z_]\w*", expr) if t not in _EXPR_BUILTINS]
-        if len(tokens) == 1 and tokens[0] == expr and expr in FIELD_SYMBOLS:
-            return FIELD_SYMBOLS[expr]
-        # Fall back to rendering the raw expression in mathtt
-        return r"\mathtt{" + expr.replace("_", r"\_") + "}"
+            inner = FIELD_SYMBOLS[expr]
+        elif expr in [t for t in _TOKEN_RE.findall(expr) if t not in _EXPR_BUILTINS]:
+            inner = FIELD_SYMBOLS.get(expr, r"\mathtt{" + expr.replace("_", r"\_") + "}")
+        else:
+            inner = r"\mathtt{" + expr.replace("_", r"\_") + "}"
+
+        # Wrap in σ(...) for WeightedVariance mode
+        if self._render_mode == "WeightedVariance":
+            inner = r"\sigma(" + inner + ")"
+
+        # Append unit label if registered and header available
+        if header and expr in _FIELD_UNIT_FUNCS:
+            unit = _FIELD_UNIT_FUNCS[expr](header)
+            inner += r"\;(" + unit + ")"
+
+        return inner
 
     def GenerateMaps(self, snapdata):
         if self._map_key in self.maps:
@@ -1527,6 +1756,7 @@ class SinkVisCustomField(SinkVis):
         # When the expression contains them, build a Meshoid from ALL particles
         # in the transformed frame and evaluate on the full (unmasked) arrays,
         # then mask the scalar result down to the render region afterward.
+        _unit_ov = self.params.get("_unit_overrides")
         if _expr_needs_meshoid(self._field_expr, snapdata):
             # Div/Curl are coordinate-invariant: compute in the original frame
             # so that field vectors (e.g. MagneticField) and position offsets
@@ -1541,6 +1771,7 @@ class SinkVisCustomField(SinkVis):
             )
             f = _eval_field_expr(
                 self._field_expr, snapdata,
+                unit_overrides=_unit_ov,
                 _extra_ns={"Div": M_diff.Div, "Curl": M_diff.Curl},
             )
             if f.ndim > 1:
@@ -1552,7 +1783,7 @@ class SinkVisCustomField(SinkVis):
             # particle set for efficiency.
             mask = getattr(self, "_keep_mask", None)
             eval_snapdata = _mask_snapdata(snapdata, mask) if mask is not None else snapdata
-            f = _eval_field_expr(self._field_expr, eval_snapdata)
+            f = _eval_field_expr(self._field_expr, eval_snapdata, unit_overrides=_unit_ov)
             if f.ndim > 1:
                 f = np.sqrt(np.sum(f ** 2, axis=1))
 
@@ -1561,22 +1792,69 @@ class SinkVisCustomField(SinkVis):
         # Render Meshoid always uses the culled, transformed particle set
         M = Meshoid(self.pos, self.mass, self.hsml)
 
-        if self._render_mode in ("SurfaceDensity", "Projection"):
-            # Integral of f along sightlines
+        if self._render_mode == "SurfaceDensity":
+            # Surface density: f is an extensive/conserved quantity (e.g. Masses)
             result = M.SurfaceDensity(
+                f, center=np.zeros(3), size=2 * rmax, res=res,
+            ).T
+        elif self._render_mode == "Projection":
+            # Projection: f is a volume density / intensive quantity (e.g. Density)
+            # computes the line integral ∫ f dz
+            result = M.Projection(
                 f, center=np.zeros(3), size=2 * rmax, res=res,
             ).T
         elif self._render_mode == "ProjectedAverage":
             result = M.ProjectedAverage(
                 f, center=np.zeros(3), size=2 * rmax, res=res,
             ).T
-        elif self._render_mode == "Slice":
-            # Supersample at 4x and downsample to anti-alias Voronoi edges
-            ss = 4
-            hi_res = M.Slice(
-                f, center=np.zeros(3), size=2 * rmax, res=res * ss,
+        elif self._render_mode == "WeightedVariance":
+            # σ(f) = sqrt(<f²> - <f>²)  mass-weighted
+            mean_f = M.ProjectedAverage(
+                f, center=np.zeros(3), size=2 * rmax, res=res,
             ).T
-            result = hi_res.reshape(res, ss, res, ss).mean(axis=(1, 3))
+            mean_f2 = M.ProjectedAverage(
+                f ** 2, center=np.zeros(3), size=2 * rmax, res=res,
+            ).T
+            result = np.sqrt(np.maximum(mean_f2 - mean_f ** 2, 0))
+        elif self._render_mode == "Sigma1D":
+            # Line-of-sight velocity dispersion: sqrt(<v_z²> - <v_z>²)
+            # Velocities have already been coordinate-transformed by
+            # SetupCoordsAndWeights, so z is the LOS direction
+            v_los = np.copy(snapdata["PartType0/Velocities"])
+            if hasattr(self, "_keep_mask"):
+                v_los = v_los[self._keep_mask]
+            self.DoCoordinateTransform(v_los, contravariant=True)
+            vz = v_los[:, 2]
+            mean_vz = M.ProjectedAverage(
+                vz, center=np.zeros(3), size=2 * rmax, res=res,
+            ).T
+            mean_vz2 = M.ProjectedAverage(
+                vz ** 2, center=np.zeros(3), size=2 * rmax, res=res,
+            ).T
+            result = np.sqrt(np.maximum(mean_vz2 - mean_vz ** 2, 0))
+        elif self._render_mode == "Slice":
+            # Supersample and downsample to anti-alias Voronoi edges
+            ss = int(self.params.get("supersample", 2))
+            # For positive quantities, slice in log space to guarantee positivity
+            positive = np.all(f > 0)
+            slice_f = np.log(f) if positive else f
+            recon_order = int(self.params.get("order", 0))
+            hi_res = M.Slice(
+                slice_f, center=np.zeros(3), size=2 * rmax, res=res * ss,
+                order=recon_order, slope_limiter=True,
+            ).T
+            if positive:
+                hi_res = np.exp(hi_res)
+            if ss > 1:
+                if positive:
+                    result = np.exp(
+                        np.log(hi_res).reshape(res, ss, res, ss).mean(axis=(1, 3))
+                    )
+                else:
+                    result = hi_res.reshape(res, ss, res, ss).mean(axis=(1, 3))
+                self._slice_hires = hi_res
+            else:
+                result = hi_res
         else:
             raise ValueError(f"Unknown render mode: {self._render_mode}")
 
@@ -1588,18 +1866,16 @@ class SinkVisCustomField(SinkVis):
         positive = data > 0
 
         if self.params["limits"] is None:
-            if positive.any():
-                # SurfaceDensity/Projection: mass-weight (value = accumulated mass)
-                # Slice/ProjectedAverage: uniform weight (each pixel is equal area)
-                if self._render_mode in ("SurfaceDensity", "Projection"):
-                    weights = np.abs(data.ravel())
-                else:
-                    weights = np.ones(data.size)
-                self.params["limits"] = np.array(max_entropy_limits(
-                    data.ravel(), weights, log_scale=bool(positive.all()),
-                ))
+            # Use hi-res slice data for limits if available (before AA smoothing)
+            limit_data = getattr(self, "_slice_hires", data)
+            if self._render_mode in ("SurfaceDensity", "Projection"):
+                # Mass-weighted 1st/99th percentiles for integral quantities
+                flat = np.sort(limit_data.ravel())
+                cw = flat.cumsum() / flat.sum()
+                self.params["limits"] = np.interp([0.01, 0.99], cw, flat)
             else:
-                self.params["limits"] = np.array([data.min(), data.max()])
+                # Raw 1st/99th percentiles for slice/projected average
+                self.params["limits"] = np.percentile(limit_data, [1, 99])
 
         vmin, vmax = self.params["limits"]
         if vmax <= vmin:
@@ -1618,7 +1894,7 @@ class SinkVisCustomField(SinkVis):
             self._pil_image = Image.fromarray((rgba * 255).astype(np.uint8), "RGBA")
             if not self.params["no_colorbar"]:
                 self._add_colorbar_to_image(
-                    vmin, vmax, label=self._colorbar_label(),
+                    vmin, vmax, label=self._colorbar_label(snapdata.get("Header")),
                     log_scale=bool(positive.all()),
                 )
         elif self.params["backend"] == "matplotlib":
@@ -1633,10 +1909,19 @@ class SinkVisCustomField(SinkVis):
                 norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
             else:
                 norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+            from mpl_toolkits.axes_grid1 import make_axes_locatable
             p = self.ax.pcolormesh(X, Y, data, norm=norm, cmap=self.params["cmap"])
             self.ax.set_aspect("equal")
             divider = make_axes_locatable(self.ax)
             cax = divider.append_axes("right", size="5%", pad=0.05)
-            self.fig.colorbar(p, label="$" + self._colorbar_label() + "$", cax=cax)
+            cb_label = "$" + self._colorbar_label(snapdata.get("Header")) + "$"
+            self.fig.colorbar(p, label=cb_label, cax=cax)
+            if self.params["camera_distance"] == np.inf:
+                lu = self._length_unit_label(snapdata["Header"])
+                self.ax.set_xlabel(f"X ({lu})")
+                self.ax.set_ylabel(f"Y ({lu})")
+            else:
+                self.ax.set_xlabel("X (rad)")
+                self.ax.set_ylabel("Y (rad)")
 
         super().MakeImages(snapdata)
