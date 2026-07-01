@@ -13,7 +13,7 @@ Options:
     --no_overwrite               Skip rendering if the output file already exists
     --backend=<b>                matplotlib vs PIL [default: PIL]
     --id_mask=<file>            .npy file containing the gas particle IDs to be plotted
-    --dir=<x,y,z>                Coordinate direction to orient the image along - x, y, or z. It also accepts vector values [default: z]
+    --dir=<x,y,z>                Coordinate direction to orient the image along. Accepts x, y, z (or +x/-x, +y/-y, +z/-z for explicit sign) or a vector. [default: z]
     --target_time=<f>            Render a single image at this simulation time, interpolating between bounding snapshots
     --limits=<min,max>           Dynamic range of surface density colormap
     --v_limits=<min,max>         Dynamic range of kinematic map in km/s
@@ -83,6 +83,21 @@ task_prefix = {
 import re
 
 
+def _split_tasks(s):
+    """Split a comma-separated task list, ignoring commas inside brackets/parens."""
+    parts, depth, start = [], 0, 0
+    for i, ch in enumerate(s):
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            parts.append(s[start:i])
+            start = i + 1
+    parts.append(s[start:])
+    return parts
+
+
 def _resolve_task(spec):
     """Resolve a task spec string to (task_class, extra_params, movie_prefix).
 
@@ -115,7 +130,7 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
     filenames = natsorted(arguments["<files>"])
     np_render = int(arguments["--np_render"])
     n_interp = int(arguments["--interp_fac"])
-    tasks = arguments["--tasks"].split(",")
+    tasks = _split_tasks(arguments["--tasks"])
     N_tasks = len(tasks)
     direction = arguments["--dir"]
     if arguments["--no_overwrite"]:
@@ -179,17 +194,16 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
     common_params["pan"] = float(input["--pan"])
     common_params["tilt"] = float(input["--tilt"])
 
-    if direction == "x":
-        common_params["camera_dir"] = np.array([1.0, 0, 0])
+    _dir_sign = -1.0 if direction.startswith("-") else 1.0
+    _dir_axis = direction.lstrip("+-")
+    if _dir_axis == "x":
+        common_params["camera_dir"] = np.array([_dir_sign, 0, 0])
         common_params["camera_up"] = np.array([0, 0, 1.0])
-    elif direction == "y":
-        common_params["camera_dir"] = np.array([0, 1.0, 0])
+    elif _dir_axis == "y":
+        common_params["camera_dir"] = np.array([0, _dir_sign, 0])
         common_params["camera_up"] = np.array([0, 0, 1.0])
-    elif isinstance(direction, np.ndarray):
-        common_params["camera_dir"] = direction
-
-    if input["--camera_up"] is not None and input["--camera_up"] != "None":
-        common_params["camera_up"] = np.array([float(x) for x in input["--camera_up"].split(",")])
+    elif _dir_axis == "z" and direction[0] in "+-":
+        common_params["camera_dir"] = np.array([0, 0, _dir_sign])
 
     if input["--rmax"] is None:
         common_params["rmax"] = None
@@ -298,7 +312,7 @@ def _compute_global_limits(outputfolder):
 
 
 def main(input):
-    task_specs = input["--tasks"].split(",")
+    task_specs = _split_tasks(input["--tasks"])
     resolved = [_resolve_task(spec) for spec in task_specs]
     tasks = [r[0] for r in resolved]
     extra_params = [r[1] for r in resolved]

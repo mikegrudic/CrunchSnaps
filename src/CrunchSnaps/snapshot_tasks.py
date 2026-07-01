@@ -1304,18 +1304,26 @@ _CONSTANTS = {
 # Expressions can reference snapshot fields, constants, other derived fields,
 # and the builtins (abs, sqrt, norm, log, log10, exp, ...).
 DERIVED_FIELDS = {}
+# For callable derived fields, stores the list of snapshot fields they may need.
+DERIVED_FIELD_DEPS = {}
 
 # Fallback expressions for snapshot fields that may not exist.
 # Used only when PartType0/<name> is absent from the snapshot.
 FIELD_FALLBACKS = {}
 
 
-def register_derived_field(name, expr):
+def register_derived_field(name, expr, deps=None):
     """Register a named derived field.
+
+    expr may be a string expression or a callable(snapdata, _cache, _extra_ns).
+    When expr is callable, deps lists the snapshot fields it may access so that
+    _extract_field_names can request them for pre-loading.
 
     >>> register_derived_field("MagneticPressure", "norm(MagneticField)**2 / (8*pi)")
     """
     DERIVED_FIELDS[name] = expr
+    if callable(expr):
+        DERIVED_FIELD_DEPS[name] = list(deps) if deps else []
 
 
 def register_field_fallback(name, expr):
@@ -1329,34 +1337,34 @@ def register_field_fallback(name, expr):
     FIELD_FALLBACKS[name] = expr
 
 
-# Built-in derived fields (Gaussian CGS conventions matching GIZMO).
-# UnitB_In_Gauss defaults to 1 (B already in Gauss).  Set it in the snapshot
-# header or via --set to handle non-Gauss B fields.
-register_derived_field("MagneticPressure", "(norm(MagneticField) * UnitB_In_Gauss)**2 / (8*pi)")
-register_derived_field("PlasmaBeta", "Pressure * UnitEnergyDensity_In_CGS / MagneticPressure")
-register_derived_field("AlfvenSpeed", "norm(MagneticField) * UnitB_In_Gauss / sqrt(4*pi*Density*UnitDensity_In_CGS)")
+def _number_density_field(snapdata, _cache, _extra_ns):
+    density = _eval_field_expr("Density", snapdata, _cache, _extra_ns)
+    header = snapdata.get("Header", {})
+    unit_mass = header.get("UnitMass_In_CGS", 1.989e33)      # default: 1 M_sun
+    unit_length = header.get("UnitLength_In_CGS", 3.086e18)  # default: 1 pc
+    unit_density = unit_mass / unit_length**3
+    key = "PartType0/Metallicity"
+    if key in snapdata and snapdata[key] is not None:
+        met = snapdata[key]
+        # Metallicity[:,0] = total metal fraction (Z), [:,1] = He fraction (Y)
+        xH = 1.0 - met[:, 0] - met[:, 1]
+    else:
+        xH = 1.0
+    return xH * density * unit_density / _CONSTANTS["m_p"]
+
+
+# Built-in derived fields (Gaussian CGS conventions matching GIZMO)
+register_derived_field("MagneticPressure", "norm(MagneticField)**2 / (8*pi)")
+register_derived_field("PlasmaBeta", "Pressure / MagneticPressure")
+register_derived_field("AlfvenSpeed", "norm(MagneticField) / sqrt(4*pi*Density)")
 register_derived_field("MachNumber", "norm(Velocities) / SoundSpeed")
 register_derived_field("JeansLength", "SoundSpeed / sqrt(G * Density)")
 register_derived_field("ThermalEnergy", "Masses * InternalEnergy")
 register_derived_field("KineticEnergy", "0.5 * Masses * norm(Velocities)**2")
 register_derived_field("MagneticEnergy", "norm(MagneticField)**2 / (8*pi) * Masses / Density")
-register_derived_field("NumberDensity", "Density / m_p")
-register_derived_field("Entropy", "Pressure / Density**(5./3)")
-
-# Photon energy density fields (eV/cm^3) — col(PhotonEnergy, band) extracts
-# band 0=EUV, 1=FUV, 2=NUV, 3=ONIR, 4=FIR from the (N,5) PhotonEnergy array.
-# PhotonEnergy is specific (per unit mass) in code units, so:
-#   energy_density [code] = PhotonEnergy * Density / Masses
-#   energy_density [CGS]  = energy_density [code] * UnitEnergyDensity_In_CGS
-#   energy_density [eV/cm^3] = energy_density [CGS] / eV
-register_derived_field("PhotonEnergyDensity_EUV", "col(PhotonEnergy, 0) * Density / Masses * UnitEnergyDensity_In_CGS / eV")
-register_derived_field("PhotonEnergyDensity_FUV", "col(PhotonEnergy, 1) * Density / Masses * UnitEnergyDensity_In_CGS / eV")
-register_derived_field("PhotonEnergyDensity_NUV", "col(PhotonEnergy, 2) * Density / Masses * UnitEnergyDensity_In_CGS / eV")
-register_derived_field("PhotonEnergyDensity_ONIR", "col(PhotonEnergy, 3) * Density / Masses * UnitEnergyDensity_In_CGS / eV")
-register_derived_field("PhotonEnergyDensity_FIR", "col(PhotonEnergy, 4) * Density / Masses * UnitEnergyDensity_In_CGS / eV")
-
-# G0: FUV photon energy density in Habing units (1 Habing = 5.29e-14 erg/cm^3)
-register_derived_field("G0", "col(PhotonEnergy, 1) * Density / Masses * UnitEnergyDensity_In_CGS / 5.29e-14")
+register_derived_field("NumberDensity", _number_density_field, deps=["Density", "Metallicity"])
+register_derived_field("nH", "NumberDensity")
+register_derived_field("n_H", "NumberDensity")
 register_derived_field("dx", "cbrt(Masses/Density)")
 register_derived_field("DivergenceError", "abs(DivergenceOfMagneticField)*cbrt(Masses/Density)/norm(MagneticField)")
 
@@ -1432,7 +1440,9 @@ register_field_symbol("PlasmaBeta", r"\beta")
 register_field_symbol("AlfvenSpeed", r"v_A")
 register_field_symbol("MachNumber", r"\mathcal{M}")
 register_field_symbol("JeansLength", r"\lambda_J")
-register_field_symbol("NumberDensity", r"n\;\mathrm{(cm^{-3})}")
+register_field_symbol("NumberDensity", r"n_\mathrm{H}\;\mathrm{(cm^{-3})}")
+register_field_symbol("nH", r"n_\mathrm{H}\;\mathrm{(cm^{-3})}")
+register_field_symbol("n_H", r"n_\mathrm{H}\;\mathrm{(cm^{-3})}")
 register_field_symbol("ThermalEnergy", r"E_\mathrm{th}")
 register_field_symbol("KineticEnergy", r"E_\mathrm{kin}")
 register_field_symbol("MagneticEnergy", r"E_B")
@@ -1493,7 +1503,8 @@ def _extract_field_names(expr):
                 continue
             seen.add(name)
             if name in DERIVED_FIELDS:
-                sub = _TOKEN_RE.findall( DERIVED_FIELDS[name])
+                df = DERIVED_FIELDS[name]
+                sub = DERIVED_FIELD_DEPS.get(name, []) if callable(df) else re.findall(r"[A-Za-z_]\w*", df)
                 _resolve(t for t in sub if t not in _EXPR_BUILTINS)
             else:
                 # This is a snapshot field (or has a fallback).  Request
@@ -1591,9 +1602,13 @@ def _eval_field_expr(expr, snapdata, _cache=None, unit_overrides=None, _extra_ns
             ns[name] = _cache[name]
             continue
 
-        # 1) Explicit derived field — always computed from expression
+        # 1) Explicit derived field — always computed from expression or callable
         if name in DERIVED_FIELDS:
-            _cache[name] = _eval_field_expr(DERIVED_FIELDS[name], snapdata, _cache, unit_overrides, _extra_ns)
+            df = DERIVED_FIELDS[name]
+            if callable(df):
+                _cache[name] = df(snapdata, _cache, _extra_ns)
+            else:
+                _cache[name] = _eval_field_expr(df, snapdata, _cache, _extra_ns)
             ns[name] = _cache[name]
             continue
 
@@ -1632,7 +1647,8 @@ def _expr_needs_meshoid(expr, snapdata=None, _seen=None):
             continue
         _seen.add(name)
         if name in DERIVED_FIELDS:
-            if _expr_needs_meshoid(DERIVED_FIELDS[name], snapdata, _seen):
+            df = DERIVED_FIELDS[name]
+            if not callable(df) and _expr_needs_meshoid(df, snapdata, _seen):
                 return True
         elif name in FIELD_FALLBACKS:
             # Only follow the fallback if the snapshot doesn't supply the field directly
