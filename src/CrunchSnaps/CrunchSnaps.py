@@ -476,6 +476,10 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None, sort_by_
             else:
                 snapdata[field] = np.float32(F[read_field][:])
 
+            if "Coordinates" in field:
+                boxsize = snapdata["Header"]["BoxSize"]
+                np.mod(snapdata[field], boxsize, out=snapdata[field])
+
             if cosmological:
                 ascale = time
                 if "Coordinates" in field or "KernelMaxRadius" in field or "SmoothingLength" in field:
