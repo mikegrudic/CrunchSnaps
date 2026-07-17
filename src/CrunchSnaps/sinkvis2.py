@@ -1,6 +1,6 @@
 """
 Usage:
-SinkVis2 <args> ... [options]
+  SinkVis2 <args> ... [options]
 
 Options:
     -h --help                    Show this screen.
