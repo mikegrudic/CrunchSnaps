@@ -73,6 +73,11 @@
 <li class="toctree-l2"><a class="reference internal" href="#parallelism">Parallelism</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#stars">Stars</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#full-option-reference">Full Option Reference</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#python-api">Python API</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#calling-convention">Calling convention</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#return-value">Return value</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="camera_movies.html">Camera-File Movies</a></li>
@@ -647,6 +652,73 @@ Options:
     --id_mask=&lt;file&gt;                  Particle ID filter (.npy file)
 </pre></div>
 </div>
+</section>
+<section id="python-api">
+<h2>Python API<a class="headerlink" href="#python-api" title="Link to this heading"></a></h2>
+<p>The <a class="reference internal" href="api.html#CrunchSnaps.sinkvis2.run" title="CrunchSnaps.sinkvis2.run"><code class="xref py py-func docutils literal notranslate"><span class="pre">run()</span></code></a> function provides a Python interface to
+SinkVis2 that returns a <code class="xref py py-class docutils literal notranslate"><span class="pre">matplotlib.figure.Figure</span></code> instead of writing
+files to disk.</p>
+<p>Quick start:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">CrunchSnaps.sinkvis2</span> <span class="kn">import</span> <span class="n">run</span>
+
+<span class="n">fig</span> <span class="o">=</span> <span class="n">run</span><span class="p">(</span><span class="s2">&quot;snapshot_0010.hdf5&quot;</span><span class="p">,</span> <span class="n">tasks</span><span class="o">=</span><span class="s2">&quot;SigmaGas&quot;</span><span class="p">,</span> <span class="n">rmax</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">res</span><span class="o">=</span><span class="mi">512</span><span class="p">)</span>
+<span class="n">fig</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">&quot;surface_density.png&quot;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Density slice centred on the peak-density cell:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">fig</span> <span class="o">=</span> <span class="n">run</span><span class="p">(</span>
+    <span class="s2">&quot;snapshot_2000.hdf5&quot;</span><span class="p">,</span>
+    <span class="n">tasks</span><span class="o">=</span><span class="s2">&quot;Slice(Density)&quot;</span><span class="p">,</span>
+    <span class="n">res</span><span class="o">=</span><span class="mi">512</span><span class="p">,</span>
+    <span class="n">rmax</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+    <span class="n">center</span><span class="o">=</span><span class="s2">&quot;densest&quot;</span><span class="p">,</span>
+    <span class="n">direction</span><span class="o">=</span><span class="s2">&quot;z&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<section id="calling-convention">
+<h3>Calling convention<a class="headerlink" href="#calling-convention" title="Link to this heading"></a></h3>
+<p>Keyword arguments map directly to CLI options:</p>
+<ul class="simple">
+<li><p>Drop the leading <code class="docutils literal notranslate"><span class="pre">--</span></code>.</p></li>
+<li><p>Replace hyphens with underscores (e.g. <code class="docutils literal notranslate"><span class="pre">no_stars</span></code> for <code class="docutils literal notranslate"><span class="pre">--no_stars</span></code>).</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">direction</span></code> instead of <code class="docutils literal notranslate"><span class="pre">dir</span></code> (<code class="docutils literal notranslate"><span class="pre">dir</span></code> is a Python built-in).</p></li>
+<li><p>Boolean flags accept Python bools (<code class="docutils literal notranslate"><span class="pre">no_stars=True</span></code>).</p></li>
+<li><p>Comma-separated CLI values accept Python sequences
+(<code class="docutils literal notranslate"><span class="pre">limits=(1e-2,</span> <span class="pre">1e3)</span></code> or <code class="docutils literal notranslate"><span class="pre">limits=[0.01,</span> <span class="pre">1000]</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">center</span></code> accepts <code class="docutils literal notranslate"><span class="pre">None</span></code> (box centre), <code class="docutils literal notranslate"><span class="pre">&quot;densest&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;massive&quot;</span></code>,
+or a 3-element array <code class="docutils literal notranslate"><span class="pre">[x,</span> <span class="pre">y,</span> <span class="pre">z]</span></code>.</p></li>
+</ul>
+<p>The rendering backend is always <code class="docutils literal notranslate"><span class="pre">matplotlib</span></code>; the <code class="docutils literal notranslate"><span class="pre">backend</span></code> kwarg is
+ignored.</p>
+</section>
+<section id="return-value">
+<h3>Return value<a class="headerlink" href="#return-value" title="Link to this heading"></a></h3>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Input</p></th>
+<th class="head"><p>Returns</p></th>
+<th class="head"></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>single file, single task</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Figure</span></code></p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>multiple files, single task</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">list[Figure]</span></code></p></td>
+<td><p>one Figure per file</p></td>
+</tr>
+<tr class="row-even"><td><p>multiple tasks</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">list[list[...]]</span></code></p></td>
+<td><p>outer = task, inner = file</p></td>
+</tr>
+</tbody>
+</table>
+<p>For the full parameter reference see <a class="reference internal" href="api.html#CrunchSnaps.sinkvis2.run" title="CrunchSnaps.sinkvis2.run"><code class="xref py py-func docutils literal notranslate"><span class="pre">CrunchSnaps.sinkvis2.run()</span></code></a> in the
+<a class="reference internal" href="api.html"><span class="doc">API Reference</span></a>.</p>
+</section>
 </section>
 </section>
 

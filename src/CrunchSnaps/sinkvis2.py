@@ -1,6 +1,6 @@
 """
 Usage:
-SinkVis2 <args> ... [options]
+  SinkVis2 <args>... [options]
 
 Options:
     -h --help                    Show this screen.
@@ -55,11 +55,6 @@ Options:
 """
 
 import os
-import sys
-
-if not os.getenv("PYTHONHASHSEED"):
-    os.environ["PYTHONHASHSEED"] = "0"
-    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 from docopt import docopt
 from natsort import natsorted
@@ -354,6 +349,208 @@ def main(input):
         fps = int(input["--fps"])
         for prefix in movie_prefixes:
             make_movie(outputfolder, prefix, fps)
+
+
+_CLI_DEFAULTS = {
+    # Options with [default: X] in the docstring: docopt gives string X.
+    # Options with [default: None]: docopt gives the STRING "None".
+    # Options with no default: docopt gives Python None.
+    # Flags: docopt gives False.
+    "--tasks":              "SigmaGas",
+    "--rmax":               None,
+    "--no_stars":           False,
+    "--no_overwrite":       False,
+    "--backend":            "PIL",
+    "--id_mask":            None,
+    "--dir":                "z",
+    "--target_time":        None,
+    "--limits":             None,
+    "--v_limits":           None,
+    "--SHO_RGB_norm":       "0.0",
+    "--camera_distance":    "inf",
+    "--camera_up":          None,
+    "--pan":                "0",
+    "--tilt":               "0",
+    "--freeze_rotation":    None,
+    "--cmap":               "viridis",
+    "--cool_cmap":          "magma",
+    "--interp_fac":         "1",
+    "--np":                 "1",
+    "--np_render":          "-1",
+    "--res":                "1024",
+    "--center":             None,
+    "--outputfolder":       ".",
+    "--no_timestamp":       False,
+    "--no_size_scale":      False,
+    "--no_colorbar":        False,
+    "--rescale_hsml":       "1",
+    "--sparse_snaps":       False,
+    "--equal_frame_times":  False,
+    "--outflow_only":       False,
+    "--realstars":          False,
+    "--realstars_lum_exp":  "1.0",
+    "--realstars_max_lum":  "1.0e3",
+    "--realstars_opacity":  "1.0",
+    "--supersample":        "2",
+    "--order":              "0",
+    "--unit_length":        None,
+    "--unit_mass":          None,
+    "--unit_velocity":      None,
+    "--unit_B":             None,
+    "--make_movie":         False,
+    "--fps":                "24",
+    "<files>":              [],
+    "<args>":               [],
+}
+
+# Map from Python kwarg name to CLI option name, only when they differ.
+_KWARG_TO_CLI = {"direction": "dir"}
+
+
+def run(files, tasks="SigmaGas", **kwargs):
+    """Run SinkVis2 from Python, returning a matplotlib figure.
+
+    Parameters mirror the CLI options (without the ``--`` prefix and with
+    underscores instead of hyphens).  Sequence values such as
+    ``limits=(1e-2, 1e3)`` are accepted wherever the CLI expects a
+    comma-separated string.
+
+    Parameters
+    ----------
+    files : str or list of str
+        Path(s) to one or more GIZMO snapshot HDF5 files.  A single string
+        is treated as one file; a list is rendered in order.
+    tasks : str or list of str, optional
+        Task name(s) to render.  May be a single string, a comma-separated
+        string, or a list.  Built-in tasks: ``SigmaGas``, ``HubbleSHO``,
+        ``CoolMap``.  Custom field tasks: ``Slice(expr)``,
+        ``Projection(expr)``, ``SurfaceDensity(expr)``,
+        ``ProjectedAverage(expr)``.  Defaults to ``"SigmaGas"``.
+    **kwargs
+        Any CLI option without the ``--`` prefix (``_`` instead of ``-``).
+        Use ``direction`` for ``--dir`` (``dir`` is a Python built-in).
+        Common options:
+
+        res : int
+            Pixel resolution (default 1024).
+        rmax : float
+            Half-width of the rendered region in simulation length units.
+        center : None, str, or array-like
+            ``None`` uses the box centre.  ``"densest"`` centres on the
+            peak-density cell.  ``"massive"`` uses the most massive sink
+            particle.  A 3-element array sets an explicit ``[x, y, z]``
+            position.
+        direction : str
+            Projection or slice direction: ``"x"``, ``"y"``, ``"z"``,
+            ``"+x"``, ``"-z"``, etc.  Defaults to ``"z"``.
+        limits : str or sequence of two floats
+            Colorbar range, e.g. ``(1e-2, 1e3)`` or ``"0.01,1000"``.
+        no_stars : bool
+            Hide sink particles (default ``False``).
+        no_timestamp : bool
+            Suppress the time annotation (default ``False``).
+        cmap : str
+            Colormap name (default ``"viridis"``).
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        When *files* is a single path and *tasks* names a single task.
+    list of matplotlib.figure.Figure
+        When multiple files are given (one Figure per file).
+    list of list of matplotlib.figure.Figure
+        When multiple tasks are given (outer index = task, inner = file).
+
+    Examples
+    --------
+    Surface-density map of a single snapshot::
+
+        from CrunchSnaps.sinkvis2 import run
+
+        fig = run("snapshot_0010.hdf5", tasks="SigmaGas", rmax=50, res=512)
+        fig.savefig("surface_density.png", dpi=150)
+
+    Density slice centred on the peak-density cell::
+
+        fig = run(
+            "snapshot_2000.hdf5",
+            tasks="Slice(Density)",
+            res=512,
+            rmax=10,
+            center="densest",
+            direction="z",
+        )
+
+    Temperature projection with explicit colorbar limits::
+
+        fig = run(
+            "snapshot_0050.hdf5",
+            tasks="Projection(Temperature)",
+            limits=(1e3, 1e7),
+            no_timestamp=True,
+        )
+    """
+    from CrunchSnaps.CrunchSnaps import GetSnapData
+
+    if isinstance(files, str):
+        files = [files]
+    files = natsorted(files)
+
+    arguments = dict(_CLI_DEFAULTS)
+    arguments["<files>"] = files
+    arguments["--tasks"] = tasks if isinstance(tasks, str) else ",".join(tasks)
+
+    for k, v in kwargs.items():
+        cli_key = f"--{_KWARG_TO_CLI.get(k, k)}"
+        if cli_key not in arguments:
+            raise ValueError(f"Unknown sinkvis2 option '{k}'")
+        if v is None or isinstance(v, bool):
+            arguments[cli_key] = v
+        elif hasattr(v, "__iter__") and not isinstance(v, str):
+            arguments[cli_key] = ",".join(str(x) for x in v)
+        else:
+            arguments[cli_key] = str(v)
+
+    # Force matplotlib backend so all rendering branches use mpl paths,
+    # and set _return_figure so SaveImage returns the fig instead of saving.
+    arguments["--backend"] = "matplotlib"
+
+    task_specs = _split_tasks(arguments["--tasks"])
+    resolved = [_resolve_task(spec) for spec in task_specs]
+    task_classes = [r[0] for r in resolved]
+    extra_params_list = [r[1] for r in resolved]
+
+    params = parse_inputs_to_jobparams(arguments)  # [task_idx][frame_idx]
+
+    for i, ep in enumerate(extra_params_list):
+        if ep:
+            for p in params[i]:
+                p.update(ep)
+
+    # Determine required snapshot fields from all tasks (frame-0 params).
+    required = set()
+    for i, task_cls in enumerate(task_classes):
+        t = task_cls(params[i][0])
+        required.update(t.GetRequiredSnapdata())
+    required = list(required)
+
+    figs = [[] for _ in task_classes]
+    for frame_idx, snap_file in enumerate(files):
+        snapdata = GetSnapData(snap_file, required, 0)
+        snapdata = {k: v for k, v in snapdata.items() if v is not None}
+
+        for task_idx, task_cls in enumerate(task_classes):
+            p = params[task_idx][min(frame_idx, len(params[task_idx]) - 1)].copy()
+            p["_return_figure"] = True
+            task = task_cls(p)
+            fig = task.DoTask(snapdata)
+            figs[task_idx].append(fig)
+
+    if len(task_classes) == 1 and len(files) == 1:
+        return figs[0][0]
+    if len(task_classes) == 1:
+        return figs[0]
+    return figs
 
 
 def main_cli():

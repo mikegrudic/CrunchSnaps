@@ -68,6 +68,10 @@
 <li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.snapshot_tasks.SinkVisCustomField"><code class="docutils literal notranslate"><span class="pre">SinkVisCustomField</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#python-api">Python API</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.sinkvis2.run"><code class="docutils literal notranslate"><span class="pre">run()</span></code></a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="#main-entry-point">Main Entry Point</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#CrunchSnaps.CrunchSnaps.DoTasksForSimulation"><code class="docutils literal notranslate"><span class="pre">DoTasksForSimulation()</span></code></a></li>
 </ul>
@@ -106,8 +110,11 @@
 <h2>Field Registration Functions<a class="headerlink" href="#field-registration-functions" title="Link to this heading"></a></h2>
 <dl class="py function">
 <dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.register_derived_field">
-<span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">register_derived_field</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expr</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.register_derived_field" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">register_derived_field</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">deps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.register_derived_field" title="Link to this definition"></a></dt>
 <dd><p>Register a named derived field.</p>
+<p>expr may be a string expression or a callable(snapdata, _cache, _extra_ns).
+When expr is callable, deps lists the snapshot fields it may access so that
+_extract_field_names can request them for pre-loading.</p>
 <div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">register_derived_field</span><span class="p">(</span><span class="s2">&quot;MagneticPressure&quot;</span><span class="p">,</span> <span class="s2">&quot;norm(MagneticField)**2 / (8*pi)&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -126,11 +133,22 @@ snapshot.  If the field exists on disk, the snapshot value is used.</p>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="CrunchSnaps.snapshot_tasks.register_field_symbol">
-<span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">register_field_symbol</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">latex</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.register_field_symbol" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">CrunchSnaps.snapshot_tasks.</span></span><span class="sig-name descname"><span class="pre">register_field_symbol</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">latex</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">unit_func</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.snapshot_tasks.register_field_symbol" title="Link to this definition"></a></dt>
 <dd><p>Register a LaTeX symbol for a field or expression.</p>
-<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">register_field_symbol</span><span class="p">(</span><span class="s2">&quot;Temperature&quot;</span><span class="p">,</span> <span class="sa">r</span><span class="s2">&quot;T\;\mathrm{(K)}&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Field name or expression.</p></li>
+<li><p><strong>latex</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – LaTeX symbol (without $ delimiters).</p></li>
+<li><p><strong>unit_func</strong> (<em>callable</em><em>, </em><em>optional</em>) – A function <code class="docutils literal notranslate"><span class="pre">f(header)</span> <span class="pre">-&gt;</span> <span class="pre">str</span></code> returning a LaTeX unit string
+(e.g. <code class="docutils literal notranslate"><span class="pre">r&quot;\mathrm{g\,cm^{-3}}&quot;</span></code>).  If provided, the unit is
+appended in parentheses.</p></li>
+<li><p><strong>register_field_symbol</strong><strong>(</strong><strong>&quot;Temperature&quot;</strong> (<em>&gt;&gt;&gt;</em>)</p></li>
+<li><p><strong>r&quot;T&quot;</strong> (<em>r&quot;mathrm{K}&quot;</em><em>)</em>)</p></li>
+<li><p><strong>h</strong> (<em>lambda</em>)</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py function">
@@ -213,6 +231,94 @@ across the entire sequence.</p>
 </ul>
 </dd>
 </dl>
+</dd></dl>
+
+</section>
+<section id="python-api">
+<h2>Python API<a class="headerlink" href="#python-api" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="CrunchSnaps.sinkvis2.run">
+<span class="sig-prename descclassname"><span class="pre">CrunchSnaps.sinkvis2.</span></span><span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">files</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tasks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'SigmaGas'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#CrunchSnaps.sinkvis2.run" title="Link to this definition"></a></dt>
+<dd><p>Run SinkVis2 from Python, returning a matplotlib figure.</p>
+<p>Parameters mirror the CLI options (without the <code class="docutils literal notranslate"><span class="pre">--</span></code> prefix and with
+underscores instead of hyphens).  Sequence values such as
+<code class="docutils literal notranslate"><span class="pre">limits=(1e-2,</span> <span class="pre">1e3)</span></code> are accepted wherever the CLI expects a
+comma-separated string.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>files</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> or </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Path(s) to one or more GIZMO snapshot HDF5 files.  A single string
+is treated as one file; a list is rendered in order.</p></li>
+<li><p><strong>tasks</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> or </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Task name(s) to render.  May be a single string, a comma-separated
+string, or a list.  Built-in tasks: <code class="docutils literal notranslate"><span class="pre">SigmaGas</span></code>, <code class="docutils literal notranslate"><span class="pre">HubbleSHO</span></code>,
+<code class="docutils literal notranslate"><span class="pre">CoolMap</span></code>.  Custom field tasks: <code class="docutils literal notranslate"><span class="pre">Slice(expr)</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Projection(expr)</span></code>, <code class="docutils literal notranslate"><span class="pre">SurfaceDensity(expr)</span></code>,
+<code class="docutils literal notranslate"><span class="pre">ProjectedAverage(expr)</span></code>.  Defaults to <code class="docutils literal notranslate"><span class="pre">&quot;SigmaGas&quot;</span></code>.</p></li>
+<li><p><strong>**kwargs</strong> – <p>Any CLI option without the <code class="docutils literal notranslate"><span class="pre">--</span></code> prefix (<code class="docutils literal notranslate"><span class="pre">_</span></code> instead of <code class="docutils literal notranslate"><span class="pre">-</span></code>).
+Use <code class="docutils literal notranslate"><span class="pre">direction</span></code> for <code class="docutils literal notranslate"><span class="pre">--dir</span></code> (<code class="docutils literal notranslate"><span class="pre">dir</span></code> is a Python built-in).
+Common options:</p>
+<dl class="simple">
+<dt>res<span class="classifier">int</span></dt><dd><p>Pixel resolution (default 1024).</p>
+</dd>
+<dt>rmax<span class="classifier">float</span></dt><dd><p>Half-width of the rendered region in simulation length units.</p>
+</dd>
+<dt>center<span class="classifier">None, str, or array-like</span></dt><dd><p><code class="docutils literal notranslate"><span class="pre">None</span></code> uses the box centre.  <code class="docutils literal notranslate"><span class="pre">&quot;densest&quot;</span></code> centres on the
+peak-density cell.  <code class="docutils literal notranslate"><span class="pre">&quot;massive&quot;</span></code> uses the most massive sink
+particle.  A 3-element array sets an explicit <code class="docutils literal notranslate"><span class="pre">[x,</span> <span class="pre">y,</span> <span class="pre">z]</span></code>
+position.</p>
+</dd>
+<dt>direction<span class="classifier">str</span></dt><dd><p>Projection or slice direction: <code class="docutils literal notranslate"><span class="pre">&quot;x&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;y&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;z&quot;</span></code>,
+<code class="docutils literal notranslate"><span class="pre">&quot;+x&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;-z&quot;</span></code>, etc.  Defaults to <code class="docutils literal notranslate"><span class="pre">&quot;z&quot;</span></code>.</p>
+</dd>
+<dt>limits<span class="classifier">str or sequence of two floats</span></dt><dd><p>Colorbar range, e.g. <code class="docutils literal notranslate"><span class="pre">(1e-2,</span> <span class="pre">1e3)</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;0.01,1000&quot;</span></code>.</p>
+</dd>
+<dt>no_stars<span class="classifier">bool</span></dt><dd><p>Hide sink particles (default <code class="docutils literal notranslate"><span class="pre">False</span></code>).</p>
+</dd>
+<dt>no_timestamp<span class="classifier">bool</span></dt><dd><p>Suppress the time annotation (default <code class="docutils literal notranslate"><span class="pre">False</span></code>).</p>
+</dd>
+<dt>cmap<span class="classifier">str</span></dt><dd><p>Colormap name (default <code class="docutils literal notranslate"><span class="pre">&quot;viridis&quot;</span></code>).</p>
+</dd>
+</dl>
+</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><em>matplotlib.figure.Figure</em> – When <em>files</em> is a single path and <em>tasks</em> names a single task.</p></li>
+<li><p><em>list of matplotlib.figure.Figure</em> – When multiple files are given (one Figure per file).</p></li>
+<li><p><em>list of list of matplotlib.figure.Figure</em> – When multiple tasks are given (outer index = task, inner = file).</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<p>Surface-density map of a single snapshot:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">CrunchSnaps.sinkvis2</span> <span class="kn">import</span> <span class="n">run</span>
+
+<span class="n">fig</span> <span class="o">=</span> <span class="n">run</span><span class="p">(</span><span class="s2">&quot;snapshot_0010.hdf5&quot;</span><span class="p">,</span> <span class="n">tasks</span><span class="o">=</span><span class="s2">&quot;SigmaGas&quot;</span><span class="p">,</span> <span class="n">rmax</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">res</span><span class="o">=</span><span class="mi">512</span><span class="p">)</span>
+<span class="n">fig</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">&quot;surface_density.png&quot;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Density slice centred on the peak-density cell:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">fig</span> <span class="o">=</span> <span class="n">run</span><span class="p">(</span>
+    <span class="s2">&quot;snapshot_2000.hdf5&quot;</span><span class="p">,</span>
+    <span class="n">tasks</span><span class="o">=</span><span class="s2">&quot;Slice(Density)&quot;</span><span class="p">,</span>
+    <span class="n">res</span><span class="o">=</span><span class="mi">512</span><span class="p">,</span>
+    <span class="n">rmax</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+    <span class="n">center</span><span class="o">=</span><span class="s2">&quot;densest&quot;</span><span class="p">,</span>
+    <span class="n">direction</span><span class="o">=</span><span class="s2">&quot;z&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Temperature projection with explicit colorbar limits:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">fig</span> <span class="o">=</span> <span class="n">run</span><span class="p">(</span>
+    <span class="s2">&quot;snapshot_0050.hdf5&quot;</span><span class="p">,</span>
+    <span class="n">tasks</span><span class="o">=</span><span class="s2">&quot;Projection(Temperature)&quot;</span><span class="p">,</span>
+    <span class="n">limits</span><span class="o">=</span><span class="p">(</span><span class="mf">1e3</span><span class="p">,</span> <span class="mf">1e7</span><span class="p">),</span>
+    <span class="n">no_timestamp</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
 </dd></dl>
 
 </section>

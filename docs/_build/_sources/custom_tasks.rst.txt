@@ -113,6 +113,71 @@ Register custom symbols::
     from CrunchSnaps.snapshot_tasks import register_field_symbol
     register_field_symbol("Masses*InternalEnergy", r"E_\mathrm{th}")
 
+Built-in Functions
+------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 40
+
+   * - Name
+     - Description
+   * - ``abs(x)``
+     - Absolute value
+   * - ``sqrt(x)``
+     - Square root
+   * - ``cbrt(x)``
+     - Cube root (:math:`x^{1/3}`)
+   * - ``norm(v)``
+     - Euclidean magnitude of a vector field (shape ``(N, 3)``)
+   * - ``log(x)``, ``log2(x)``, ``log10(x)``
+     - Natural, base-2, and base-10 logarithm
+   * - ``exp(x)``
+     - Exponential
+   * - ``sin(x)``, ``cos(x)``, ``tan(x)``
+     - Trigonometric functions
+   * - ``minimum(a,b)``, ``maximum(a,b)``
+     - Element-wise min/max
+   * - ``clip(x,a,b)``
+     - Clamp values to ``[a, b]``
+   * - ``where(cond,a,b)``
+     - Element-wise conditional selection
+
+Physical constants (``pi``, ``G``, ``k_B``, ``m_p``, ``c_light``,
+``Msun``, ``pc``, ``yr``, ``Myr``, ``eV``, …) are also available.
+Use ``np`` for any other NumPy function (e.g. ``np.arctan2(y, x)``).
+
+Built-in Aliases
+----------------
+
+``dx``
+    Inter-particle spacing estimate, ``cbrt(Masses/Density)``.  Useful
+    as a local resolution scale::
+
+        --tasks='Slice(Div(MagneticField) * dx)'
+
+Differential Operators
+----------------------
+
+``Div(v)`` and ``Curl(v)`` compute the SPH-kernel divergence and curl of
+a vector field ``v`` (shape ``(N, 3)``) using
+:meth:`meshoid.Meshoid.Div` and :meth:`meshoid.Meshoid.Curl`.  They are
+evaluated on the particles in the render volume and return a scalar
+(shape ``(N,)``) or vector (shape ``(N, 3)``) array respectively.
+
+These operators require the particle positions and are therefore only
+available inside a rendering task (``Slice``, ``SurfaceDensity``,
+``Projection``, ``ProjectedAverage``).  Using them in a bare expression
+outside a render context raises ``RuntimeError``.
+
+Example — divergence of :math:`\mathbf{B}` scaled by the local cell size::
+
+    --tasks='Slice(Div(MagneticField) * cbrt(Masses/Density)/norm(MagneticField))'
+
+The same expression using the ``dx`` alias::
+
+    --tasks='Slice(Div(MagneticField) * dx/norm(MagneticField))'
+
 Vector Fields
 -------------
 

@@ -53,6 +53,9 @@
 <li class="toctree-l2"><a class="reference internal" href="#render-modes">Render Modes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#colormap-behavior">Colormap Behavior</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#colorbar-labels">Colorbar Labels</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#built-in-functions">Built-in Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#built-in-aliases">Built-in Aliases</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#differential-operators">Differential Operators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#vector-fields">Vector Fields</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#defining-new-derived-fields">Defining New Derived Fields</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#field-fallbacks">Field Fallbacks</a></li>
@@ -200,6 +203,86 @@ symbol is registered, the raw expression is shown in monospace.</p>
 <p>Register custom symbols:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">CrunchSnaps.snapshot_tasks</span> <span class="kn">import</span> <span class="n">register_field_symbol</span>
 <span class="n">register_field_symbol</span><span class="p">(</span><span class="s2">&quot;Masses*InternalEnergy&quot;</span><span class="p">,</span> <span class="sa">r</span><span class="s2">&quot;E_\mathrm</span><span class="si">{th}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="built-in-functions">
+<h2>Built-in Functions<a class="headerlink" href="#built-in-functions" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 33.3%" />
+<col style="width: 66.7%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Name</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">abs(x)</span></code></p></td>
+<td><p>Absolute value</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">sqrt(x)</span></code></p></td>
+<td><p>Square root</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">cbrt(x)</span></code></p></td>
+<td><p>Cube root (<span class="math notranslate nohighlight">\(x^{1/3}\)</span>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">norm(v)</span></code></p></td>
+<td><p>Euclidean magnitude of a vector field (shape <code class="docutils literal notranslate"><span class="pre">(N,</span> <span class="pre">3)</span></code>)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">log(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">log2(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">log10(x)</span></code></p></td>
+<td><p>Natural, base-2, and base-10 logarithm</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">exp(x)</span></code></p></td>
+<td><p>Exponential</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">sin(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">cos(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">tan(x)</span></code></p></td>
+<td><p>Trigonometric functions</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">minimum(a,b)</span></code>, <code class="docutils literal notranslate"><span class="pre">maximum(a,b)</span></code></p></td>
+<td><p>Element-wise min/max</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">clip(x,a,b)</span></code></p></td>
+<td><p>Clamp values to <code class="docutils literal notranslate"><span class="pre">[a,</span> <span class="pre">b]</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">where(cond,a,b)</span></code></p></td>
+<td><p>Element-wise conditional selection</p></td>
+</tr>
+</tbody>
+</table>
+<p>Physical constants (<code class="docutils literal notranslate"><span class="pre">pi</span></code>, <code class="docutils literal notranslate"><span class="pre">G</span></code>, <code class="docutils literal notranslate"><span class="pre">k_B</span></code>, <code class="docutils literal notranslate"><span class="pre">m_p</span></code>, <code class="docutils literal notranslate"><span class="pre">c_light</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Msun</span></code>, <code class="docutils literal notranslate"><span class="pre">pc</span></code>, <code class="docutils literal notranslate"><span class="pre">yr</span></code>, <code class="docutils literal notranslate"><span class="pre">Myr</span></code>, <code class="docutils literal notranslate"><span class="pre">eV</span></code>, …) are also available.
+Use <code class="docutils literal notranslate"><span class="pre">np</span></code> for any other NumPy function (e.g. <code class="docutils literal notranslate"><span class="pre">np.arctan2(y,</span> <span class="pre">x)</span></code>).</p>
+</section>
+<section id="built-in-aliases">
+<h2>Built-in Aliases<a class="headerlink" href="#built-in-aliases" title="Link to this heading"></a></h2>
+<dl>
+<dt><code class="docutils literal notranslate"><span class="pre">dx</span></code></dt><dd><p>Inter-particle spacing estimate, <code class="docutils literal notranslate"><span class="pre">cbrt(Masses/Density)</span></code>.  Useful
+as a local resolution scale:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="s1">&#39;Slice(Div(MagneticField) * dx)&#39;</span>
+</pre></div>
+</div>
+</dd>
+</dl>
+</section>
+<section id="differential-operators">
+<h2>Differential Operators<a class="headerlink" href="#differential-operators" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">Div(v)</span></code> and <code class="docutils literal notranslate"><span class="pre">Curl(v)</span></code> compute the SPH-kernel divergence and curl of
+a vector field <code class="docutils literal notranslate"><span class="pre">v</span></code> (shape <code class="docutils literal notranslate"><span class="pre">(N,</span> <span class="pre">3)</span></code>) using
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">meshoid.Meshoid.Div()</span></code> and <code class="xref py py-meth docutils literal notranslate"><span class="pre">meshoid.Meshoid.Curl()</span></code>.  They are
+evaluated on the particles in the render volume and return a scalar
+(shape <code class="docutils literal notranslate"><span class="pre">(N,)</span></code>) or vector (shape <code class="docutils literal notranslate"><span class="pre">(N,</span> <span class="pre">3)</span></code>) array respectively.</p>
+<p>These operators require the particle positions and are therefore only
+available inside a rendering task (<code class="docutils literal notranslate"><span class="pre">Slice</span></code>, <code class="docutils literal notranslate"><span class="pre">SurfaceDensity</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Projection</span></code>, <code class="docutils literal notranslate"><span class="pre">ProjectedAverage</span></code>).  Using them in a bare expression
+outside a render context raises <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code>.</p>
+<p>Example — divergence of <span class="math notranslate nohighlight">\(\mathbf{B}\)</span> scaled by the local cell size:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="s1">&#39;Slice(Div(MagneticField) * cbrt(Masses/Density)/norm(MagneticField))&#39;</span>
+</pre></div>
+</div>
+<p>The same expression using the <code class="docutils literal notranslate"><span class="pre">dx</span></code> alias:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">--</span><span class="n">tasks</span><span class="o">=</span><span class="s1">&#39;Slice(Div(MagneticField) * dx/norm(MagneticField))&#39;</span>
 </pre></div>
 </div>
 </section>

@@ -41,6 +41,11 @@ Task Classes
    :members:
    :show-inheritance:
 
+Python API
+----------
+
+.. autofunction:: CrunchSnaps.sinkvis2.run
+
 Main Entry Point
 ----------------
 

@@ -357,6 +357,11 @@ class SinkVis(Task):
         return
 
     def SaveImage(self):
+        if self.params.get("_return_figure"):
+            rmax = self.params["rmax"]
+            self.ax.set(xlim=[-rmax, rmax], ylim=[-rmax, rmax])
+            self._returned_fig = self.fig
+            return
         print("Saving ", self.params["filename"])
         if self.params["backend"] == "matplotlib":
             from matplotlib import pyplot as plt
@@ -581,6 +586,10 @@ class SinkVis(Task):
             if len(self.params["center"]) == 3:
                 return
 
+        if self.params["center"] is None:
+            self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"] * 0.5, 3)
+            return
+
         match self.params["center"]:
             case "densest":
                 if "PartType0/Density" in snapdata and snapdata["PartType0/Density"] is not None:
@@ -681,6 +690,8 @@ class SinkVis(Task):
             self.SetupCoordsAndWeights(snapdata)
             self.GenerateMaps(snapdata)
         self.MakeImages(snapdata)
+        if self.params.get("_return_figure"):
+            return getattr(self, "_returned_fig", None)
         return self.maps
 
     @staticmethod

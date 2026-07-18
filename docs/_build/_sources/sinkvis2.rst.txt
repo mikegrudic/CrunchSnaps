@@ -506,3 +506,61 @@ Full Option Reference
         --v_limits=<min,max>              CoolMap velocity dispersion range
         --SHO_RGB_norm=<f>                Narrowband normalization [default: 0.0]
         --id_mask=<file>                  Particle ID filter (.npy file)
+
+Python API
+----------
+
+The :func:`~CrunchSnaps.sinkvis2.run` function provides a Python interface to
+SinkVis2 that returns a :class:`matplotlib.figure.Figure` instead of writing
+files to disk.
+
+Quick start::
+
+    from CrunchSnaps.sinkvis2 import run
+
+    fig = run("snapshot_0010.hdf5", tasks="SigmaGas", rmax=50, res=512)
+    fig.savefig("surface_density.png", dpi=150)
+
+Density slice centred on the peak-density cell::
+
+    fig = run(
+        "snapshot_2000.hdf5",
+        tasks="Slice(Density)",
+        res=512,
+        rmax=10,
+        center="densest",
+        direction="z",
+    )
+
+Calling convention
+^^^^^^^^^^^^^^^^^^
+
+Keyword arguments map directly to CLI options:
+
+- Drop the leading ``--``.
+- Replace hyphens with underscores (e.g. ``no_stars`` for ``--no_stars``).
+- Use ``direction`` instead of ``dir`` (``dir`` is a Python built-in).
+- Boolean flags accept Python bools (``no_stars=True``).
+- Comma-separated CLI values accept Python sequences
+  (``limits=(1e-2, 1e3)`` or ``limits=[0.01, 1000]``).
+- ``center`` accepts ``None`` (box centre), ``"densest"``, ``"massive"``,
+  or a 3-element array ``[x, y, z]``.
+
+The rendering backend is always ``matplotlib``; the ``backend`` kwarg is
+ignored.
+
+Return value
+^^^^^^^^^^^^
+
++-----------------------------+---------------------+----------------------------+
+| Input                       | Returns             |                            |
++=============================+=====================+============================+
+| single file, single task    | ``Figure``          |                            |
++-----------------------------+---------------------+----------------------------+
+| multiple files, single task | ``list[Figure]``    | one Figure per file        |
++-----------------------------+---------------------+----------------------------+
+| multiple tasks              | ``list[list[...]]`` | outer = task, inner = file |
++-----------------------------+---------------------+----------------------------+
+
+For the full parameter reference see :func:`CrunchSnaps.sinkvis2.run` in the
+:doc:`api`.
