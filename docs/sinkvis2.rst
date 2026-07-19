@@ -375,20 +375,20 @@ Backends
 
 SinkVis2 supports two rendering backends:
 
-``PIL`` (default)
+``matplotlib`` (default)
+    Renders using matplotlib with labeled axes, axis ticks, and a standard
+    matplotlib colorbar.  Useful for quick inspection and when you want
+    coordinate axes on the plot.
+
+``PIL``
     Renders images as raw pixel arrays using PIL/Pillow.  Produces clean
     borderless images suitable for movies, compositing, and publication
     figures.  Overlays (timestamp, size scale, colorbar) are drawn directly
     onto the image.
 
-``matplotlib``
-    Renders using matplotlib with labeled axes, axis ticks, and a standard
-    matplotlib colorbar.  Useful for quick inspection and when you want
-    coordinate axes on the plot.
-
 ::
 
-    SinkVis2 snapshot_*.hdf5 --backend=matplotlib
+    SinkVis2 snapshot_*.hdf5 --backend=PIL
 
 .. figure:: _static/examples/sigmagas_matplotlib.png
    :width: 400px
@@ -487,7 +487,7 @@ Full Option Reference
         --make_movie                       Encode frames into an mp4 movie
         --fps=<N>                          Movie frame rate [default: 24]
         --outputfolder=<name>              Output directory [default: .]
-        --backend=<b>                      PIL or matplotlib [default: PIL]
+        --backend=<b>                      PIL or matplotlib [default: matplotlib]
         --no_stars                         Hide sink particles
         --no_timestamp                     Hide timestamp overlay
         --no_size_scale                    Hide size scale bar
@@ -520,6 +520,11 @@ Quick start::
 
     fig = run("snapshot_0010.hdf5", tasks="SigmaGas", rmax=50, res=512)
     fig.savefig("surface_density.png", dpi=150)
+
+Pass a directory to run on every snapshot it contains (sorted naturally)::
+
+    figs = run("/path/to/sim/", tasks="SigmaGas", rmax=50, res=512)
+    # returns list[Figure], one per snapshot
 
 Density slice centred on the peak-density cell::
 

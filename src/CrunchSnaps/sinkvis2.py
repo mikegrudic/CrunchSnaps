@@ -11,7 +11,7 @@ Options:
     --rmax=<pc>                  Half-width of the field of view; defaults to mass-weighted spatial extent of gas. FOV/2 in radians if camera_dist is <inf
     --no_stars                   Hide sink particles
     --no_overwrite               Skip rendering if the output file already exists
-    --backend=<b>                matplotlib vs PIL [default: PIL]
+    --backend=<b>                matplotlib vs PIL [default: matplotlib]
     --id_mask=<file>            .npy file containing the gas particle IDs to be plotted
     --dir=<x,y,z>                Coordinate direction to orient the image along. Accepts x, y, z (or +x/-x, +y/-y, +z/-z for explicit sign) or a vector. [default: z]
     --target_time=<f>            Render a single image at this simulation time, interpolating between bounding snapshots
@@ -360,7 +360,7 @@ _CLI_DEFAULTS = {
     "--rmax":               None,
     "--no_stars":           False,
     "--no_overwrite":       False,
-    "--backend":            "PIL",
+    "--backend":            "matplotlib",
     "--id_mask":            None,
     "--dir":                "z",
     "--target_time":        None,
@@ -418,8 +418,11 @@ def run(files, tasks="SigmaGas", **kwargs):
     Parameters
     ----------
     files : str or list of str
-        Path(s) to one or more GIZMO snapshot HDF5 files.  A single string
-        is treated as one file; a list is rendered in order.
+        Path(s) to one or more GIZMO snapshot HDF5 files, or a path to a
+        directory containing snapshots.  If a directory is given, all
+        ``*.hdf5`` files in it are collected and sorted naturally.  A plain
+        string is treated as a single file or directory; a list is rendered in
+        order.
     tasks : str or list of str, optional
         Task name(s) to render.  May be a single string, a comma-separated
         string, or a list.  Built-in tasks: ``SigmaGas``, ``HubbleSHO``,
@@ -494,7 +497,18 @@ def run(files, tasks="SigmaGas", **kwargs):
 
     if isinstance(files, str):
         files = [files]
-    files = natsorted(files)
+    # Expand a single directory to all snapshot HDF5 files it contains.
+    if len(files) == 1 and os.path.isdir(files[0]):
+        directory = files[0]
+        files = natsorted(
+            os.path.join(directory, f)
+            for f in os.listdir(directory)
+            if f.endswith(".hdf5")
+        )
+        if not files:
+            raise ValueError(f"No .hdf5 files found in '{directory}'")
+    else:
+        files = natsorted(files)
 
     arguments = dict(_CLI_DEFAULTS)
     arguments["<files>"] = files
@@ -534,6 +548,9 @@ def run(files, tasks="SigmaGas", **kwargs):
         required.update(t.GetRequiredSnapdata())
     required = list(required)
 
+    import matplotlib.pyplot as plt
+
+    single = len(task_classes) == 1 and len(files) == 1
     figs = [[] for _ in task_classes]
     for frame_idx, snap_file in enumerate(files):
         snapdata = GetSnapData(snap_file, required, 0)
@@ -544,9 +561,15 @@ def run(files, tasks="SigmaGas", **kwargs):
             p["_return_figure"] = True
             task = task_cls(p)
             fig = task.DoTask(snapdata)
+            # For multi-snapshot runs, detach each figure from pyplot's figure
+            # manager as soon as it's captured. This prevents %matplotlib inline
+            # from auto-displaying mid-loop and avoids figure accumulation.
+            # The Figure objects remain fully functional (savefig, display, etc.).
+            if not single and fig is not None:
+                plt.close(fig)
             figs[task_idx].append(fig)
 
-    if len(task_classes) == 1 and len(files) == 1:
+    if single:
         return figs[0][0]
     if len(task_classes) == 1:
         return figs[0]

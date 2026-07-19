@@ -70,7 +70,7 @@ class SinkVis(Task):
             "filename": None,
             "sink_scale": 1,
             "cmap": "magma",
-            "backend": "PIL",
+            "backend": "matplotlib",
             "rescale_hsml": False,
             "FOV": 90,
             "camera_distance": np.inf,
@@ -102,6 +102,8 @@ class SinkVis(Task):
         }
 
         self.AssignDefaultParams()
+        if self.params["camera_distance"] < np.inf and self.params["backend"] == "matplotlib":
+            self.params["backend"] = "PIL"
         basename, ext = os.path.splitext(self.params["filename"])
         self.params["filename_incomplete"] = basename + "_incomplete" + ext
         self.params_that_affect_maps = [
@@ -968,7 +970,6 @@ class SinkVisSigmaGas(SinkVis):
                 )
         elif self.params["backend"] == "matplotlib":
             from mpl_toolkits.axes_grid1 import make_axes_locatable
-            matplotlib.use("Agg")
             self.fig, self.ax = plt.subplots(figsize=(4, 4))
             # Explicit margins so the Y label, colorbar, and the colorbar's own
             # "Σ_gas" label all fit without bbox_inches="tight" needing to crop
@@ -1911,7 +1912,6 @@ class SinkVisCustomField(SinkVis):
         elif self.params["backend"] == "matplotlib":
             import matplotlib
             from mpl_toolkits.axes_grid1 import make_axes_locatable
-            matplotlib.use("Agg")
             self.fig, self.ax = plt.subplots(figsize=(4, 4))
             self.fig.subplots_adjust(left=0.16, right=0.82, top=0.95, bottom=0.12)
             X = Y = np.linspace(-self.params["rmax"], self.params["rmax"], self.params["res"])
