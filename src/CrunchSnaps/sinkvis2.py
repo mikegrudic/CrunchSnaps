@@ -577,6 +577,11 @@ def run(files, tasks="SigmaGas", **kwargs):
 
 
 def main_cli():
+    # The CLI always renders to files headlessly, so force the non-interactive
+    # Agg backend before anything imports pyplot. Otherwise matplotlib tries to
+    # open an interactive window (e.g. Tk) and crashes on headless login nodes.
+    import matplotlib
+    matplotlib.use("Agg")
     arguments = docopt(__doc__)
     # Split positional args into snapshot files and task specs
     positional = arguments["<args>"]
