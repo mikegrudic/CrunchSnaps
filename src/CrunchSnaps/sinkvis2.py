@@ -54,6 +54,8 @@ Options:
     --fps=<N>                    Frames per second for movie [default: 24]
 """
 
+import contextlib
+import io
 import os
 
 from docopt import docopt
@@ -292,17 +294,36 @@ def make_movie(outputfolder, prefix, fps):
         print(f"Wrote {movie_path}")
 
 
-def _compute_global_limits(outputfolder):
-    """Load all cached sigma_gas maps and compute global max-entropy limits."""
-    from glob import glob
+def _compute_global_limits(task_type, task_params_list, skip=()):
+    """Global +/-3 sigma color limits for a task, from the maps this run cached.
 
-    map_files = natsorted(glob(os.path.join(outputfolder, ".maps", "sigma_gas_*.npz")))
-    if not map_files:
-        return None
-    maps = [np.load(f)["sigma_gas"] for f in map_files]
-    print(f"Computing global max-entropy limits from {len(maps)} cached maps...")
-    limits = np.array(max_entropy_limits_multi(maps, log_scale=True))
-    print(f"Global limits: [{limits[0]:.3g}, {limits[1]:.3g}]")
+    Returns {param name: (lo, hi)} covering every color-limit param the task uses
+    (e.g. both "limits" and "v_limits" for CoolMap), skipping any the user set.
+
+    The tasks are re-instantiated to get their cache filenames, which are hashed
+    from the params that affect the maps - globbing the cache directory instead
+    would also pick up maps left over from runs at a different rmax, center, etc.
+    Instantiating with overwrite=False stops each task at the "already rendered"
+    check, so no map data is loaded here.
+    """
+    with contextlib.redirect_stdout(io.StringIO()):  # muffle per-frame chatter
+        instances = [task_type({**p, "overwrite": False}) for p in task_params_list]
+    if not instances:
+        return {}
+
+    limits = {}
+    for limit_param, map_name in instances[0].color_limit_maps.items():
+        if limit_param in skip:
+            continue
+        files = [t.map_files[map_name] + ".npz" for t in instances if map_name in t.map_files]
+        files = [f for f in files if os.path.isfile(f)]
+        if not files:
+            continue
+        print(f"Computing global {limit_param} for {map_name} from {len(files)} cached maps...")
+        # a generator, so only one map is held in memory at a time
+        lo_hi = sigma_quantile_limits((np.load(f)[map_name] for f in files), log_scale=True)
+        print(f"Global {limit_param}: [{lo_hi[0]:.3g}, {lo_hi[1]:.3g}]")
+        limits[limit_param] = np.array(lo_hi)
     return limits
 
 
@@ -317,7 +338,6 @@ def main(input):
     np_render = int(input["--np_render"])
     params = parse_inputs_to_jobparams(input)
     snaps = natsorted(input["<files>"])
-    user_set_limits = input["--limits"] is not None
     outputfolder = input["--outputfolder"]
 
     # Inject per-task extra params (e.g. _render_mode, _field_expr for custom tasks)
@@ -332,19 +352,24 @@ def main(input):
     )
 
     if input["--make_movie"]:
-        # If user didn't specify limits, re-render with global max-entropy limits
-        if not user_set_limits:
-            global_limits = _compute_global_limits(outputfolder)
-            if global_limits is not None:
-                for task_params_list in params:
-                    for p in task_params_list:
-                        p["limits"] = global_limits
-                        p["overwrite"] = True
-                # Second pass: maps are cached, only images are re-rendered
-                CrunchSnaps.DoTasksForSimulation(
-                    snaps, task_types=tasks, task_params=params,
-                    nproc=nproc, nthreads=np_render, id_mask=input["--id_mask"],
-                )
+        # Re-render with one color scale for the whole sequence, per task, for
+        # whichever limits the user didn't pin on the command line
+        skip = tuple(k for k in ("limits", "v_limits") if input["--" + k] is not None)
+        needs_rerender = False
+        for i, task_type in enumerate(tasks):
+            global_limits = _compute_global_limits(task_type, params[i], skip=skip)
+            if not global_limits:
+                continue
+            needs_rerender = True
+            for p in params[i]:
+                p.update(global_limits)
+                p["overwrite"] = True
+        if needs_rerender:
+            # Second pass: maps are cached, only images are re-rendered
+            CrunchSnaps.DoTasksForSimulation(
+                snaps, task_types=tasks, task_params=params,
+                nproc=nproc, nthreads=np_render, id_mask=input["--id_mask"],
+            )
 
         fps = int(input["--fps"])
         for prefix in movie_prefixes:

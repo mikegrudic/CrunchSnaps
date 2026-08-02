@@ -30,6 +30,10 @@ def _get_font(size):
     return ImageFont.load_default()
 
 
+# smallest sink marker size, in the units of the log-mass scale used by AddStarsToImage
+_MIN_STAR_SIZE = 1.0
+
+
 class Task:
     """Class containing generic routines common to all tasks, and assigns default (null/empty) attributes that any task should have"""
 
@@ -53,6 +57,11 @@ class Task:
 
 
 class SinkVis(Task):
+    # maps whose values set a color-limit param, as {param name: map name}.  Used to
+    # compute one color scale for a whole sequence of frames; tasks that don't take
+    # color limits (e.g. RGB composites) leave this empty.
+    color_limit_maps = {}
+
     def __init__(self, params):
         """Class containing methods for coordinate transformations, rendering, etc. for a generic SinkVis-type map plot"""
         super().__init__(params)
@@ -300,8 +309,11 @@ class SinkVis(Task):
         res = self.params["res"]
         if "PartType0/Coordinates" in snapdata.keys():
             if "PartType0/KernelMaxRadius" not in snapdata:
+                # a periodic tree is only valid if the coordinates are in the box frame
+                coords = snapdata["PartType0/Coordinates"]
+                boxsize = snapdata["Header"]["BoxSize"]
                 snapdata["PartType0/KernelMaxRadius"] = Meshoid(
-                    snapdata["PartType0/Coordinates"], boxsize=snapdata["Header"]["BoxSize"]
+                    coords, boxsize=boxsize if coords_in_box_frame(coords, boxsize) else None
                 ).SmoothingLength()
             self.pos, self.mass, self.hsml = (
                 np.copy(snapdata["PartType0/Coordinates"]),
@@ -523,8 +535,11 @@ class SinkVis(Task):
                 d.flush()
         elif self.params["backend"] == "matplotlib":
             self.DoCoordinateTransform(X_star, np.ones(len(X_star)), np.ones(len(X_star)))
-            star_size = np.log10(m_star / self.params["sink_scale"]) + 2
-            star_size[m_star < self.params["sink_scale"]] = 0
+            # Floor the marker size instead of zeroing it, so that sinks below
+            # sink_scale (e.g. protostars in a sub-solar collapse run) are still
+            # visible.  The floor continues the formula down to sink_scale/10,
+            # below which the size would shrink to nothing.
+            star_size = np.maximum(np.log10(m_star / self.params["sink_scale"]) + 2, _MIN_STAR_SIZE)
             colors = np.array([self.GetStarColor(m) for m in m_star]) / 255
 
             self.ax.scatter(
@@ -543,7 +558,7 @@ class SinkVis(Task):
                 # CrunchSnaps' own size/color scheme so the legend markers
                 # match the rendered stars.
                 for m_dummy in (1, 10, 100, 1000):
-                    s_dummy = (np.log10(m_dummy / self.params["sink_scale"]) + 2) * 5
+                    s_dummy = max(np.log10(m_dummy / self.params["sink_scale"]) + 2, _MIN_STAR_SIZE) * 5
                     self.ax.scatter(
                         [np.inf], [np.inf],
                         s=s_dummy,
@@ -581,6 +596,15 @@ class SinkVis(Task):
             colors = np.int_([np.interp(np.log10(mass_in_msun), [-1, 0, 1], star_colors[:, i]) for i in range(3)])
         return (colors[0], colors[1], colors[2])  # if len(colors)==1 else colors)
 
+    @staticmethod
+    def _default_center(snapdata):
+        """Center of the simulation domain: BoxSize/2 in the box frame, else the origin."""
+        boxsize = snapdata["Header"]["BoxSize"]
+        coords = snapdata.get("PartType0/Coordinates")
+        if coords is not None and not coords_in_box_frame(coords, boxsize):
+            return np.zeros(3)  # non-periodic runs are generally centered on the origin
+        return np.repeat(boxsize * 0.5, 3)
+
     def assign_center(self, snapdata):
         """Assign the center of the image"""
 
@@ -589,7 +613,7 @@ class SinkVis(Task):
                 return
 
         if self.params["center"] is None:
-            self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"] * 0.5, 3)
+            self.params["center"] = self._default_center(snapdata)
             return
 
         match self.params["center"]:
@@ -633,7 +657,7 @@ class SinkVis(Task):
         #            case _:
 
         if not isinstance(self.params["center"], np.ndarray):
-            self.params["center"] = np.repeat(snapdata["Header"]["BoxSize"] * 0.5, 3)  # default
+            self.params["center"] = self._default_center(snapdata)  # default
 
     def _compute_default_rmax(self, snapdata):
         """Compute default rmax from mass-weighted 2D variance in the viewing plane.
@@ -901,6 +925,8 @@ class SinkVis(Task):
 
 
 class SinkVisSigmaGas(SinkVis):
+    color_limit_maps = {"limits": "sigma_gas"}
+
     def __init__(self, params):
         self.required_maps = set(["sigma_gas"])
         super().__init__(params)
@@ -1001,6 +1027,8 @@ class SinkVisSigmaGas(SinkVis):
 
 
 class SinkVisCoolMap(SinkVis):
+    color_limit_maps = {"limits": "sigma_gas", "v_limits": "sigma_1D"}
+
     def __init__(self, params):
         self.required_maps = set(
             ["sigma_gas", "sigma_1D"]
@@ -1295,6 +1323,10 @@ class SinkVisNarrowbandComposite(SinkVis):
 
 # ---------- Custom field task infrastructure ----------
 
+# Helium mass fraction assumed when the snapshot does not track He (GIZMO's
+# HYDROGEN_MASSFRAC = 0.76)
+_PRIMORDIAL_HELIUM_MASSFRAC = 0.24
+
 # Physical constants and unit conversions (CGS, from astropy)
 _CONSTANTS = {
     "pi": np.pi,
@@ -1357,9 +1389,15 @@ def _number_density_field(snapdata, _cache, _extra_ns):
     unit_density = unit_mass / unit_length**3
     key = "PartType0/Metallicity"
     if key in snapdata and snapdata[key] is not None:
-        met = snapdata[key]
-        # Metallicity[:,0] = total metal fraction (Z), [:,1] = He fraction (Y)
-        xH = 1.0 - met[:, 0] - met[:, 1]
+        met = np.asarray(snapdata[key])
+        if met.ndim < 2:  # NUM_METAL_SPECIES=1: GIZMO writes a rank-1 dataset
+            met = met[:, None]
+        if met.shape[1] > 1:
+            # Metallicity[:,0] = total metal fraction (Z), [:,1] = He fraction (Y)
+            xH = 1.0 - met[:, 0] - met[:, 1]
+        else:
+            # only total Z is tracked, so assume primordial He
+            xH = 1.0 - met[:, 0] - _PRIMORDIAL_HELIUM_MASSFRAC
     else:
         xH = 1.0
     return xH * density * unit_density / _CONSTANTS["m_p"]
@@ -1697,6 +1735,7 @@ class SinkVisCustomField(SinkVis):
         _safe = re.sub(r"[^\w]", "_", self._field_expr)
         self._map_key = f"{self._render_mode}_{_safe}"
         self.required_maps = set([self._map_key])
+        self.color_limit_maps = {"limits": self._map_key}
         super().__init__(params)
         if self.TaskDone:
             return

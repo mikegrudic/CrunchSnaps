@@ -310,6 +310,13 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
     )  # keep the lowest value between snapshots, can be used to remove spikes that exist for only one snapshot that are hard to interpolate
 
     interpolated_data = snapdata_buffer[t1].copy()
+    # one box-frame decision for the whole snapshot, as in GetSnapData
+    boxsize = snapdata_buffer[t1]["Header"]["BoxSize"]
+    box_frame = all(
+        coords_in_box_frame(v, boxsize)
+        for k, v in snapdata_buffer[t1].items()
+        if "Coordinates" in k and v is not None
+    )
     idx1, idx2 = {}, {}
     for ptype in "PartType0", "PartType5":
         ids1 = snapdata_buffer[t1].get(ptype + "/ParticleIDs")
@@ -387,12 +394,12 @@ def SnapInterpolate(t, t1, t2, snapdata_buffer, sparse_snaps=False):
                     interpolated_data[field] = f1
             else:  # interpolate everything else linearily
                 if "Coordinates" in field:  # special behaviour to handle periodic BCs
-                    boxsize = snapdata_buffer[t1]["Header"]["BoxSize"]
                     dx = f2 - f1  # one full-size temp
                     dx = NearestImage(dx, boxsize)
                     dx *= wt2
                     dx += f1
-                    np.mod(dx, boxsize, out=dx)
+                    if box_frame:
+                        np.mod(dx, boxsize, out=dx)
                     interpolated_data[field] = dx
                 else:
                     f1 *= wt1
@@ -462,6 +469,7 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None, sort_by_
         else:
             cosmological = False
 
+        coord_fields = []
         for field in required_snapdata:
             read_field = field
             if field not in F.keys():
@@ -477,8 +485,7 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None, sort_by_
                 snapdata[field] = np.float32(F[read_field][:])
 
             if "Coordinates" in field:
-                boxsize = snapdata["Header"]["BoxSize"]
-                np.mod(snapdata[field], boxsize, out=snapdata[field])
+                coord_fields.append(field)
 
             if cosmological:
                 ascale = time
@@ -490,6 +497,20 @@ def GetSnapData(snappath, required_snapdata, process_num, id_mask=None, sort_by_
                     snapdata[field] *= ascale**0.5
                 if "Density" in field or "Pressure" in field:
                     snapdata[field] *= 1 / hubble / (ascale / hubble) ** 3
+
+        # Only wrap coordinates that actually live in the [0,BoxSize) box frame:
+        # non-periodic runs are usually centered on the origin, and wrapping those
+        # would scatter the domain across the corners of the box.  The decision is
+        # made once for the whole snapshot so that every particle type stays in the
+        # same frame - a single sink near the origin would otherwise be wrapped
+        # away from the gas it sits in.
+        if coord_fields:
+            boxsize = header["BoxSize"]
+            if cosmological:
+                boxsize *= time / hubble
+            if all(coords_in_box_frame(snapdata[f], boxsize) for f in coord_fields):
+                for f in coord_fields:
+                    np.mod(snapdata[f], boxsize, out=snapdata[f])
 
     if sort_by_id:
         id_order = {}  # have to pre-sort everything by ID and fix the IDs of the wind particles
