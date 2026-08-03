@@ -303,6 +303,35 @@ class SinkVis(Task):
                 # get the radial component
                 x[:, 2] = np.sum(x * global_coords, axis=1) / np.sum(global_coords**2, axis=1) ** 0.5
 
+    def SetupCameraBasis(self):
+        """Build the camera coordinate basis from camera_dir/camera_up.
+
+        Depends only on params, not on any snapshot data, and is idempotent.  It has
+        to be available even when the maps come from cache and SetupCoordsAndWeights
+        never runs, because anything drawn on top of the map (sinks, vectors) still
+        needs to be transformed into the camera frame.
+        """
+        if self.params["camera_dir"] is None:
+            return  # no camera basis: DoCoordinateTransform uses the pan/tilt path instead
+        self.camera_dir = self.params["camera_dir"]
+        NormalizeVector(self.params["camera_dir"])
+        if self.params["camera_up"] is None:
+            # default "up" direction is +y, we will project it out if the camera is tilted
+            self.camera_up = np.array([0, 1.0, 0])
+        else:
+            self.camera_up = self.params["camera_up"]
+
+        # if we've specified an up direction, project out the component parallel to the forward direction and normalize
+        self.camera_up -= sum(self.camera_dir * self.camera_up).sum() * self.camera_dir
+        NormalizeVector(self.camera_up)
+        # now get the "right" vector as the cross product of forward x up. this will be normalized to machine precision
+        self.camera_right = np.cross(self.camera_up, self.camera_dir)
+
+        # matrix of coordinate vectors - operate this on coordinates to apply transformation - operates on COORDINATES not vectors
+        self.camera_matrix = np.c_[self.camera_right, self.camera_up, self.camera_dir].T
+        # since vector fields are contravariant, this is the operator for transforming v and B (note that this is an orthogonal matrix so the transpose is the inverse)
+        self.camera_matrix_vectors = self.camera_matrix.T
+
     def SetupCoordsAndWeights(self, snapdata):
         from meshoid import Meshoid
 
@@ -332,27 +361,7 @@ class SinkVis(Task):
                 dv = snapdata["PartType0/Velocities"] - snapdata["PartType5/Velocities"][ngb]
                 self.mass *= (dx * dv).sum(1) > 0
 
-        # Setting up coordinate basis
-        if self.params["camera_dir"] is not None:
-            self.camera_dir = self.params["camera_dir"]
-            NormalizeVector(self.params["camera_dir"])
-            if self.params["camera_up"] is None:
-                self.camera_up = np.array(
-                    [0, 1.0, 0]
-                )  # default "up" direction is +y, we will project it out if the camera is tilted
-            else:
-                self.camera_up = self.params["camera_up"]
-
-            # if we've specified an up direction, project out the component parallel to the forward direction and normalize
-            self.camera_up -= sum(self.camera_dir * self.camera_up).sum() * self.camera_dir
-            NormalizeVector(self.camera_up)
-            # now get the "right" vector as the cross product of forward x up. this will be normalized to machine precision
-            self.camera_right = np.cross(self.camera_up, self.camera_dir)
-
-            # matrix of coordinate vectors - operate this on coordinates to apply transformation - operates on COORDINATES not vectors
-            self.camera_matrix = np.c_[self.camera_right, self.camera_up, self.camera_dir].T
-            # since vector fields are contravariant, this is the operator for transforming v and B (note that this is an orthogonal matrix so the transpose is the inverse)
-            self.camera_matrix_vectors = self.camera_matrix.T
+        self.SetupCameraBasis()
 
         if "PartType0/Coordinates" in snapdata.keys():
             self.DoCoordinateTransform(self.pos, self.mass, self.hsml)
@@ -712,6 +721,8 @@ class SinkVis(Task):
         if self.TaskDone:
             return
         self.AssignDefaultParamsFromSnapdata(snapdata)
+        # always needed by MakeImages (e.g. to place sinks), even on the cached-map path
+        self.SetupCameraBasis()
         if not self.has_required_maps():
             self.SetupCoordsAndWeights(snapdata)
             self.GenerateMaps(snapdata)
@@ -1923,10 +1934,10 @@ class SinkVisCustomField(SinkVis):
                 # Mass-weighted 1st/99th percentiles for integral quantities
                 flat = np.sort(limit_data.ravel())
                 cw = flat.cumsum() / flat.sum()
-                self.params["limits"] = np.interp([0.01, 0.99], cw, flat)
+                self.params["limits"] = np.interp([0.001, 0.999], cw, flat)
             else:
                 # Raw 1st/99th percentiles for slice/projected average
-                self.params["limits"] = np.percentile(limit_data, [1, 99])
+                self.params["limits"] = np.percentile(limit_data, [0.1, 99.9])
 
         vmin, vmax = self.params["limits"]
         if vmax <= vmin:

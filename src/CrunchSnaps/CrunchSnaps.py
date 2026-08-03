@@ -111,13 +111,26 @@ def DoTasksForSimulation(
             else:
                 worker_batches.append(batch)
 
-        with ProcessPoolExecutor(max_workers=nproc, mp_context=_mp_context) as pool:
+        # NOTE: deliberately not `with ProcessPoolExecutor(...) as pool`.  The context
+        # manager's __exit__ calls shutdown(wait=True), which joins the executor's
+        # QueueFeederThread.  Every future is submitted up front here and each work item
+        # pickles the whole task_params list, so the call-queue pipe fills; if any worker
+        # stops draining it (a killed/stopped/crashed worker, or a suspended job) the
+        # feeder blocks forever in _send() and shutdown() never returns.  The process then
+        # survives with all frames already written -- output complete, process immortal.
+        # Observed in the wild as 19 SinkVis2 processes stuck for up to 19 h, holding
+        # ~9 GB and ~1200 threads.  shutdown(wait=False, cancel_futures=True) drops the
+        # queued items instead of waiting on them, so teardown cannot deadlock.
+        pool = ProcessPoolExecutor(max_workers=nproc, mp_context=_mp_context)
+        try:
             futures = {}
             for worker_id, batch in enumerate(worker_batches):
                 chunk = (worker_id % nproc, np.array(batch), task_types, snaps, task_params, snapdict, snaptimes, snapnums)
                 futures[pool.submit(DoParamsPass, chunk, id_mask=id_mask)] = batch
             for f in as_completed(futures):
                 f.result()  # propagate exceptions
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
     else:
         chunk = (0, np.arange(N_params), task_types, snaps, task_params, snapdict, snaptimes, snapnums)
         DoParamsPass(chunk, id_mask=id_mask)
