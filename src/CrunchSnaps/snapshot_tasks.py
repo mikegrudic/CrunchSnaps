@@ -1,5 +1,6 @@
 import numpy as np
 import re
+import inspect as _inspect
 from astropy import constants as _ac, units as _au
 from .misc_functions import *
 from os.path import isfile
@@ -154,12 +155,10 @@ class SinkVis(Task):
         ).hexdigest()
 
         mapdir = self.params["outputfolder"] + "/.maps"
-        while not os.path.isdir(mapdir):
-            try:
-                os.mkdir(mapdir)
-            except Exception as e:
-                print(f"Exception when loading map: {e}")
-                continue
+        # makedirs creates the output folder itself if needed, and exist_ok
+        # tolerates another worker process winning the race to create it.
+        # (os.mkdir in a retry loop spun forever when outputfolder didn't exist.)
+        os.makedirs(mapdir, exist_ok=True)
 
         if self.params["realstars"]:
             self.required_maps.add("realstars")
@@ -1392,11 +1391,12 @@ def register_field_fallback(name, expr):
     FIELD_FALLBACKS[name] = expr
 
 
-def _number_density_field(snapdata, _cache, _extra_ns):
-    density = _eval_field_expr("Density", snapdata, _cache, _extra_ns)
+def _number_density_field(snapdata, _cache, _extra_ns, unit_overrides=None):
+    density = _eval_field_expr("Density", snapdata, _cache, unit_overrides, _extra_ns)
     header = snapdata.get("Header", {})
-    unit_mass = header.get("UnitMass_In_CGS", 1.989e33)      # default: 1 M_sun
-    unit_length = header.get("UnitLength_In_CGS", 3.086e18)  # default: 1 pc
+    ov = unit_overrides or {}
+    unit_mass = ov.get("UnitMass_In_CGS", header.get("UnitMass_In_CGS", 1.989e33))      # default: 1 M_sun
+    unit_length = ov.get("UnitLength_In_CGS", header.get("UnitLength_In_CGS", 3.086e18))  # default: 1 pc
     unit_density = unit_mass / unit_length**3
     key = "PartType0/Metallicity"
     if key in snapdata and snapdata[key] is not None:
@@ -1414,6 +1414,62 @@ def _number_density_field(snapdata, _cache, _extra_ns):
     return xH * density * unit_density / _CONSTANTS["m_p"]
 
 
+# GIZMO writes two different quantities to the dataset PartType0/CoolingRate
+# depending on which flag is set, and records neither flag in the snapshot:
+#   OUTPUT_COOLRATE_DETAIL: Lambda, the cooling rate per n_H^2 in cgs
+#                           (erg cm^3 s^-1), positive when the gas is cooling
+#   OUTPUT_COOLRATE:        du/dt in code units (specific, signed)
+# "auto" tells them apart by the companion rate fields, which only
+# OUTPUT_COOLRATE_DETAIL writes.  Set to "lambda" or "dudt" to force one.
+COOLRATE_CONVENTION = "auto"
+
+# Written under the same #if as CoolingRate by OUTPUT_COOLRATE_DETAIL
+_COOLRATE_DETAIL_COMPANIONS = ("HeatingRate", "NetHeatingRateQ", "HydroHeatingRate")
+
+# t_cool = e/|de/dt| in seconds.  Lambda*n_H^2 is a volumetric rate, so the
+# energy must be volumetric too: e = rho_cgs * u_cgs.
+_COOLING_TIME_LAMBDA_EXPR = (
+    "InternalEnergy * UnitVelocity_In_CGS**2 * Density * UnitDensity_In_CGS"
+    " / abs(CoolingRate * nH**2)"
+)
+# du/dt is already specific, so only the code-to-cgs time conversion is needed
+_COOLING_TIME_DUDT_EXPR = "InternalEnergy * UnitTime_In_CGS / abs(CoolingRate)"
+
+
+def _cooling_time_field(snapdata, _cache, _extra_ns, unit_overrides=None):
+    """Cooling time in seconds, t_cool = e_thermal / |de/dt|.
+
+    Requires PartType0/CoolingRate; the interpretation of that dataset
+    depends on :data:`COOLRATE_CONVENTION` (see above).  The rate is used in
+    absolute value, so this is the thermal timescale whether the gas is
+    cooling or being heated, and cells with zero rate come back as inf.
+    """
+    if snapdata.get("PartType0/CoolingRate") is None:
+        raise KeyError(
+            "'CoolingTime' requires PartType0/CoolingRate, which this snapshot "
+            "does not have - rerun GIZMO with OUTPUT_COOLRATE_DETAIL (preferred) "
+            "or OUTPUT_COOLRATE"
+        )
+
+    convention = COOLRATE_CONVENTION
+    if convention == "auto":
+        has_detail = any(
+            snapdata.get("PartType0/" + f) is not None for f in _COOLRATE_DETAIL_COMPANIONS
+        )
+        convention = "lambda" if has_detail else "dudt"
+    if convention == "lambda":
+        expr = _COOLING_TIME_LAMBDA_EXPR
+    elif convention == "dudt":
+        expr = _COOLING_TIME_DUDT_EXPR
+    else:
+        raise ValueError(
+            f"COOLRATE_CONVENTION must be 'auto', 'lambda', or 'dudt', not {COOLRATE_CONVENTION!r}"
+        )
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return _eval_field_expr(expr, snapdata, _cache, unit_overrides, _extra_ns)
+
+
 # Built-in derived fields (Gaussian CGS conventions matching GIZMO)
 register_derived_field("MagneticPressure", "norm(MagneticField)**2 / (8*pi)")
 register_derived_field("PlasmaBeta", "Pressure / MagneticPressure")
@@ -1426,6 +1482,12 @@ register_derived_field("MagneticEnergy", "norm(MagneticField)**2 / (8*pi) * Mass
 register_derived_field("NumberDensity", _number_density_field, deps=["Density", "Metallicity"])
 register_derived_field("nH", "NumberDensity")
 register_derived_field("n_H", "NumberDensity")
+register_derived_field(
+    "CoolingTime",
+    _cooling_time_field,
+    deps=["CoolingRate", "InternalEnergy", "Density", "nH"] + list(_COOLRATE_DETAIL_COMPANIONS),
+)
+register_derived_field("t_cool", "CoolingTime")
 register_derived_field("dx", "cbrt(Masses/Density)")
 register_derived_field("DivergenceError", "abs(DivergenceOfMagneticField)*cbrt(Masses/Density)/norm(MagneticField)")
 
@@ -1507,6 +1569,10 @@ register_field_symbol("n_H", r"n_\mathrm{H}\;\mathrm{(cm^{-3})}")
 register_field_symbol("ThermalEnergy", r"E_\mathrm{th}")
 register_field_symbol("KineticEnergy", r"E_\mathrm{kin}")
 register_field_symbol("MagneticEnergy", r"E_B")
+register_field_symbol("CoolingTime", r"t_\mathrm{cool}\;\mathrm{(s)}")
+register_field_symbol("t_cool", r"t_\mathrm{cool}\;\mathrm{(s)}")
+register_field_symbol("CoolingTime/Myr", r"t_\mathrm{cool}\;\mathrm{(Myr)}")
+register_field_symbol("CoolingTime/yr", r"t_\mathrm{cool}\;\mathrm{(yr)}")
 register_field_symbol("Entropy", r"P/\rho^{\gamma}")
 register_field_symbol("Sigma1D", r"\sigma_\mathrm{1D}")
 register_field_symbol("PhotonEnergyDensity_EUV", r"u_\mathrm{EUV}\;\mathrm{(eV\,cm^{-3})}")
@@ -1589,6 +1655,18 @@ def _op_needs_meshoid(name):
     return _op
 
 
+def _call_derived_callable(df, snapdata, _cache, unit_overrides, _extra_ns):
+    """Invoke a callable derived field.
+
+    The protocol is ``df(snapdata, _cache, _extra_ns)``; callables that also
+    declare a ``unit_overrides`` parameter additionally receive the CLI unit
+    overrides, which they need if their result depends on code-unit scalings.
+    """
+    if "unit_overrides" in _inspect.signature(df).parameters:
+        return df(snapdata, _cache, _extra_ns, unit_overrides=unit_overrides)
+    return df(snapdata, _cache, _extra_ns)
+
+
 def _mask_snapdata(snapdata, mask):
     """Return a shallow copy of snapdata with PartType0 particle arrays filtered by mask."""
     n_all = mask.size
@@ -1667,9 +1745,9 @@ def _eval_field_expr(expr, snapdata, _cache=None, unit_overrides=None, _extra_ns
         if name in DERIVED_FIELDS:
             df = DERIVED_FIELDS[name]
             if callable(df):
-                _cache[name] = df(snapdata, _cache, _extra_ns)
+                _cache[name] = _call_derived_callable(df, snapdata, _cache, unit_overrides, _extra_ns)
             else:
-                _cache[name] = _eval_field_expr(df, snapdata, _cache, _extra_ns)
+                _cache[name] = _eval_field_expr(df, snapdata, _cache, unit_overrides, _extra_ns)
             ns[name] = _cache[name]
             continue
 
@@ -1681,7 +1759,9 @@ def _eval_field_expr(expr, snapdata, _cache=None, unit_overrides=None, _extra_ns
 
         # 3) Fallback expression — used when snapshot field is missing
         if name in FIELD_FALLBACKS:
-            _cache[name] = _eval_field_expr(FIELD_FALLBACKS[name], snapdata, _cache, unit_overrides)
+            _cache[name] = _eval_field_expr(
+                FIELD_FALLBACKS[name], snapdata, _cache, unit_overrides, _extra_ns
+            )
             ns[name] = _cache[name]
             continue
 
@@ -1930,14 +2010,20 @@ class SinkVisCustomField(SinkVis):
         if self.params["limits"] is None:
             # Use hi-res slice data for limits if available (before AA smoothing)
             limit_data = getattr(self, "_slice_hires", data)
+            # Fields like CoolingTime or PlasmaBeta are legitimately infinite
+            # where their denominator vanishes; those pixels would otherwise
+            # poison the percentiles (and the cumsum) and blank out the image.
+            finite = limit_data[np.isfinite(limit_data)]
+            if finite.size == 0:
+                finite = np.zeros(1)
             if self._render_mode in ("SurfaceDensity", "Projection"):
                 # Mass-weighted 1st/99th percentiles for integral quantities
-                flat = np.sort(limit_data.ravel())
+                flat = np.sort(finite.ravel())
                 cw = flat.cumsum() / flat.sum()
                 self.params["limits"] = np.interp([0.001, 0.999], cw, flat)
             else:
                 # Raw 1st/99th percentiles for slice/projected average
-                self.params["limits"] = np.percentile(limit_data, [0.1, 99.9])
+                self.params["limits"] = np.percentile(finite, [0.1, 99.9])
 
         vmin, vmax = self.params["limits"]
         if vmax <= vmin:

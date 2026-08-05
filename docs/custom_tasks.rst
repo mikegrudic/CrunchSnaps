@@ -107,6 +107,8 @@ Built-in symbols include:
      - :math:`P_B`
    * - ``NumberDensity``
      - :math:`n\;\mathrm{(cm^{-3})}`
+   * - ``CoolingTime``
+     - :math:`t_\mathrm{cool}\;\mathrm{(s)}`
 
 Register custom symbols::
 
@@ -155,6 +157,54 @@ Built-in Aliases
     as a local resolution scale::
 
         --tasks='Slice(Div(MagneticField) * dx)'
+
+Cooling Time
+------------
+
+``CoolingTime`` (alias ``t_cool``) is the thermal timescale
+:math:`t_\mathrm{cool} = e / |\dot{e}|` **in seconds**, built from the
+snapshot's cooling rate and ``InternalEnergy``::
+
+    --tasks='Slice(CoolingTime/Myr)'
+    --tasks='ProjectedAverage(log10(CoolingTime/yr))'
+
+Because ``Myr`` and ``yr`` are available as constants, dividing by them
+converts the result; the colorbar labels for ``CoolingTime/Myr`` and
+``CoolingTime/yr`` are registered accordingly.
+
+It requires ``PartType0/CoolingRate``, which GIZMO writes under either of
+two compile-time flags — with the *same* dataset name but different
+meanings, and no record of which flag was used:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Flag
+     - ``CoolingRate`` holds
+     - Cooling time
+   * - ``OUTPUT_COOLRATE_DETAIL``
+     - :math:`\Lambda` in erg cm\ :sup:`3` s\ :sup:`-1` (per :math:`n_\mathrm{H}^2`)
+     - :math:`\rho u / |\Lambda n_\mathrm{H}^2|`
+   * - ``OUTPUT_COOLRATE``
+     - :math:`\mathrm{d}u/\mathrm{d}t`, code units
+     - :math:`u / |\mathrm{d}u/\mathrm{d}t|`
+
+The two are told apart automatically: ``OUTPUT_COOLRATE_DETAIL`` also writes
+``HeatingRate`` and ``NetHeatingRateQ``, so their presence selects the
+:math:`\Lambda` interpretation.  Override the guess if needed::
+
+    from CrunchSnaps import snapshot_tasks
+    snapshot_tasks.COOLRATE_CONVENTION = "lambda"   # or "dudt", or "auto"
+
+The rate is taken in absolute value, so this is the thermal timescale
+whether the gas is cooling or being heated (use ``CoolingRate`` directly
+if you want the sign).  Cells with a rate of exactly zero — which happens
+under ``RT_COOLING_DUST_ONLY`` when dust heats the gas — come back as
+``inf``.  Automatic colormap limits ignore those, but cap them explicitly
+if you are slicing with ``--order=1``::
+
+    --tasks='Slice(minimum(CoolingTime/Myr, 1e4))'
 
 Differential Operators
 ----------------------
