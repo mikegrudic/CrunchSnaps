@@ -1011,12 +1011,19 @@ class SinkVisSigmaGas(SinkVis):
             # "Σ_gas" label all fit without bbox_inches="tight" needing to crop
             # to content (which would make per-frame PNG dimensions vary).
             self.fig.subplots_adjust(left=0.16, right=0.82, top=0.95, bottom=0.12)
-            X = Y = np.linspace(-self.params["rmax"], self.params["rmax"], self.params["res"])
-            X, Y = np.meshgrid(X, Y)
-            p = self.ax.pcolormesh(
-                X,
-                Y,
+            rmax = self.params["rmax"]
+            # imshow rather than pcolormesh: the axes is almost never an exact
+            # integer number of device pixels per map cell, and Agg snaps every
+            # quad of a QuadMesh to pixel boundaries, so neighbouring cells get
+            # merged in an irregular pattern that shows up as blocky square
+            # artifacts.  imshow resamples the array properly.  extent is also
+            # the cell *edges*, so the map no longer sits half a cell off the
+            # axis coordinates the way center-shaded pcolormesh does.
+            p = self.ax.imshow(
                 self.maps["sigma_gas"],
+                extent=[-rmax, rmax, -rmax, rmax],
+                origin="lower",
+                interpolation="antialiased",
                 norm=matplotlib.colors.LogNorm(vmin=self.params["limits"][0], vmax=self.params["limits"][1]),
                 cmap=self.params["cmap"],
             )
@@ -2050,14 +2057,20 @@ class SinkVisCustomField(SinkVis):
             from mpl_toolkits.axes_grid1 import make_axes_locatable
             self.fig, self.ax = plt.subplots(figsize=(4, 4))
             self.fig.subplots_adjust(left=0.16, right=0.82, top=0.95, bottom=0.12)
-            X = Y = np.linspace(-self.params["rmax"], self.params["rmax"], self.params["res"])
-            X, Y = np.meshgrid(X, Y)
+            rmax = self.params["rmax"]
             if positive.all():
                 norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
             else:
                 norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
-            from mpl_toolkits.axes_grid1 import make_axes_locatable
-            p = self.ax.pcolormesh(X, Y, data, norm=norm, cmap=self.params["cmap"])
+            # imshow rather than pcolormesh - see the comment in SinkVisSigmaGas
+            p = self.ax.imshow(
+                data,
+                extent=[-rmax, rmax, -rmax, rmax],
+                origin="lower",
+                interpolation="antialiased",
+                norm=norm,
+                cmap=self.params["cmap"],
+            )
             self.ax.set_aspect("equal")
             divider = make_axes_locatable(self.ax)
             cax = divider.append_axes("right", size="5%", pad=0.05)
