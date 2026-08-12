@@ -109,6 +109,10 @@ class SinkVis(Task):
             "outflow_only": False,
             "no_colorbar": False,
             "order": 0,
+            # extra label inserted into the output filename, so that several
+            # renders of the same snapshot (e.g. one per sink) can coexist in
+            # one output folder instead of overwriting each other
+            "filename_tag": "",
         }
 
         self.AssignDefaultParams()
@@ -229,7 +233,11 @@ class SinkVis(Task):
         super().AssignDefaultParams()
         if self.params["index"] is None:
             self.params["index"] = round(self.params["Time"] / 1e-6)
-        self.params["filename_suffix"] = "%s_%s_%s.png" % (
+        # the tag goes in front of the frame index so that everything belonging
+        # to one tag sorts together and shares a movie prefix
+        tag = self.params.get("filename_tag") or ""
+        self.params["filename_suffix"] = "%s%s_%s_%s.png" % (
+            tag + "_" if tag else "",
             str(self.params["index"]).zfill(5),
             str(round(self.params["pan"] * 10)).zfill(4),
             self.params["cubemap_dir"],
@@ -510,9 +518,10 @@ class SinkVis(Task):
                         threads=self.params["threads"],
                     )
                 np.savez_compressed(self.map_files["realstars"], realstars=self.maps["realstars"])
-                # blend realstars into the in-memory image
+                # blend realstars into the in-memory image; nan_to_num so a bad map
+                # (possibly loaded from an old cache) can't NaN out the whole frame
                 img_arr = np.array(self._pil_image.convert("RGB")).astype(np.float32) / 255
-                img_arr = np.clip(img_arr + self.maps["realstars"], 0, 1)
+                img_arr = np.clip(img_arr + np.nan_to_num(self.maps["realstars"]), 0, 1)
                 self._pil_image = Image.fromarray((img_arr * 255).astype(np.uint8), "RGB").convert("RGBA")
 
             else:  # use derpy PIL circles
@@ -648,6 +657,16 @@ class SinkVis(Task):
                     else:
                         rho = snapdata["PartType0/Masses"] / snapdata["PartType0/KernelMaxRadius"] ** 3
                     self.params["center"] = snapdata["PartType0/Coordinates"][rho.argmax()]
+            case x if x.startswith("sink_ID="):
+                # sink-only lookup: sinks inherit the ID of the gas cell they
+                # formed from, so a plain "ID=" search can match a recycled gas
+                # ID first and silently center somewhere else entirely
+                sink_id = int(x.split("=")[1])
+                ids = snapdata.get("PartType5/ParticleIDs")
+                idx = np.flatnonzero(ids == sink_id) if ids is not None else []
+                if not len(idx):
+                    raise ValueError(f"No sink particle with ID {sink_id} in this snapshot")
+                self.params["center"] = snapdata["PartType5/Coordinates"][idx[0]]
             case x if "ID" in x:
                 if "=" in self.params["center"]:
                     id = int(self.params["center"].split("=")[1])
@@ -1122,7 +1141,12 @@ class SinkVisCoolMap(SinkVis):
                 ).T
                 / self.maps["sigma_gas"]
             )
-            self.maps["sigma_1D"] = np.sqrt(sigma_1D - v_avg**2) / 1e3
+            # convert code velocity to km/s; snapshots without unit metadata
+            # are assumed to follow the STARFORGE m/s convention
+            _unit_ov = self.params.get("_unit_overrides") or {}
+            uv = _unit_ov.get("UnitVelocity_In_CGS", snapdata["Header"].get("UnitVelocity_In_CGS", 100.0))
+            v_to_kms = uv / 1e5
+            self.maps["sigma_1D"] = np.sqrt(sigma_1D - v_avg**2) * v_to_kms
             np.savez_compressed(self.map_files["sigma_1D"], sigma_1D=self.maps["sigma_1D"])
 
     def MakeImages(self, snapdata):

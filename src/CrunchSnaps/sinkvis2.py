@@ -31,7 +31,9 @@ Options:
     --res=<N>                    Image resolution [default: 1024]
     --center=<s>                 Center of the image. Argument can include 3D comma-separated coordinates, a particle
                                  ID, 'densest' to center on the densest gas, 'median' to center on the median gas cell
-                                 position, or 'massive' to center on the most-massive star [default: None]
+                                 position, 'massive' to center on the most-massive star, 'sink_ID=<id>' to center on a
+                                 specific sink, or 'each_sink' to render one image per sink particle, tagged with the
+                                 sink ID in the filename [default: None]
     --outputfolder=<name>        Specifies the folder to save the images and movies to [default: .]
     --no_timestamp               Flag, if set no timestamp will be put on the images
     --no_size_scale              Flag, if set no size scale will be put on the images
@@ -120,6 +122,54 @@ def _resolve_task(spec):
         f"Unknown task '{spec}'. Use a built-in name ({', '.join(taskdict)}) "
         f"or a custom expression like SurfaceDensity(Masses*Temperature)"
     )
+
+
+EACH_SINK = "each_sink"
+
+
+def _sink_ids_by_mass(path):
+    """IDs of the sink particles in a snapshot, most massive first."""
+    import h5py
+
+    with h5py.File(path, "r") as F:
+        if "PartType5" not in F or "ParticleIDs" not in F["PartType5"]:
+            return []
+        ids = np.array(F["PartType5/ParticleIDs"])
+        for m_field in ("Sink_Mass", "BH_Mass", "Masses"):
+            if m_field in F["PartType5"]:
+                m = np.array(F["PartType5/" + m_field])
+                break
+        else:
+            return [int(i) for i in ids]
+    return [int(i) for i in ids[m.argsort()[::-1]]]
+
+
+def _expand_each_sink(p):
+    """Expand --center=each_sink into one frame per sink particle.
+
+    Every frame becomes N frames with the same Time - one per sink in the
+    snapshot that frame came from - centered on that sink and tagged with its
+    ID.  Frames at the same time stay adjacent in the list, which is what
+    DoTasksForSimulation needs to batch them onto one snapshot read.
+
+    Sinks are identified by ID rather than by mass rank, so a given sink keeps
+    its own filename series across a movie even as the mass ordering changes.
+    """
+    expanded, id_cache = [], {}
+    for d in p:
+        path = d.get("_snapshot_file")
+        if path not in id_cache:
+            id_cache[path] = _sink_ids_by_mass(path)
+            if not id_cache[path]:
+                print(f"Warning: no sink particles in {path}, nothing to center on")
+        for sink_id in id_cache[path]:
+            d2 = d.copy()
+            d2["center"] = "sink_ID=%d" % sink_id
+            d2["filename_tag"] = "sink%d" % sink_id
+            expanded.append(d2)
+    if not expanded:
+        raise ValueError("--center=each_sink: none of the requested snapshots contain sink particles")
+    return expanded
 
 
 def parse_inputs_to_jobparams(input):  # parse input parameters to generate a list of job parameters
@@ -223,6 +273,7 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
         d = common_params.copy()
         d["Time"] = target_time
         d["index"] = round(target_time / max(snaptimes_orig[1] - snaptimes_orig[0], 1e-30))
+        d["_snapshot_file"] = filenames[min(idx, len(filenames) - 1)]
         p = [d]
     else:
         N_params = len(filenames) + (n_interp - 1) * (len(filenames) - 1)
@@ -242,6 +293,7 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
             d["Time"] = frametimes[i]
             snapnum = snaptime_dict_inv[snaptimes_orig[i // n_interp]]
             d["index"] = snapnum * 10 + i % n_interp
+            d["_snapshot_file"] = filenames[i // n_interp]
             p.append(d.copy())
 
             if i % n_interp == 0 and (input["--freeze_rotation"] is not None):
@@ -253,6 +305,9 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
                         d["pan"] = k * 360 / num_rotation_frames
                         d["tilt"] = 10 * np.sin(2 * np.pi * k / num_rotation_frames)  # add a bit of tilt for 3D look
                         p.append(d)
+
+    if str(arguments["--center"]).lower() == EACH_SINK:
+        p = _expand_each_sink(p)
 
     params = [[d.copy() for d in p] for _ in range(N_tasks)]  # independent copy per task
     return params
@@ -372,8 +427,12 @@ def main(input):
             )
 
         fps = int(input["--fps"])
-        for prefix in movie_prefixes:
-            make_movie(outputfolder, prefix, fps)
+        for i, prefix in enumerate(movie_prefixes):
+            # one movie per filename tag (i.e. per sink for --center=each_sink),
+            # since a bare prefix glob would sweep every tag into one movie
+            tags = list(dict.fromkeys(q.get("filename_tag", "") for q in params[i]))
+            for tag in tags:
+                make_movie(outputfolder, prefix + ("_" + tag if tag else ""), fps)
 
 
 _CLI_DEFAULTS = {
@@ -466,8 +525,12 @@ def run(files, tasks="SigmaGas", **kwargs):
         center : None, str, or array-like
             ``None`` uses the box centre.  ``"densest"`` centres on the
             peak-density cell.  ``"massive"`` uses the most massive sink
-            particle.  A 3-element array sets an explicit ``[x, y, z]``
-            position.
+            particle (``"massive=N"`` for the Nth most massive).
+            ``"sink_ID=<id>"`` centres on one specific sink.
+            ``"each_sink"`` renders one image per sink particle, so each
+            snapshot contributes N figures (and N files from the CLI, tagged
+            ``sink<ID>`` in the filename) instead of one.  A 3-element array
+            sets an explicit ``[x, y, z]`` position.
         direction : str
             Projection or slice direction: ``"x"``, ``"y"``, ``"z"``,
             ``"+x"``, ``"-z"``, etc.  Defaults to ``"z"``.
@@ -575,24 +638,30 @@ def run(files, tasks="SigmaGas", **kwargs):
 
     import matplotlib.pyplot as plt
 
-    single = len(task_classes) == 1 and len(files) == 1
+    single = len(task_classes) == 1 and len(files) == 1 and len(params[0]) == 1
     figs = [[] for _ in task_classes]
     for frame_idx, snap_file in enumerate(files):
         snapdata = GetSnapData(snap_file, required, 0)
         snapdata = {k: v for k, v in snapdata.items() if v is not None}
 
         for task_idx, task_cls in enumerate(task_classes):
-            p = params[task_idx][min(frame_idx, len(params[task_idx]) - 1)].copy()
-            p["_return_figure"] = True
-            task = task_cls(p)
-            fig = task.DoTask(snapdata)
-            # For multi-snapshot runs, detach each figure from pyplot's figure
-            # manager as soon as it's captured. This prevents %matplotlib inline
-            # from auto-displaying mid-loop and avoids figure accumulation.
-            # The Figure objects remain fully functional (savefig, display, etc.).
-            if not single and fig is not None:
-                plt.close(fig)
-            figs[task_idx].append(fig)
+            # normally one set of params per file, but --center=each_sink gives
+            # several per file (one per sink), so select on the source snapshot
+            frame_params = [q for q in params[task_idx] if q.get("_snapshot_file") == snap_file]
+            if not frame_params:
+                frame_params = [params[task_idx][min(frame_idx, len(params[task_idx]) - 1)]]
+            for frame_param in frame_params:
+                p = frame_param.copy()
+                p["_return_figure"] = True
+                task = task_cls(p)
+                fig = task.DoTask(snapdata)
+                # For multi-snapshot runs, detach each figure from pyplot's figure
+                # manager as soon as it's captured. This prevents %matplotlib inline
+                # from auto-displaying mid-loop and avoids figure accumulation.
+                # The Figure objects remain fully functional (savefig, display, etc.).
+                if not single and fig is not None:
+                    plt.close(fig)
+                figs[task_idx].append(fig)
 
     if single:
         return figs[0][0]

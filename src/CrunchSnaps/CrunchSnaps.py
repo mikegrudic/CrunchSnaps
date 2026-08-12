@@ -103,11 +103,17 @@ def DoTasksForSimulation(
         # Set thread limits in parent env so forkserver workers inherit them;
         # workers also call _limit_threads() themselves as a fallback
         _limit_threads(nthreads)
-        # Split batches so each worker gets a roughly equal share of frames
+        # Split batches so each worker gets a roughly equal share of frames.
+        # Every piece of a split batch starts with an empty buffer and re-reads the
+        # same snapshot(s), so splitting is only worth it when there are fewer
+        # batches than workers - otherwise the pool already balances whole batches
+        # across workers and splitting is pure extra I/O.  This matters most for
+        # runs with many frames per snapshot (--center=each_sink, --interp_fac).
+        split_factor = max(1, nproc // len(frame_batches)) if len(frame_batches) < nproc else 1
         worker_batches = []
         for batch in frame_batches:
-            if len(batch) > nproc:
-                worker_batches.extend(np.array_split(batch, nproc))
+            if split_factor > 1 and len(batch) > 1:
+                worker_batches.extend(np.array_split(batch, min(len(batch), split_factor)))
             else:
                 worker_batches.append(batch)
 
@@ -139,7 +145,12 @@ def DoTasksForSimulation(
 def _bounding_snaptimes(time, snaptimes):
     """Return the (t1, t2) bounding snapshot times needed to interpolate at a given time."""
     if len(snaptimes) >= 2:
-        if time < snaptimes.max():
+        if np.any(snaptimes == time):
+            # exact snapshot time: nothing to interpolate, so don't drag in a
+            # neighbour.  Without this the final snapshot of a sequence falls to
+            # the extrapolation branch below and reads snaptimes[-2] for nothing.
+            t1 = t2 = time
+        elif time < snaptimes.max():
             t1, t2 = (
                 snaptimes[snaptimes <= time][-1],
                 snaptimes[snaptimes >= time][0],

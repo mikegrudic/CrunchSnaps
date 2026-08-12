@@ -127,7 +127,9 @@ def make_stars_image_fullRT(
     image_rgb[:, :, 0] = image["r"]
     image_rgb[:, :, 1] = image["v"]
     image_rgb[:, :, 2] = image["b"]
-    image_rgb /= image_rgb.mean() * 10
+    norm = image_rgb.mean()
+    if np.isfinite(norm) and norm > 0:  # all-dark frame: 0/0 would NaN the map
+        image_rgb /= norm * 10
     image_rgb = image_rgb.clip(0, 1)
     # plt.imsave("light_fullRT.png", image_rgb)
     return image_rgb
@@ -193,7 +195,9 @@ def make_stars_image_starsonly(
     image_rgb[:, :, 0] = image["r"]
     image_rgb[:, :, 1] = image["v"]
     image_rgb[:, :, 2] = image["b"]
-    image_rgb /= image_rgb.mean() * 10
+    norm = image_rgb.mean()
+    if np.isfinite(norm) and norm > 0:  # all-dark frame: 0/0 would NaN the map
+        image_rgb /= norm * 10
     image_rgb = image_rgb.clip(0, 1)
     # plt.imsave("light_stars.png", image_rgb)
     return image_rgb
@@ -201,13 +205,20 @@ def make_stars_image_starsonly(
 
 def get_stellar_lum_in_bands(Lstar, Teff):
     lum_band = {}
+    n_bad = 0
     for band, wavelength in FILTER_WAVELENGTHS_NM.items():
         bandwidth = FILTER_WIDTHS_NM[band]
         wavelength_min = max(wavelength - 0.5 * bandwidth, 0)
         wavelength_max = wavelength + 0.5 * bandwidth
         frac = planck_wavelength_integral(wavelength_min / 1e3, wavelength_max / 1e3, Teff)
-        lum_band[band] = frac * Lstar
-
+        lum = np.asarray(frac * Lstar)
+        # a single non-finite luminosity (e.g. L=0 or R=0 -> degenerate Teff) would
+        # otherwise poison the whole image via PSF convolution and normalization
+        bad = ~np.isfinite(lum)
+        n_bad = max(n_bad, bad.sum())
+        lum_band[band] = np.where(bad, 0.0, lum)
+    if n_bad:
+        print(f"Warning: {n_bad} star(s) with non-finite band luminosity, treating as dark")
     return lum_band
 
 
