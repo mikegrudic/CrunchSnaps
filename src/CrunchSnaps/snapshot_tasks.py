@@ -101,6 +101,7 @@ class SinkVis(Task):
             "index": None,
             "no_stars": False,
             "star_legend": False,
+            "draw_axes": False,
             "tight_bbox": True,
             "overwrite": True,
             "unit_scalefac": 1,
@@ -243,16 +244,16 @@ class SinkVis(Task):
             self.params["cubemap_dir"],
         )
 
-    def DoCoordinateTransform(self, x, m=None, h=None, contravariant=False, update_r=True):
+    def DoCoordinateTransform(self, x, m=None, h=None, contravariant=False, update_r=True, pos=None):
         # center on the designated center coordinate
         if not contravariant:
             x[:] -= self.params["center"]
 
         # without a specified camera direction, we just use a simple tilt/pan scheme
         if self.params["camera_dir"] is None:
+            # vectors rotate with the same matrix as coordinate displacements:
+            # the transformed v is d/dt of the transformed x
             tilt, pan = self.params["tilt"], self.params["pan"]
-            if contravariant:
-                tilt, pan = -tilt, -pan
             # first pan
             cosphi, sinphi = np.cos(np.pi * pan / 180), np.sin(np.pi * pan / 180)
             x[:] = np.stack([cosphi * x[:, 0] + sinphi * x[:, 2], x[:, 1], -sinphi * x[:, 0] + cosphi * x[:, 2]], 1)
@@ -262,10 +263,9 @@ class SinkVis(Task):
                 [x[:, 0], costheta * x[:, 1] + sintheta * x[:, 2], -sintheta * x[:, 1] + costheta * x[:, 2]], 1
             )
         else:  # we have a camera position and coordinate basis
-            if contravariant:
-                x[:] = (self.camera_matrix_vectors @ x.T).T  # note that @ performs matrix multiplication
-            else:
-                x[:] = (self.camera_matrix @ x.T).T
+            # same matrix for coordinates and vectors: components along the
+            # camera axes are (v.right, v.up, v.dir) for any vector
+            x[:] = (self.camera_matrix @ x.T).T
 
         if self.params["camera_distance"] != np.inf and not contravariant:
             # transform so camera is at z=0:
@@ -304,7 +304,9 @@ class SinkVis(Task):
 
             else:  # dealing with a contravariant vector such as velocity - want the [:,2] component to correspond to line-of-sight value
                 # this would have been converted to angular by now - let's convert back to real space
-                global_coords = np.copy(self.pos)
+                # pos overrides self.pos when the vector field is evaluated on a
+                # different particle set (e.g. the unculled arrays Div/Curl need)
+                global_coords = np.copy(self.pos if pos is None else pos)
                 # multiply by z, now we're in the rotated real space frame
                 global_coords[:, :2] *= -global_coords[:, 2][:, None]
                 # get the radial component
@@ -413,9 +415,73 @@ class SinkVis(Task):
     def MakeImages(self, snapdata):
         if not self.params["no_stars"]:
             self.AddStarsToImage(snapdata)
+        if self.params["draw_axes"]:
+            self.AddAxesToImage()
         self.AddSizeScaleToImage(snapdata["Header"])
         self.AddTimestampToImage(snapdata["Header"])
         self.SaveImage()
+
+    def _orientation_triad(self):
+        """World x/y/z unit vectors in the displayed camera frame (rows).
+
+        Rotation + cubemap shuffle only: the triad shows on-screen directions,
+        so the perspective LOS projection is bypassed by transforming as if
+        orthographic."""
+        camera_distance = self.params["camera_distance"]
+        self.params["camera_distance"] = np.inf
+        try:
+            axes = np.eye(3)
+            self.DoCoordinateTransform(axes, contravariant=True)
+        finally:
+            self.params["camera_distance"] = camera_distance
+        return axes
+
+    # x/y/z triad colors
+    _AXIS_COLORS = ("#e05659", "#63c74d", "#4d9be6")
+
+    def AddAxesToImage(self):
+        """Draw an x/y/z orientation triad in the top-right corner."""
+        axes = self._orientation_triad()
+        order = np.argsort(axes[:, 2])  # back-to-front: -z is away from viewer
+        labels = "xyz"
+
+        if self.params["backend"] == "PIL":
+            from PIL import ImageDraw
+
+            W = self._pil_image.size[0]
+            length = 0.06 * W
+            cx, cy = W - 2.2 * length, 2.2 * length
+            draw = ImageDraw.Draw(self._pil_image)
+            font = _get_font(max(10, W // 24))
+            for i in order:
+                dx, dy = axes[i, 0], axes[i, 1]  # PIL y runs downward
+                draw.line(
+                    [(cx, cy), (cx + dx * length, cy - dy * length)],
+                    fill=self._AXIS_COLORS[i], width=max(1, W // 256),
+                )
+                label_pos = (cx + 1.35 * dx * length, cy - 1.35 * dy * length)
+                try:
+                    draw.text(label_pos, labels[i], fill=self._AXIS_COLORS[i], font=font, anchor="mm")
+                except ValueError:  # bitmap fallback fonts don't support anchor
+                    draw.text(label_pos, labels[i], fill=self._AXIS_COLORS[i], font=font)
+        elif self.params["backend"] == "matplotlib" and hasattr(self, "ax"):
+            s = 0.07  # arrow length in axes fraction
+            cx, cy = 0.87, 0.85
+            for i in order:
+                dx, dy = axes[i, 0] * s, axes[i, 1] * s
+                self.ax.annotate(
+                    "", xy=(cx + dx, cy + dy), xytext=(cx, cy),
+                    xycoords="axes fraction", textcoords="axes fraction",
+                    arrowprops=dict(
+                        arrowstyle="-|>", color=self._AXIS_COLORS[i], lw=1.5,
+                        shrinkA=0, shrinkB=0,
+                    ),
+                )
+                self.ax.text(
+                    cx + 1.45 * dx, cy + 1.45 * dy, labels[i],
+                    transform=self.ax.transAxes, color=self._AXIS_COLORS[i],
+                    fontsize=9, fontweight="bold", ha="center", va="center",
+                )
 
     def AddTimestampToImage(self, header):
         if self.params["no_timestamp"]:
@@ -787,39 +853,35 @@ class SinkVis(Task):
         font_size = max(6, W // 80)
         tick_gap = 3
 
-        # Compute tick values — integer powers of 10 between vmin and vmax,
-        # dropping any that would overlap with the endpoint labels
-        log_vmin, log_vmax = np.log10(vmin), np.log10(vmax)
-        log_range = log_vmax - log_vmin
-        tick_values = [vmin, vmax]
-        tick_exp_min = int(np.ceil(log_vmin))
-        tick_exp_max = int(np.floor(log_vmax))
-        # Require at least 15% of the bar between any two ticks
-        min_gap = 0.15
-        for e in range(tick_exp_min, tick_exp_max + 1):
-            tv = 10.0**e
-            frac = (e - log_vmin) / log_range
-            if frac > min_gap and frac < (1 - min_gap):
-                tick_values.append(tv)
-        tick_values.sort()
+        # Tick values: integer powers of 10 on a log scale, evenly spaced
+        # values on a linear one (signed data, e.g. LOS components)
+        if log_scale:
+            log_vmin, log_vmax = np.log10(vmin), np.log10(vmax)
+            tick_values = [vmin, vmax]
+            for e in range(int(np.ceil(log_vmin)), int(np.floor(log_vmax)) + 1):
+                tv = 10.0**e
+                if tv > vmin * 1.1 and tv < vmax * 0.9:
+                    tick_values.append(tv)
+            tick_values.sort()
+            tick_frac = lambda tv: (np.log10(tv) - log_vmin) / (log_vmax - log_vmin)
+        else:
+            tick_values = list(np.linspace(vmin, vmax, 5))
+            tick_frac = lambda tv: (tv - vmin) / (vmax - vmin)
 
-        # Format ticks
         def _format_tick(tv):
+            if tv == 0:
+                return r"$0$"
             exp = int(np.floor(np.log10(np.abs(tv))))
+            if not log_scale and -2 <= exp < 4:
+                return r"$%g$" % np.round(tv, 6)
             coeff = tv / 10**exp
             if abs(coeff - 1.0) < 0.01:
                 return r"$10^{%d}$" % exp
             return r"$%.2g\times10^{%d}$" % (coeff, exp)
 
-        tick_labels_text = [_format_tick(tv) for tv in tick_values]
-
-        # Measure tick labels to size the bar
+        # Measure a sample label to size the contrast-sampling region
         sample = self._render_latex_label(r"$10^{3}$", font_size, "#FFFFFF")
         tick_h = sample.size[1]
-        max_tick_w = max(
-            self._render_latex_label(t, font_size, "#FFFFFF").size[0]
-            for t in tick_labels_text
-        )
 
         # Horizontal bar geometry — bottom right
         bar_h = max(int(H * 0.02), 6)
@@ -851,19 +913,6 @@ class SinkVis(Task):
 
         # Tick labels below the bar
         font_size = max(8, W // 55)
-        if log_scale:
-            log_vmin, log_vmax = np.log10(vmin), np.log10(vmax)
-            tick_values = [vmin, vmax]
-            for e in range(int(np.ceil(log_vmin)), int(np.floor(log_vmax)) + 1):
-                tv = 10.0**e
-                if tv > vmin * 1.1 and tv < vmax * 0.9:
-                    tick_values.append(tv)
-            tick_values.sort()
-            tick_frac = lambda tv: (np.log10(tv) - log_vmin) / (log_vmax - log_vmin)
-        else:
-            tick_values = list(np.linspace(vmin, vmax, 5))
-            tick_frac = lambda tv: (tv - vmin) / (vmax - vmin)
-
         for tv in tick_values:
             frac = tick_frac(tv)
             if not np.isfinite(frac):
@@ -1016,8 +1065,11 @@ class SinkVisSigmaGas(SinkVis):
 
         if self.params["backend"] == "PIL":
             from PIL import Image
-            rgba = plt.get_cmap(self.params["cmap"])(np.flipud(f))
-            self._pil_image = Image.fromarray((rgba * 255).astype(np.uint8), "RGBA")
+            # NaN pixels (no gas) pass through the colormap as the transparent
+            # bad color; the cast warnings that triggers are expected
+            with np.errstate(invalid="ignore", over="ignore"):
+                rgba = plt.get_cmap(self.params["cmap"])(np.flipud(f))
+                self._pil_image = Image.fromarray((rgba * 255).astype(np.uint8), "RGBA")
             if not self.params["no_colorbar"]:
                 self._add_colorbar_to_image(
                     vmin, vmax,
@@ -1117,36 +1169,36 @@ class SinkVisCoolMap(SinkVis):
             if hasattr(self, "_keep_mask"):
                 v = v[self._keep_mask]
             self.DoCoordinateTransform(v, contravariant=True)
-            sigma_1D = (
-                GridSurfaceDensity(
-                    self.mass * v[:, 2] ** 2,
-                    self.pos,
-                    self.hsml,
-                    np.zeros(3),
-                    2 * self.params["rmax"],
-                    res=self.params["res"],
-                    parallel=self.parallel,
-                ).T
-                / self.maps["sigma_gas"]
-            )
-            v_avg = (
-                GridSurfaceDensity(
-                    self.mass * v[:, 2],
-                    self.pos,
-                    self.hsml,
-                    np.zeros(3),
-                    2 * self.params["rmax"],
-                    res=self.params["res"],
-                    parallel=self.parallel,
-                ).T
-                / self.maps["sigma_gas"]
-            )
+            mom2 = GridSurfaceDensity(
+                self.mass * v[:, 2] ** 2,
+                self.pos,
+                self.hsml,
+                np.zeros(3),
+                2 * self.params["rmax"],
+                res=self.params["res"],
+                parallel=self.parallel,
+            ).T
+            mom1 = GridSurfaceDensity(
+                self.mass * v[:, 2],
+                self.pos,
+                self.hsml,
+                np.zeros(3),
+                2 * self.params["rmax"],
+                res=self.params["res"],
+                parallel=self.parallel,
+            ).T
+            # pixels with no gas divide 0/0; NaN marks them as empty.  The
+            # maximum() guards against <v^2> - <v>^2 rounding negative.
+            with np.errstate(invalid="ignore", divide="ignore"):
+                sigma_1D = mom2 / self.maps["sigma_gas"]
+                v_avg = mom1 / self.maps["sigma_gas"]
+                dispersion_sq = np.maximum(sigma_1D - v_avg**2, 0)
             # convert code velocity to km/s; snapshots without unit metadata
-            # are assumed to follow the STARFORGE m/s convention
+            # are assumed to follow the STARFORGE km/s convention
             _unit_ov = self.params.get("_unit_overrides") or {}
-            uv = _unit_ov.get("UnitVelocity_In_CGS", snapdata["Header"].get("UnitVelocity_In_CGS", 100.0))
+            uv = _unit_ov.get("UnitVelocity_In_CGS", snapdata["Header"].get("UnitVelocity_In_CGS", 1e5))
             v_to_kms = uv / 1e5
-            self.maps["sigma_1D"] = np.sqrt(sigma_1D - v_avg**2) * v_to_kms
+            self.maps["sigma_1D"] = np.sqrt(dispersion_sq) * v_to_kms
             np.savez_compressed(self.map_files["sigma_1D"], sigma_1D=self.maps["sigma_1D"])
 
     def MakeImages(self, snapdata):
@@ -1156,22 +1208,36 @@ class SinkVisCoolMap(SinkVis):
             cw = sigma_flat.cumsum() / sigma_flat.sum()
             self.params["limits"] = np.interp([0.01, 0.99], cw, sigma_flat)
         if self.params["v_limits"] is None:
-            # Energy-weighted percentiles: pixels with more kinetic energy count more
-            order = self.maps["sigma_1D"].ravel().argsort()
-            sigma_1D_sorted = self.maps["sigma_1D"].ravel()[order]
-            Ekin = (self.maps["sigma_gas"] * self.maps["sigma_1D"] ** 2).ravel()[order]
-            cw = Ekin.cumsum() / Ekin.sum()
-            self.params["v_limits"] = np.interp([0.0, 0.99], cw, sigma_1D_sorted)
-        fgas = (np.log10(self.maps["sigma_gas"]) - np.log10(self.params["limits"][0])) / np.log10(
-            self.params["limits"][1] / self.params["limits"][0]
-        )
-        fgas = np.clip(fgas, 0, 1)
-        from matplotlib import pyplot as plt
-        from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
-        mapcolor = plt.get_cmap(self.params["cool_cmap"])(
-            np.log10(self.maps["sigma_1D"] / self.params["v_limits"][0])
-            / np.log10(self.params["v_limits"][1] / self.params["v_limits"][0])
-        )
+            # Energy-weighted percentiles: pixels with more kinetic energy count more.
+            # Empty pixels are NaN in sigma_1D and would poison the cumsum.
+            s1_flat = self.maps["sigma_1D"].ravel()
+            Ekin = (self.maps["sigma_gas"].ravel() * s1_flat**2)
+            good = np.isfinite(s1_flat) & np.isfinite(Ekin)
+            s1_flat, Ekin = s1_flat[good], Ekin[good]
+            if s1_flat.size and Ekin.sum() > 0:
+                order = s1_flat.argsort()
+                cw = Ekin[order].cumsum() / Ekin.sum()
+                vmin, vmax = np.interp([0.0, 0.99], cw, s1_flat[order])
+            else:
+                vmax = 0.0  # no kinetic energy anywhere in frame
+            if vmax <= 0:
+                vmin, vmax = 1e-3, 1.0  # arbitrary but finite; e.g. zero-dispersion scenes
+            elif vmin <= 0:
+                vmin = 1e-3 * vmax  # log color scale needs a positive floor
+            self.params["v_limits"] = np.array([vmin, vmax])
+        # log10(0) -> -inf is fine here: empty pixels clip to fgas=0 (black) and
+        # zero-dispersion pixels map to the bottom of the colormap
+        with np.errstate(invalid="ignore", divide="ignore"):
+            fgas = (np.log10(self.maps["sigma_gas"]) - np.log10(self.params["limits"][0])) / np.log10(
+                self.params["limits"][1] / self.params["limits"][0]
+            )
+            fgas = np.clip(fgas, 0, 1)
+            from matplotlib import pyplot as plt
+            from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
+            mapcolor = plt.get_cmap(self.params["cool_cmap"])(
+                np.log10(self.maps["sigma_1D"] / self.params["v_limits"][0])
+                / np.log10(self.params["v_limits"][1] / self.params["v_limits"][0])
+            )
         # blend HSV: use fgas as intensity to modulate saturation and value
         hsv = rgb_to_hsv(mapcolor[:, :, :3])
         intensity = 2 * fgas - 1  # remap [0,1] -> [-1,1]
@@ -1638,7 +1704,7 @@ _EXPR_BUILTINS = {
     "np",
     "abs", "sqrt", "cbrt", "norm", "col", "log", "log2", "log10", "exp",
     "sin", "cos", "tan", "minimum", "maximum", "clip", "where",
-    "Div", "Curl",
+    "Div", "Curl", "LOS",
 } | set(_CONSTANTS.keys()) | _UNIT_NAMES
 
 
@@ -1681,6 +1747,15 @@ def _op_needs_meshoid(name):
     def _op(*args, **kwargs):
         raise RuntimeError(
             f"'{name}()' requires particle positions; use it inside a "
+            f"Slice/SurfaceDensity/Projection/ProjectedAverage render task."
+        )
+    return _op
+
+
+def _op_needs_camera(name):
+    def _op(*args, **kwargs):
+        raise RuntimeError(
+            f"'{name}()' requires a camera frame; use it inside a "
             f"Slice/SurfaceDensity/Projection/ProjectedAverage render task."
         )
     return _op
@@ -1740,6 +1815,7 @@ def _eval_field_expr(expr, snapdata, _cache=None, unit_overrides=None, _extra_ns
         "clip": np.clip, "where": np.where,
         "Div": _op_needs_meshoid("Div"),
         "Curl": _op_needs_meshoid("Curl"),
+        "LOS": _op_needs_camera("LOS"),
     }
     ns.update(_CONSTANTS)
     if _extra_ns:
@@ -1849,6 +1925,10 @@ class SinkVisCustomField(SinkVis):
       - Projection(expr):     same as SurfaceDensity (alias)
       - ProjectedAverage(expr): mass-weighted projected average of expr
       - Slice(expr):          midplane slice of expr
+
+    Expressions may wrap any (N,3) vector field in LOS() to take its signed
+    line-of-sight component in the camera frame (positive = receding), e.g.
+    ProjectedAverage(LOS(Velocities)) or SurfaceDensity(Masses*LOS(MagneticField)).
     """
 
     def __init__(self, params):
@@ -1873,6 +1953,37 @@ class SinkVisCustomField(SinkVis):
                 + f"{self._render_mode}_{safe_expr}_"
                 + self.params["filename_suffix"]
             )
+
+    def _los_operator(self, snapdata, full_arrays):
+        """LOS(v): signed line-of-sight component of an (N,3) vector field,
+        positive = receding from the camera in both camera modes.
+
+        full_arrays says whether expressions are evaluated on the complete
+        particle set (the Div/Curl path) rather than the culled one matching
+        self.pos; the perspective projection then needs the transformed
+        positions of that full set, computed lazily on first use.
+        """
+        state = {}
+
+        def LOS(v):
+            v = np.array(v, dtype=np.float64)
+            if v.ndim != 2 or v.shape[1] != 3:
+                raise ValueError("LOS() requires an (N,3) vector field")
+            pos = None
+            if full_arrays and self.params["camera_distance"] != np.inf:
+                if "pos" not in state:
+                    p = np.copy(snapdata["PartType0/Coordinates"]).astype(np.float64)
+                    self.DoCoordinateTransform(p, update_r=False)
+                    state["pos"] = p
+                pos = state["pos"]
+            self.DoCoordinateTransform(v, contravariant=True, pos=pos)
+            if self.params["camera_distance"] == np.inf:
+                # orthographic v_z is positive toward the viewer; flip so the
+                # sign convention matches the perspective branch (+ = receding)
+                return -v[:, 2]
+            return v[:, 2]
+
+        return LOS
 
     def DetermineRequiredSnapdata(self):
         super().DetermineRequiredSnapdata()
@@ -1945,7 +2056,8 @@ class SinkVisCustomField(SinkVis):
             f = _eval_field_expr(
                 self._field_expr, snapdata,
                 unit_overrides=_unit_ov,
-                _extra_ns={"Div": M_diff.Div, "Curl": M_diff.Curl},
+                _extra_ns={"Div": M_diff.Div, "Curl": M_diff.Curl,
+                           "LOS": self._los_operator(snapdata, full_arrays=True)},
             )
             if f.ndim > 1:
                 f = np.sqrt(np.sum(f ** 2, axis=1))
@@ -1956,7 +2068,10 @@ class SinkVisCustomField(SinkVis):
             # particle set for efficiency.
             mask = getattr(self, "_keep_mask", None)
             eval_snapdata = _mask_snapdata(snapdata, mask) if mask is not None else snapdata
-            f = _eval_field_expr(self._field_expr, eval_snapdata, unit_overrides=_unit_ov)
+            f = _eval_field_expr(
+                self._field_expr, eval_snapdata, unit_overrides=_unit_ov,
+                _extra_ns={"LOS": self._los_operator(eval_snapdata, full_arrays=False)},
+            )
             if f.ndim > 1:
                 f = np.sqrt(np.sum(f ** 2, axis=1))
 
@@ -2055,6 +2170,11 @@ class SinkVisCustomField(SinkVis):
             else:
                 # Raw 1st/99th percentiles for slice/projected average
                 self.params["limits"] = np.percentile(finite, [0.1, 99.9])
+                if self.params["limits"][0] < 0 < self.params["limits"][1]:
+                    # signed data (e.g. LOS components): symmetric limits so a
+                    # diverging colormap puts zero at the center
+                    vext = np.abs(self.params["limits"]).max()
+                    self.params["limits"] = np.array([-vext, vext])
 
         vmin, vmax = self.params["limits"]
         if vmax <= vmin:
@@ -2069,8 +2189,11 @@ class SinkVisCustomField(SinkVis):
 
         if self.params["backend"] == "PIL":
             from PIL import Image
-            rgba = plt.get_cmap(self.params["cmap"])(np.flipud(f))
-            self._pil_image = Image.fromarray((rgba * 255).astype(np.uint8), "RGBA")
+            # NaN pixels (no gas) pass through the colormap as the transparent
+            # bad color; the cast warnings that triggers are expected
+            with np.errstate(invalid="ignore", over="ignore"):
+                rgba = plt.get_cmap(self.params["cmap"])(np.flipud(f))
+                self._pil_image = Image.fromarray((rgba * 255).astype(np.uint8), "RGBA")
             if not self.params["no_colorbar"]:
                 self._add_colorbar_to_image(
                     vmin, vmax, label=self._colorbar_label(snapdata.get("Header")),

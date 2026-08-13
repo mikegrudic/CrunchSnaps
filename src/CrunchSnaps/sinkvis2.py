@@ -8,6 +8,9 @@ Options:
                                  Built-in: SigmaGas, HubbleSHO, CoolMap
                                  Custom: SurfaceDensity(expr), Projection(expr),
                                          ProjectedAverage(expr), Slice(expr)
+                                 Wrap a vector field in LOS() for its signed
+                                 line-of-sight component (+ = receding), e.g.
+                                 ProjectedAverage(LOS(Velocities))
     --rmax=<pc>                  Half-width of the field of view; defaults to mass-weighted spatial extent of gas. FOV/2 in radians if camera_dist is <inf
     --no_stars                   Hide sink particles
     --no_overwrite               Skip rendering if the output file already exists
@@ -37,6 +40,7 @@ Options:
     --outputfolder=<name>        Specifies the folder to save the images and movies to [default: .]
     --no_timestamp               Flag, if set no timestamp will be put on the images
     --no_size_scale              Flag, if set no size scale will be put on the images
+    --draw_axes                  Flag, draw an x/y/z orientation triad in the top right
     --no_colorbar                Flag, if set no colorbar will be put on surface density images
     --rescale_hsml=<f>           Factor by which the smoothing lengths of the particles are rescaled [default: 1]
     --sparse_snaps               Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
@@ -191,6 +195,13 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
     else:  # same normalization constant for each channel
         SHO_RGB_norm = float(arguments["--SHO_RGB_norm"])
 
+    for limarg in ("--limits", "--v_limits"):
+        if arguments[limarg]:
+            lim = [float(c) for c in arguments[limarg].split(",")]
+            if len(lim) != 2 or not lim[1] > lim[0]:
+                raise SystemExit(
+                    f"{limarg}={arguments[limarg]}: need min,max with max > min"
+                )
     if arguments["--limits"]:
         limits = np.array([float(c) for c in arguments["--limits"].split(",")])
 
