@@ -82,6 +82,7 @@ class SinkVis(Task):
             "cmap": "magma",
             "backend": "matplotlib",
             "rescale_hsml": False,
+            "recompute_hsml": False,
             "FOV": 90,
             "camera_distance": np.inf,
             "center_on_star": False,
@@ -138,6 +139,7 @@ class SinkVis(Task):
             "camera_right",
             "camera_up",
             "rescale_hsml",
+            "recompute_hsml",
             "res",
             "realstars_max_lum",
             "realstars_lum_exp",
@@ -346,13 +348,17 @@ class SinkVis(Task):
 
         res = self.params["res"]
         if "PartType0/Coordinates" in snapdata.keys():
-            if "PartType0/KernelMaxRadius" not in snapdata:
+            have_radii = snapdata.get("PartType0/KernelMaxRadius") is not None
+            recompute = self.params["recompute_hsml"] and not snapdata.get("_hsml_recomputed")
+            if not have_radii or recompute:
                 # a periodic tree is only valid if the coordinates are in the box frame
                 coords = snapdata["PartType0/Coordinates"]
                 boxsize = snapdata["Header"]["BoxSize"]
                 snapdata["PartType0/KernelMaxRadius"] = Meshoid(
                     coords, boxsize=boxsize if coords_in_box_frame(coords, boxsize) else None
                 ).SmoothingLength()
+                # sticky for this loaded snapshot so later tasks reuse the tree's result
+                snapdata["_hsml_recomputed"] = True
             self.pos, self.mass, self.hsml = (
                 np.copy(snapdata["PartType0/Coordinates"]),
                 np.copy(snapdata["PartType0/Masses"]),
@@ -691,11 +697,12 @@ class SinkVis(Task):
     def assign_center(self, snapdata):
         """Assign the center of the image"""
 
-        if isinstance(self.params["center"], np.ndarray):
-            if len(self.params["center"]) == 3:
-                return
+        center = self.params["center"]
+        if isinstance(center, (np.ndarray, list, tuple)) and len(center) == 3:
+            self.params["center"] = np.asarray(center, dtype=float)
+            return
 
-        if self.params["center"] is None:
+        if center is None:
             self.params["center"] = self._default_center(snapdata)
             return
 

@@ -43,6 +43,7 @@ Options:
     --draw_axes                  Flag, draw an x/y/z orientation triad in the top right
     --no_colorbar                Flag, if set no colorbar will be put on surface density images
     --rescale_hsml=<f>           Factor by which the smoothing lengths of the particles are rescaled [default: 1]
+    --recompute_hsml             Flag, recompute gas kernel radii with meshoid instead of using snapshot values
     --sparse_snaps               Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
     --equal_frame_times          Ensure frames in render sequence are equally spaced, even if snapshot times are not
     --outflow_only               Only show gas moving away from the nearest star
@@ -68,6 +69,7 @@ from docopt import docopt
 from natsort import natsorted
 import numpy as np
 import CrunchSnaps
+from CrunchSnaps.CrunchSnaps import make_movie
 from CrunchSnaps.misc_functions import *
 
 taskdict = {
@@ -322,42 +324,6 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
 
     params = [[d.copy() for d in p] for _ in range(N_tasks)]  # independent copy per task
     return params
-
-
-def make_movie(outputfolder, prefix, fps):
-    """Stitch all frames matching prefix in outputfolder into an mp4 movie."""
-    import subprocess
-    from glob import glob
-
-    frames = natsorted(glob(os.path.join(outputfolder, prefix + "_*.png")))
-    # exclude incomplete files
-    frames = [f for f in frames if "_incomplete" not in f]
-    if len(frames) < 2:
-        print(f"Skipping movie for {prefix}: only {len(frames)} frame(s) found")
-        return
-
-    # write a temporary file list for ffmpeg concat demuxer
-    listfile = os.path.join(outputfolder, f".{prefix}_framelist.txt")
-    with open(listfile, "w") as f:
-        for frame in frames:
-            f.write(f"file {os.path.abspath(frame)}\n")
-            f.write(f"duration {1/fps}\n")
-
-    movie_path = os.path.join(outputfolder, f"{prefix}.mp4")
-    cmd = [
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", listfile,
-        "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-        "-c:v", "libx264",  "-pix_fmt", "yuv420p",
-        "-r", str(fps),
-        movie_path,
-    ]
-    print(f"Encoding {movie_path} from {len(frames)} frames at {fps} fps...")
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    os.remove(listfile)
-    if result.returncode != 0:
-        print(f"ffmpeg error:\n{result.stderr}")
-    else:
-        print(f"Wrote {movie_path}")
 
 
 def _compute_global_limits(task_type, task_params_list, skip=()):

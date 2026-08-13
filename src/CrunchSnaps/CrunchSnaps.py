@@ -72,7 +72,7 @@ def DoTasksForSimulation(
                     task_params[j][i].update({"Time": params_times[i], "index": i, "threads": nthreads})
                     for i in range(N_params)
                 ]
-                for j in range(N_tasks)
+                for j in range(len(task_types))
             ]  # add the other defaults
     else:
         N_params = len(task_params[0])
@@ -103,19 +103,7 @@ def DoTasksForSimulation(
         # Set thread limits in parent env so forkserver workers inherit them;
         # workers also call _limit_threads() themselves as a fallback
         _limit_threads(nthreads)
-        # Split batches so each worker gets a roughly equal share of frames.
-        # Every piece of a split batch starts with an empty buffer and re-reads the
-        # same snapshot(s), so splitting is only worth it when there are fewer
-        # batches than workers - otherwise the pool already balances whole batches
-        # across workers and splitting is pure extra I/O.  This matters most for
-        # runs with many frames per snapshot (--center=each_sink, --interp_fac).
-        split_factor = max(1, nproc // len(frame_batches)) if len(frame_batches) < nproc else 1
-        worker_batches = []
-        for batch in frame_batches:
-            if split_factor > 1 and len(batch) > 1:
-                worker_batches.extend(np.array_split(batch, min(len(batch), split_factor)))
-            else:
-                worker_batches.append(batch)
+        worker_batches = _split_batches(frame_batches, N_params, nproc)
 
         # NOTE: deliberately not `with ProcessPoolExecutor(...) as pool`.  The context
         # manager's __exit__ calls shutdown(wait=True), which joins the executor's
@@ -140,6 +128,62 @@ def DoTasksForSimulation(
     else:
         chunk = (0, np.arange(N_params), task_types, snaps, task_params, snapdict, snaptimes, snapnums)
         DoParamsPass(chunk, id_mask=id_mask)
+
+
+def make_movie(outputfolder, prefix, fps=24):
+    """Stitch all frames matching prefix in outputfolder into an mp4 movie."""
+    import subprocess
+    from glob import glob
+
+    frames = natsorted(glob(os.path.join(outputfolder, prefix + "_*.png")))
+    # exclude incomplete files
+    frames = [f for f in frames if "_incomplete" not in f]
+    if len(frames) < 2:
+        print(f"Skipping movie for {prefix}: only {len(frames)} frame(s) found")
+        return
+
+    # write a temporary file list for ffmpeg concat demuxer
+    listfile = os.path.join(outputfolder, f".{prefix}_framelist.txt")
+    with open(listfile, "w") as f:
+        for frame in frames:
+            f.write(f"file {os.path.abspath(frame)}\n")
+            f.write(f"duration {1/fps}\n")
+
+    movie_path = os.path.join(outputfolder, f"{prefix}.mp4")
+    cmd = [
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", listfile,
+        "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+        "-c:v", "libx264",  "-pix_fmt", "yuv420p",
+        "-r", str(fps),
+        movie_path,
+    ]
+    print(f"Encoding {movie_path} from {len(frames)} frames at {fps} fps...")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    os.remove(listfile)
+    if result.returncode != 0:
+        print(f"ffmpeg error:\n{result.stderr}")
+    else:
+        print(f"Wrote {movie_path}")
+
+
+def _split_batches(frame_batches, n_frames, nproc):
+    """Split same-snapshot frame batches so no worker gets stuck with far more
+    than its fair share of the run.
+
+    Every piece of a split batch starts with an empty buffer and re-reads its
+    snapshot(s), so only batches bigger than one worker's share are split — the
+    re-read then amortizes over the chunk.  Without this, a freeze rotation
+    (hundreds of frames at ONE snapshot time = one batch) pins a single worker
+    for hours while the rest of the pool idles.
+    """
+    fair_share = max(1, int(np.ceil(n_frames / nproc)))
+    worker_batches = []
+    for batch in frame_batches:
+        if len(batch) > fair_share:
+            worker_batches.extend(np.array_split(batch, int(np.ceil(len(batch) / fair_share))))
+        else:
+            worker_batches.append(batch)
+    return worker_batches
 
 
 def _bounding_snaptimes(time, snaptimes):
