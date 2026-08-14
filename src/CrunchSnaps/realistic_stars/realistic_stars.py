@@ -14,8 +14,9 @@ import numpy as np
 from meshoid import Meshoid
 from meshoid.radiation import dust_ext_opacity, radtransfer
 from scipy.signal import convolve
-from starforge_tools import star_gas_columns
+from starforge_tools.star_gas_columns import star_gas_columns
 from starforge_tools.special_functions import planck_wavelength_integral
+from starforge_tools.star_properties import luminosity_MS, radius_MS
 
 
 FILTER_WAVELENGTHS_NM = {"u": 365, "b": 445, "v": 551, "r": 658, "i": 806}
@@ -58,6 +59,23 @@ def lum_radius_to_Teff(lum, radius):
     return 5770 * np.sqrt(np.sqrt((lum / radius**2)))
 
 
+def _star_lum_radius(snapdata, mask):
+    """(Lstar, Rstar) in solar units, masked to the visible stars.
+
+    Falls back to main-sequence Tout 1996 relations (via Sink_Mass) for
+    either field the snapshot doesn't carry -- e.g. sink-only runs without
+    protostellar evolution physics, where StarLuminosity_Solar /
+    ProtoStellarRadius_inSolar are absent rather than merely zero.
+    """
+    Lstar = snapdata.get("PartType5/StarLuminosity_Solar")
+    Rstar = snapdata.get("PartType5/ProtoStellarRadius_inSolar")
+    if Lstar is None or Rstar is None:
+        mstar = snapdata["PartType5/Sink_Mass"][mask]
+    Lstar = luminosity_MS(mstar).value if Lstar is None else Lstar[mask]
+    Rstar = radius_MS(mstar).value if Rstar is None else Rstar[mask]
+    return Lstar, Rstar
+
+
 def make_stars_image_fullRT(
     framedata,
     snapdata,
@@ -83,8 +101,7 @@ def make_stars_image_fullRT(
 
     xstar = xstar[mask]
     mstar = snapdata["PartType5/Sink_Mass"][mask]
-    Lstar = snapdata["PartType5/StarLuminosity_Solar"][mask]
-    Rstar = snapdata["PartType5/ProtoStellarRadius_inSolar"][mask]
+    Lstar, Rstar = _star_lum_radius(snapdata, mask)
     num_stars = xstar.shape[0]
 
     Teff = lum_radius_to_Teff(Lstar, Rstar)
@@ -159,8 +176,7 @@ def make_stars_image_starsonly(
         return np.zeros((IMG_RES, IMG_RES, 3))
 
     xstar = xstar[mask]
-    Lstar = snapdata["PartType5/StarLuminosity_Solar"][mask]
-    Rstar = snapdata["PartType5/ProtoStellarRadius_inSolar"][mask]
+    Lstar, Rstar = _star_lum_radius(snapdata, mask)
     num_stars = xstar.shape[0]
 
     Teff = lum_radius_to_Teff(Lstar, Rstar)
@@ -170,12 +186,12 @@ def make_stars_image_starsonly(
     wavelengths_um = np.array([l / 1e3 for l in FILTER_WAVELENGTHS_NM.values()])
     if opacity_scalefac > 0:
         kappa_dust_codeunits = opacity_scalefac * dust_ext_opacity(wavelengths_um).to(u.pc**2 / c.M_sun).value
+        star_columns = star_gas_columns(xstar, xgas, mgas, hgas, threads=threads)
+        attenuation = np.exp(-kappa_dust_codeunits * star_columns[:, None])
     else:
-        kappa_dust_codeunits = np.zeros_like(wavelengths_um)
-    star_columns = star_gas_columns(xstar, xgas, mgas, hgas, threads=threads)
-    optical_depth = kappa_dust_codeunits * star_columns[:, None]
+        # zero opacity: no extinction, so skip the gas-column computation
+        attenuation = np.ones((num_stars, wavelengths_um.size))
     Lstar_in_bands = get_stellar_lum_in_bands(Lstar.clip(0, lum_max_solar), Teff)
-    attenuation = np.exp(-optical_depth)
 
     M = Meshoid(xstar, kernel_radius=np.repeat(PIXEL_SIZE, num_stars))
 

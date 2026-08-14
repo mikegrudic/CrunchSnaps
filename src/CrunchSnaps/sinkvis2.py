@@ -44,6 +44,8 @@ Options:
     --no_colorbar                Flag, if set no colorbar will be put on surface density images
     --rescale_hsml=<f>           Factor by which the smoothing lengths of the particles are rescaled [default: 1]
     --recompute_hsml             Flag, recompute gas kernel radii with meshoid instead of using snapshot values
+    --no_map_cache               Flag, disable the .maps cache entirely (no reads or writes); saves time and
+                                 disk on one-shot runs where maps will never be reused
     --sparse_snaps               Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
     --equal_frame_times          Ensure frames in render sequence are equally spaced, even if snapshot times are not
     --outflow_only               Only show gas moving away from the nearest star

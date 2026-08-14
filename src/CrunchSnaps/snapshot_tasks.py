@@ -103,6 +103,7 @@ class SinkVis(Task):
             "no_stars": False,
             "star_legend": False,
             "draw_axes": False,
+            "no_map_cache": False,
             "tight_bbox": True,
             "overwrite": True,
             "unit_scalefac": 1,
@@ -218,6 +219,9 @@ class SinkVis(Task):
             self.RequiredSnapdata += ["PartType0/Velocities", "PartType5/Velocities"]
         # check if we have maps already saved
         self.render_maps = False
+        if self.params["no_map_cache"]:
+            self.render_maps = True
+            return
         for mapname in self.required_maps:
             if not isfile(self.map_files[mapname] + ".npz"):
                 self.render_maps = True
@@ -251,23 +255,25 @@ class SinkVis(Task):
         if not contravariant:
             x[:] -= self.params["center"]
 
-        # without a specified camera direction, we just use a simple tilt/pan scheme
-        if self.params["camera_dir"] is None:
-            # vectors rotate with the same matrix as coordinate displacements:
-            # the transformed v is d/dt of the transformed x
-            tilt, pan = self.params["tilt"], self.params["pan"]
-            # first pan
-            cosphi, sinphi = np.cos(np.pi * pan / 180), np.sin(np.pi * pan / 180)
-            x[:] = np.stack([cosphi * x[:, 0] + sinphi * x[:, 2], x[:, 1], -sinphi * x[:, 0] + cosphi * x[:, 2]], 1)
-            # then tilt
-            costheta, sintheta = np.cos(np.pi * tilt / 180), np.sin(np.pi * tilt / 180)
-            x[:] = np.stack(
-                [x[:, 0], costheta * x[:, 1] + sintheta * x[:, 2], -sintheta * x[:, 1] + costheta * x[:, 2]], 1
-            )
-        else:  # we have a camera position and coordinate basis
-            # same matrix for coordinates and vectors: components along the
-            # camera axes are (v.right, v.up, v.dir) for any vector
+        # orient along the camera basis if one is specified (--dir / camera_dir);
+        # same matrix for coordinates and vectors: components along the camera
+        # axes are (v.right, v.up, v.dir) for any vector
+        if self.params["camera_dir"] is not None:
             x[:] = (self.camera_matrix @ x.T).T
+        # pan/tilt: about the world axes without a camera basis, else composed
+        # in the camera frame so a pan orbits the chosen view (a freeze rotation
+        # with --dir used to silently render the same angle every frame).
+        # Vectors rotate with the same matrix as coordinate displacements:
+        # the transformed v is d/dt of the transformed x.
+        tilt, pan = self.params["tilt"], self.params["pan"]
+        # first pan
+        cosphi, sinphi = np.cos(np.pi * pan / 180), np.sin(np.pi * pan / 180)
+        x[:] = np.stack([cosphi * x[:, 0] + sinphi * x[:, 2], x[:, 1], -sinphi * x[:, 0] + cosphi * x[:, 2]], 1)
+        # then tilt
+        costheta, sintheta = np.cos(np.pi * tilt / 180), np.sin(np.pi * tilt / 180)
+        x[:] = np.stack(
+            [x[:, 0], costheta * x[:, 1] + sintheta * x[:, 2], -sintheta * x[:, 1] + costheta * x[:, 2]], 1
+        )
 
         if self.params["camera_distance"] != np.inf and not contravariant:
             # transform so camera is at z=0:
@@ -426,6 +432,11 @@ class SinkVis(Task):
         self.AddSizeScaleToImage(snapdata["Header"])
         self.AddTimestampToImage(snapdata["Header"])
         self.SaveImage()
+
+    def _save_map(self, name):
+        """Write a rendered map to the .maps cache, unless caching is disabled."""
+        if not self.params["no_map_cache"]:
+            np.savez_compressed(self.map_files[name], **{name: self.maps[name]})
 
     def _orientation_triad(self):
         """World x/y/z unit vectors in the displayed camera frame (rows).
@@ -589,7 +600,7 @@ class SinkVis(Task):
                         I_background=self.params["realstars_background"],
                         threads=self.params["threads"],
                     )
-                np.savez_compressed(self.map_files["realstars"], realstars=self.maps["realstars"])
+                    self._save_map("realstars")  # only when freshly computed, not on cache hits
                 # blend realstars into the in-memory image; nan_to_num so a bad map
                 # (possibly loaded from an old cache) can't NaN out the whole frame
                 img_arr = np.array(self._pil_image.convert("RGB")).astype(np.float32) / 255
@@ -1052,7 +1063,7 @@ class SinkVisSigmaGas(SinkVis):
                 parallel=self.parallel,
             ).T.clip(1e-100)
             # self.maps["sigma_gas"] = self.maps["sigma_gas"]
-            np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])
+            self._save_map("sigma_gas")
 
     def MakeImages(self, snapdata):
         if self.params["limits"] is None:
@@ -1159,41 +1170,68 @@ class SinkVisCoolMap(SinkVis):
         super().GenerateMaps(snapdata)
         from meshoid import GridSurfaceDensity
 
-        if not "sigma_gas" in self.maps.keys():
-            self.maps["sigma_gas"] = GridSurfaceDensity(
-                self.mass,
-                self.pos,
-                self.hsml,
-                np.zeros(3),
-                2 * self.params["rmax"],
-                res=self.params["res"],
-                parallel=self.parallel,
-            ).T
-            np.savez_compressed(self.map_files["sigma_gas"], sigma_gas=self.maps["sigma_gas"])
-        if not "sigma_1D" in self.maps.keys():
+        need_sigma = "sigma_gas" not in self.maps
+        need_disp = "sigma_1D" not in self.maps
+        if need_disp:
             # need to apply coordinate transforms to z-velocity
             v = np.copy(snapdata["PartType0/Velocities"])
             if hasattr(self, "_keep_mask"):
                 v = v[self._keep_mask]
             self.DoCoordinateTransform(v, contravariant=True)
-            mom2 = GridSurfaceDensity(
-                self.mass * v[:, 2] ** 2,
+
+        # when all three gas maps must be rendered, deposit them in one
+        # particle traversal (kernel evaluated once) if meshoid supports it
+        GridSurfaceDensityMulti = None
+        if need_sigma and need_disp:
+            try:
+                from meshoid import GridSurfaceDensityMulti
+            except ImportError:
+                pass  # older meshoid: fall back to one splat per map
+
+        splat_args = dict(res=self.params["res"], parallel=self.parallel)
+        if GridSurfaceDensityMulti is not None:
+            stacked = GridSurfaceDensityMulti(
+                np.column_stack([self.mass, self.mass * v[:, 2], self.mass * v[:, 2] ** 2]),
                 self.pos,
                 self.hsml,
                 np.zeros(3),
                 2 * self.params["rmax"],
-                res=self.params["res"],
-                parallel=self.parallel,
-            ).T
-            mom1 = GridSurfaceDensity(
-                self.mass * v[:, 2],
-                self.pos,
-                self.hsml,
-                np.zeros(3),
-                2 * self.params["rmax"],
-                res=self.params["res"],
-                parallel=self.parallel,
-            ).T
+                **splat_args,
+            )
+            # slice the channel BEFORE transposing: .T on the 3D array would
+            # reverse all three axes and scramble channels into the y-axis
+            self.maps["sigma_gas"] = stacked[:, :, 0].T
+            mom1, mom2 = stacked[:, :, 1].T, stacked[:, :, 2].T
+            self._save_map("sigma_gas")
+        else:
+            if need_sigma:
+                self.maps["sigma_gas"] = GridSurfaceDensity(
+                    self.mass,
+                    self.pos,
+                    self.hsml,
+                    np.zeros(3),
+                    2 * self.params["rmax"],
+                    **splat_args,
+                ).T
+                self._save_map("sigma_gas")
+            if need_disp:
+                mom2 = GridSurfaceDensity(
+                    self.mass * v[:, 2] ** 2,
+                    self.pos,
+                    self.hsml,
+                    np.zeros(3),
+                    2 * self.params["rmax"],
+                    **splat_args,
+                ).T
+                mom1 = GridSurfaceDensity(
+                    self.mass * v[:, 2],
+                    self.pos,
+                    self.hsml,
+                    np.zeros(3),
+                    2 * self.params["rmax"],
+                    **splat_args,
+                ).T
+        if need_disp:
             # pixels with no gas divide 0/0; NaN marks them as empty.  The
             # maximum() guards against <v^2> - <v>^2 rounding negative.
             with np.errstate(invalid="ignore", divide="ignore"):
@@ -1206,7 +1244,7 @@ class SinkVisCoolMap(SinkVis):
             uv = _unit_ov.get("UnitVelocity_In_CGS", snapdata["Header"].get("UnitVelocity_In_CGS", 1e5))
             v_to_kms = uv / 1e5
             self.maps["sigma_1D"] = np.sqrt(dispersion_sq) * v_to_kms
-            np.savez_compressed(self.map_files["sigma_1D"], sigma_1D=self.maps["sigma_1D"])
+            self._save_map("sigma_1D")
 
     def MakeImages(self, snapdata):
         if self.params["limits"] is None:
@@ -1401,7 +1439,7 @@ class SinkVisNarrowbandComposite(SinkVis):
                 2 * self.params["rmax"],
             ).swapaxes(0, 1)
 
-            np.savez_compressed(self.map_files["SHO_RGB"], SHO_RGB=self.maps["SHO_RGB"])
+            self._save_map("SHO_RGB")
 
     def MakeImages(self, snapdata):
         # sigmoid = lambda x: x/np.sqrt(1+x*x) # tapering function to soften the saturation
@@ -2154,7 +2192,7 @@ class SinkVisCustomField(SinkVis):
             raise ValueError(f"Unknown render mode: {self._render_mode}")
 
         self.maps[self._map_key] = result
-        np.savez_compressed(self.map_files[self._map_key], **{self._map_key: result})
+        self._save_map(self._map_key)
 
     def MakeImages(self, snapdata):
         data = self.maps[self._map_key]
