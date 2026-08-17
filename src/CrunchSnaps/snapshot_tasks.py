@@ -1165,6 +1165,7 @@ class SinkVisCoolMap(SinkVis):
         super().AssignDefaultParams()
         if self.params["filename"] is None:
             self.params["filename"] = self.params["outputfolder"] + "/" + "CoolMap_" + self.params["filename_suffix"]
+        self.params["backend"] = "PIL"  # the HSV blend + colorbar path is PIL-only; matplotlib's is a thin fallback
 
     def GenerateMaps(self, snapdata):
         super().GenerateMaps(snapdata)
