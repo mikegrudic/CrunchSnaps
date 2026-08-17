@@ -88,26 +88,32 @@ def sigma_quantile_limits(map_arrays, log_scale=False, nsigma=3.0, max_samples=5
     normal distribution keeps within +/-3 sigma.  Pixels are pooled over every frame
     so that a movie gets one stable color scale.  With ``log_scale=True`` the
     quantiles are taken in log10 space (matching how the values are displayed) and
-    returned in linear units.
+    returned in linear units.  ``log_scale="auto"`` uses log10 space unless some
+    frame has a negative pixel, in which case the limits come back symmetric about
+    zero for a diverging colormap.
 
     Args:
         map_arrays: iterable of 2D arrays (one per frame, e.g. surface density maps).
             May be a generator, so that long sequences never hold every map at once.
-        log_scale: when True, work in log10 space and ignore non-positive pixels.
+        log_scale: True, False, or "auto" (decide from the sign of the data).  In
+            log space, non-positive pixels are ignored.
         nsigma: half-width of the kept range, in Gaussian sigmas.
         max_samples: per-frame subsample cap, to bound the cost on large maps.
         max_total: cap on pooled samples; once reached, the pool is thinned and
             later frames are sampled more sparsely, so memory stays bounded no
             matter how many frames there are.
     """
+    auto = str(log_scale).lower() == "auto"
     rng = np.random.default_rng(0)
     samples = []
     n_pooled = 0
     for arr in map_arrays:
         vals = np.asarray(arr).ravel()
         vals = vals[np.isfinite(vals)]
-        if log_scale:
+        if log_scale is True:
             vals = np.log10(vals[vals > 0])
+        # in auto mode the pool stays linear: the sign of the whole sequence is
+        # only known once every frame has been seen
         if not len(vals):
             continue
         if len(vals) > max_samples:
@@ -124,8 +130,18 @@ def sigma_quantile_limits(map_arrays, log_scale=False, nsigma=3.0, max_samples=5
 
     pooled = np.concatenate(samples)
     q_hi = 0.5 * (1.0 + erf(nsigma / np.sqrt(2)))  # 0.99865 for 3 sigma
+    if auto:
+        if pooled.min() < 0:  # signed field: symmetric limits, linear scale
+            lo, hi = np.quantile(pooled, [1.0 - q_hi, q_hi])
+            vext = max(abs(lo), abs(hi))
+            return -float(vext), float(vext)
+        # non-negative: log limits from the pixels with signal, so that a mostly
+        # empty frame does not drag the low end down to zero
+        pooled = np.log10(pooled[pooled > 0])
+        if not pooled.size:
+            return (0.0, 1.0)
     lo, hi = np.quantile(pooled, [1.0 - q_hi, q_hi])
-    if log_scale:
+    if log_scale is True or auto:
         lo, hi = 10.0**lo, 10.0**hi
     return float(lo), float(hi)
 

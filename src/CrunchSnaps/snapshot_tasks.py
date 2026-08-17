@@ -63,6 +63,9 @@ class SinkVis(Task):
     # color limits (e.g. RGB composites) leave this empty.
     color_limit_maps = {}
 
+    # code length -> matplotlib axis unit; set by _set_axis_length_unit
+    _axis_unit_factor = 1.0
+
     def __init__(self, params):
         """Class containing methods for coordinate transformations, rendering, etc. for a generic SinkVis-type map plot"""
         super().__init__(params)
@@ -402,14 +405,14 @@ class SinkVis(Task):
 
     def SaveImage(self):
         if self.params.get("_return_figure"):
-            rmax = self.params["rmax"]
+            rmax = self.params["rmax"] * self._axis_unit_factor
             self.ax.set(xlim=[-rmax, rmax], ylim=[-rmax, rmax])
             self._returned_fig = self.fig
             return
         print("Saving ", self.params["filename"])
         if self.params["backend"] == "matplotlib":
             from matplotlib import pyplot as plt
-            rmax = self.params["rmax"]
+            rmax = self.params["rmax"] * self._axis_unit_factor
             self.ax.set(xlim=[-rmax, rmax], ylim=[-rmax, rmax])
             # When rendering a movie the per-frame PNG dimensions and the
             # axes position within them must stay constant; bbox_inches="tight"
@@ -565,13 +568,13 @@ class SinkVis(Task):
             scale_kpc = 10 ** np.round(np.log10(r * 0.5 / 1000))
             size_scale_text = "%3.3gkpc" % (scale_kpc)
             size_scale_ending = gridres / 16 + gridres * (scale_kpc * 1000) / (2 * r)
-        elif r > 1e-2:
+        elif r * 2 > 0.1:  # below 0.1pc across, AU reads better than fractions of a pc
             scale_pc = 10 ** np.round(np.log10(r * 0.5))
             size_scale_text = "%3.3gpc" % (scale_pc)
             size_scale_ending = gridres / 16 + gridres * (scale_pc) / (2 * r)
         else:
             scale_AU = 10 ** np.round(np.log10(r * 0.5 * pc_to_AU))
-            size_scale_text = "%3.4gAU" % (scale_AU)
+            size_scale_text = "%gAU" % (scale_AU)  # plain digits, not 1e+04
             size_scale_ending = gridres / 16 + gridres * (scale_AU) / (2 * r * pc_to_AU)
         draw.line(((gridres / 16, 7 * gridres / 8), (size_scale_ending, 7 * gridres / 8)), fill="#FFFFFF", width=6)
         draw.text((gridres / 16, 7 * gridres / 8 + 5), size_scale_text, font=font)
@@ -643,8 +646,8 @@ class SinkVis(Task):
             colors = np.array([self.GetStarColor(m) for m in m_star]) / 255
 
             self.ax.scatter(
-                X_star[:, 0],
-                X_star[:, 1],
+                X_star[:, 0] * self._axis_unit_factor,
+                X_star[:, 1] * self._axis_unit_factor,
                 s=star_size * 5,
                 edgecolor=self.Star_Edge_Color(),
                 lw=0.1,
@@ -984,6 +987,24 @@ class SinkVis(Task):
             return "AU"
         return "code length"
 
+    def _set_axis_length_unit(self, header):
+        """Pick the matplotlib axis unit: code units, or AU once the frame is
+        under 0.1pc across, where fractions of a pc stop being readable.  Matches
+        the switch in AddSizeScaleToImage, which draws the PIL backend's scale bar.
+
+        Sets self._axis_unit_factor, by which every data coordinate handed to the
+        axes must be multiplied, and returns the label for it.
+        """
+        self._axis_unit_factor = 1.0
+        lu = self._length_unit_label(header)
+        if self.params["camera_distance"] < np.inf:
+            return lu  # axes are in radians; nothing to convert
+        UL = header["UnitLength_In_CGS"] if "UnitLength_In_CGS" in header else _au.kpc.to(_au.cm)
+        if lu != "AU" and 2 * self.params["rmax"] * UL / _au.pc.to(_au.cm) < 0.1:
+            self._axis_unit_factor = UL / _au.AU.to(_au.cm)
+            return "AU"
+        return lu
+
     @staticmethod
     def _velocity_unit_label(header):
         """Return a human-readable label for the code velocity unit."""
@@ -1100,7 +1121,8 @@ class SinkVisSigmaGas(SinkVis):
             # "Σ_gas" label all fit without bbox_inches="tight" needing to crop
             # to content (which would make per-frame PNG dimensions vary).
             self.fig.subplots_adjust(left=0.16, right=0.82, top=0.95, bottom=0.12)
-            rmax = self.params["rmax"]
+            lu = self._set_axis_length_unit(snapdata["Header"])
+            rmax = self.params["rmax"] * self._axis_unit_factor
             # imshow rather than pcolormesh: the axes is almost never an exact
             # integer number of device pixels per map cell, and Agg snaps every
             # quad of a QuadMesh to pixel boundaries, so neighbouring cells get
@@ -1122,7 +1144,6 @@ class SinkVisSigmaGas(SinkVis):
             cax = divider.append_axes("right", size="5%", pad=0.05)
             self.fig.colorbar(p, label="$" + self._surface_density_unit_label(snapdata["Header"]) + "$", cax=cax)
             if self.params["camera_distance"] == np.inf:
-                lu = self._length_unit_label(snapdata["Header"])
                 self.ax.set_xlabel(f"X ({lu})")
                 self.ax.set_ylabel(f"Y ({lu})")
             else:
@@ -2197,18 +2218,30 @@ class SinkVisCustomField(SinkVis):
 
     def MakeImages(self, snapdata):
         data = self.maps[self._map_key]
-        positive = data > 0
+        # Fields like CoolingTime or PlasmaBeta are legitimately infinite where
+        # their denominator vanishes; those pixels would otherwise poison the
+        # percentiles (and the cumsum) and blank out the image.
+        finite_all = data[np.isfinite(data)]
+        # Signedness is a property of the field, not of one frame.  A non-negative
+        # map keeps its log scale even when part of it is exactly zero, so a
+        # sequence cannot flip scales the moment its empty pixels fill in.
+        signed = bool(finite_all.size and finite_all.min() < 0)
 
         if self.params["limits"] is None:
             # Use hi-res slice data for limits if available (before AA smoothing)
             limit_data = getattr(self, "_slice_hires", data)
-            # Fields like CoolingTime or PlasmaBeta are legitimately infinite
-            # where their denominator vanishes; those pixels would otherwise
-            # poison the percentiles (and the cumsum) and blank out the image.
             finite = limit_data[np.isfinite(limit_data)]
+            if not signed:
+                # zeros carry no weight and would pin vmin at 0, which has no log
+                # scale; take the limits from the pixels that have signal
+                finite = finite[finite > 0]
             if finite.size == 0:
-                finite = np.zeros(1)
-            if self._render_mode in ("SurfaceDensity", "Projection"):
+                self.params["limits"] = np.zeros(2)
+            elif signed:
+                # symmetric limits so a diverging colormap puts zero at the center
+                vext = np.abs(np.percentile(finite, [0.1, 99.9])).max()
+                self.params["limits"] = np.array([-vext, vext])
+            elif self._render_mode in ("SurfaceDensity", "Projection"):
                 # Mass-weighted 1st/99th percentiles for integral quantities
                 flat = np.sort(finite.ravel())
                 cw = flat.cumsum() / flat.sum()
@@ -2216,17 +2249,16 @@ class SinkVisCustomField(SinkVis):
             else:
                 # Raw 1st/99th percentiles for slice/projected average
                 self.params["limits"] = np.percentile(finite, [0.1, 99.9])
-                if self.params["limits"][0] < 0 < self.params["limits"][1]:
-                    # signed data (e.g. LOS components): symmetric limits so a
-                    # diverging colormap puts zero at the center
-                    vext = np.abs(self.params["limits"]).max()
-                    self.params["limits"] = np.array([-vext, vext])
 
         vmin, vmax = self.params["limits"]
+        log_scale = vmin > 0 and vmax > 0
         if vmax <= vmin:
             f = np.zeros_like(data)
-        elif positive.all():
-            f = (np.log10(data) - np.log10(vmin)) / (np.log10(vmax) - np.log10(vmin))
+        elif log_scale:
+            # non-positive pixels -> -inf -> clipped to the bottom of the scale;
+            # NaN (no data) passes through to the colormap's transparent bad color
+            with np.errstate(divide="ignore"):
+                f = (np.log10(np.maximum(data, 0)) - np.log10(vmin)) / (np.log10(vmax) - np.log10(vmin))
         else:
             f = (data - vmin) / (vmax - vmin)
         f = np.clip(f, 0, 1)
@@ -2243,16 +2275,19 @@ class SinkVisCustomField(SinkVis):
             if not self.params["no_colorbar"]:
                 self._add_colorbar_to_image(
                     vmin, vmax, label=self._colorbar_label(snapdata.get("Header")),
-                    log_scale=bool(positive.all()),
+                    log_scale=log_scale,
                 )
         elif self.params["backend"] == "matplotlib":
             import matplotlib
             from mpl_toolkits.axes_grid1 import make_axes_locatable
             self.fig, self.ax = plt.subplots(figsize=(4, 4))
             self.fig.subplots_adjust(left=0.16, right=0.82, top=0.95, bottom=0.12)
-            rmax = self.params["rmax"]
-            if positive.all():
-                norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
+            lu = self._set_axis_length_unit(snapdata["Header"])
+            rmax = self.params["rmax"] * self._axis_unit_factor
+            if log_scale:
+                # clip so empty (zero) pixels land on the bottom color instead of
+                # being masked out, matching the PIL path
+                norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax, clip=True)
             else:
                 norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
             # imshow rather than pcolormesh - see the comment in SinkVisSigmaGas
@@ -2270,7 +2305,6 @@ class SinkVisCustomField(SinkVis):
             cb_label = "$" + self._colorbar_label(snapdata.get("Header")) + "$"
             self.fig.colorbar(p, label=cb_label, cax=cax)
             if self.params["camera_distance"] == np.inf:
-                lu = self._length_unit_label(snapdata["Header"])
                 self.ax.set_xlabel(f"X ({lu})")
                 self.ax.set_ylabel(f"Y ({lu})")
             else:

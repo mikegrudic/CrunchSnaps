@@ -355,7 +355,7 @@ def _compute_global_limits(task_type, task_params_list, skip=()):
             continue
         print(f"Computing global {limit_param} for {map_name} from {len(files)} cached maps...")
         # a generator, so only one map is held in memory at a time
-        lo_hi = sigma_quantile_limits((np.load(f)[map_name] for f in files), log_scale=True)
+        lo_hi = sigma_quantile_limits((np.load(f)[map_name] for f in files), log_scale="auto")
         print(f"Global {limit_param}: [{lo_hi[0]:.3g}, {lo_hi[1]:.3g}]")
         limits[limit_param] = np.array(lo_hi)
     return limits
