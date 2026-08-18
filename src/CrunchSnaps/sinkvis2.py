@@ -46,6 +46,10 @@ Options:
     --recompute_hsml             Flag, recompute gas kernel radii with meshoid instead of using snapshot values
     --no_map_cache               Flag, disable the .maps cache entirely (no reads or writes); saves time and
                                  disk on one-shot runs where maps will never be reused
+    --gpu=<mode>                 Deposit maps on the GPU in single precision: 'on' requires a CUDA device, 'auto'
+                                 uses one if available and falls back to the CPU otherwise, 'off' always uses the
+                                 CPU. Slices are CPU-only either way, as meshoid has no GPU kernel for them
+                                 [default: off]
     --sparse_snaps               Flag, if enabled then corrections are applied to the interpolation algorithm to make the movies from sensitive maps (e.g. SHO narrowband) less flickery
     --equal_frame_times          Ensure frames in render sequence are equally spaced, even if snapshot times are not
     --outflow_only               Only show gas moving away from the nearest star
@@ -238,6 +242,7 @@ def parse_inputs_to_jobparams(input):  # parse input parameters to generate a li
             "id_mask": input["--id_mask"],
             "no_stars": input["--no_stars"],
             "no_colorbar": input["--no_colorbar"],
+            "gpu": input["--gpu"],
         }
     )
 
@@ -446,6 +451,7 @@ _CLI_DEFAULTS = {
     "--no_timestamp":       False,
     "--no_size_scale":      False,
     "--no_colorbar":        False,
+    "--gpu":                "off",
     "--rescale_hsml":       "1",
     "--sparse_snaps":       False,
     "--equal_frame_times":  False,

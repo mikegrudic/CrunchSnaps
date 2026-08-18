@@ -7,6 +7,34 @@ from os.path import abspath, exists
 
 cubemap_directions = "forward", "left", "right", "up", "down", "backward"
 
+_splat_kwargs_cache = {}
+
+
+def splat_kwargs(gpu="off"):
+    """Extra kwargs for meshoid's grid deposition: CUDA + float32 when asked for
+    a GPU, otherwise {} for the threaded float64 CPU path.
+
+    gpu is "off" (the default), "on" (require a GPU; raise if there is none) or
+    "auto" (use one if available).  Single precision costs ~1e-6 relative error,
+    invisible in a map, and is the only precision consumer GPUs render at full
+    rate.  Resolved once per process, since each render worker is its own.
+    """
+    if gpu in _splat_kwargs_cache:
+        return _splat_kwargs_cache[gpu]
+    kwargs = {}
+    if gpu != "off":
+        try:
+            from meshoid.gpu_deposition import cuda_available
+            if cuda_available():
+                kwargs = {"backend": "cuda", "dtype": np.float32}
+            elif gpu == "on":
+                raise RuntimeError("--gpu=on but no usable CUDA device")
+        except ImportError:
+            if gpu == "on":
+                raise RuntimeError("--gpu=on but this meshoid has no CUDA backend")
+    _splat_kwargs_cache[gpu] = kwargs
+    return kwargs
+
 
 def cubemapify(params):
     new_params = []

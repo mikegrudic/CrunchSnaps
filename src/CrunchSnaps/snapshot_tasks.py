@@ -66,6 +66,11 @@ class SinkVis(Task):
     # code length -> matplotlib axis unit; set by _set_axis_length_unit
     _axis_unit_factor = 1.0
 
+    @property
+    def splat_kwargs(self):
+        """meshoid deposition backend/precision for this run; see splat_kwargs()."""
+        return splat_kwargs(self.params.get("gpu", "off"))
+
     def __init__(self, params):
         """Class containing methods for coordinate transformations, rendering, etc. for a generic SinkVis-type map plot"""
         super().__init__(params)
@@ -107,6 +112,7 @@ class SinkVis(Task):
             "star_legend": False,
             "draw_axes": False,
             "no_map_cache": False,
+            "gpu": "off",
             "tight_bbox": True,
             "overwrite": True,
             "unit_scalefac": 1,
@@ -375,9 +381,17 @@ class SinkVis(Task):
             )  # copy these because we don't want to modify them
             if self.params["rescale_hsml"]:
                 self.hsml *= self.params["rescale_hsml"]
+        else:
+            # sink-only snapshot (e.g. pure N-body): keep the gas arrays defined but empty so
+            # the splatting routines return blank maps instead of the task dying on a missing
+            # attribute.  The stars still render.
+            self.pos = np.zeros((0, 3))
+            self.mass = np.zeros(0)
+            self.hsml = np.zeros(0)
+            self._keep_mask = np.zeros(0, dtype=bool)
 
         if self.params["outflow_only"]:
-            if "PartType5/Coordinates" in snapdata.keys():
+            if "PartType5/Coordinates" in snapdata.keys() and len(self.mass):
                 from scipy.spatial import KDTree
                 # find nearest star to each gas cell
                 _, ngb = KDTree(snapdata["PartType5/Coordinates"]).query(self.pos)
@@ -402,6 +416,34 @@ class SinkVis(Task):
 
     def GenerateMaps(self, snapdata):
         return
+
+    def GenerateBlankMaps(self):
+        """Stand-in gas maps for a snapshot with no gas.
+
+        Every renderer reads gas fields straight out of the snapshot, so rather than teach each
+        one to guard, hand them empty maps and let them draw the stars over a blank field.  Not
+        cached -- there is nothing here worth reusing.
+        """
+        for name in self.required_maps:
+            if name != "realstars" and name not in self.maps:  # realstars renders from the sinks
+                self.maps[name] = np.zeros(self.blank_map_shape(name))
+
+    def blank_map_shape(self, name):
+        return self.params["res"], self.params["res"]
+
+    @staticmethod
+    def _mass_weighted_limits(sigma, quantiles=(0.01, 0.99)):
+        """Mass-weighted percentile color limits for a surface density map.
+
+        A frame with no gas in it makes the weighted CDF 0/0, and any limits are arbitrary then,
+        so fall back to a positive non-degenerate pair the log color scales can accept.  Nothing
+        is read off it: a uniformly zero map clips to the bottom of the scale everywhere.
+        """
+        flat = np.sort(np.asarray(sigma).ravel())
+        total = flat.sum()
+        if not np.isfinite(total) or total <= 0:
+            return np.array([1e-100, 1e-99])
+        return np.interp(quantiles, flat.cumsum() / total, flat)
 
     def SaveImage(self):
         if self.params.get("_return_figure"):
@@ -704,9 +746,17 @@ class SinkVis(Task):
         """Center of the simulation domain: BoxSize/2 in the box frame, else the origin."""
         boxsize = snapdata["Header"]["BoxSize"]
         coords = snapdata.get("PartType0/Coordinates")
-        if coords is not None and not coords_in_box_frame(coords, boxsize):
+        if coords is None or not len(coords):
+            coords = snapdata.get("PartType5/Coordinates")  # sink-only snapshot
+        if coords is not None and len(coords) and not coords_in_box_frame(coords, boxsize):
             return np.zeros(3)  # non-periodic runs are generally centered on the origin
         return np.repeat(boxsize * 0.5, 3)
+
+    @staticmethod
+    def _has_gas(snapdata):
+        """Whether the snapshot has any gas cells to render."""
+        mass = snapdata.get("PartType0/Masses")
+        return mass is not None and len(mass) > 0
 
     def assign_center(self, snapdata):
         """Assign the center of the image"""
@@ -720,16 +770,18 @@ class SinkVis(Task):
             self.params["center"] = self._default_center(snapdata)
             return
 
+        # the gas-based modes fall through to the default center when there is no gas
+        have_gas = self._has_gas(snapdata)
         match self.params["center"]:
-            case "densest":
+            case "densest" if have_gas:
                 if "PartType0/Density" in snapdata and snapdata["PartType0/Density"] is not None:
                     rho = snapdata["PartType0/Density"]
                 else:
                     rho = snapdata["PartType0/Masses"] / snapdata["PartType0/KernelMaxRadius"] ** 3
                 self.params["center"] = snapdata["PartType0/Coordinates"][rho.argmax()]
-            case "median":
+            case "median" if have_gas:
                 self.params["center"] = np.median(snapdata["PartType0/Coordinates"], axis=0)
-            case x if "massive" in x:
+            case x if "massive" in x and (have_gas or "PartType5/Coordinates" in snapdata.keys()):
                 if "PartType5/Coordinates" in snapdata.keys():
                     if "=" in self.params["center"]:
                         num = int(self.params["center"].split("=")[1])
@@ -773,34 +825,32 @@ class SinkVis(Task):
         if not isinstance(self.params["center"], np.ndarray):
             self.params["center"] = self._default_center(snapdata)  # default
 
+    def _line_of_sight(self):
+        """Unit viewing direction in the original (untransformed) frame."""
+        if self.params["camera_dir"] is not None:
+            los = np.array(self.params["camera_dir"], dtype=float)
+            return los / np.sqrt(np.dot(los, los))
+        pan_rad = np.pi * self.params["pan"] / 180
+        tilt_rad = np.pi * self.params["tilt"] / 180
+        return np.array([
+            np.sin(pan_rad) * np.cos(tilt_rad),
+            np.sin(tilt_rad),
+            np.cos(pan_rad) * np.cos(tilt_rad),
+        ])
+
     def _compute_default_rmax(self, snapdata):
         """Compute default rmax from mass-weighted 2D variance in the viewing plane.
 
         Scaled so that a uniform-density cube returns rmax = BoxSize/2.
         """
-        if "PartType0/Coordinates" not in snapdata or "PartType0/Masses" not in snapdata:
-            return snapdata["Header"]["BoxSize"] / 2
+        pos = snapdata.get("PartType0/Coordinates")
+        mass = snapdata.get("PartType0/Masses")
+        if pos is None or mass is None or not len(mass) or mass.sum() == 0:
+            return self._sink_extent_rmax(snapdata)
 
-        pos = snapdata["PartType0/Coordinates"]
-        mass = snapdata["PartType0/Masses"]
         total_mass = mass.sum()
-        if total_mass == 0:
-            return snapdata["Header"]["BoxSize"] / 2
-
         dx = pos - self.params["center"]
-
-        # line-of-sight direction in the original frame
-        if self.params["camera_dir"] is not None:
-            los = np.array(self.params["camera_dir"], dtype=float)
-            los /= np.sqrt(np.dot(los, los))
-        else:
-            pan_rad = np.pi * self.params["pan"] / 180
-            tilt_rad = np.pi * self.params["tilt"] / 180
-            los = np.array([
-                np.sin(pan_rad) * np.cos(tilt_rad),
-                np.sin(tilt_rad),
-                np.cos(pan_rad) * np.cos(tilt_rad),
-            ])
+        los = self._line_of_sight()
 
         # Var_2D = Tr(Cov) - los^T @ Cov @ los, without forming the full 3x3
         trace_cov = np.sum(mass * np.sum(dx ** 2, axis=1)) / total_mass
@@ -811,6 +861,24 @@ class SinkVis(Task):
         # For uniform cube of side L: Var_2D = L^2/6, want rmax = L/2
         # => rmax = sqrt(6)/2 * sqrt(Var_2D)
         return np.sqrt(6) / 2 * np.sqrt(var_2d)
+
+    def _sink_extent_rmax(self, snapdata):
+        """Field of view for a snapshot with no gas: frame the sinks instead.
+
+        The variance estimator above is calibrated for a continuous mass distribution and badly
+        under-covers a handful of point masses, so use their actual projected radius.  Only a set
+        of sinks projecting onto the center itself carries no scale at all; that falls back to
+        the box.
+        """
+        boxsize = snapdata["Header"]["BoxSize"]
+        pos = snapdata.get("PartType5/Coordinates")
+        if pos is None or not len(pos):
+            return boxsize / 2
+        dx = np.asarray(pos) - self.params["center"]
+        los = self._line_of_sight()
+        r2d = np.sqrt(np.maximum(np.sum(dx ** 2, axis=1) - (dx @ los) ** 2, 0))
+        rmax = 1.2 * r2d.max()  # pad so the outermost star is not sitting on the frame edge
+        return rmax if rmax > 0 else boxsize / 2
 
     def AssignDefaultParamsFromSnapdata(self, snapdata):
         self.assign_center(snapdata)
@@ -830,7 +898,10 @@ class SinkVis(Task):
         self.SetupCameraBasis()
         if not self.has_required_maps():
             self.SetupCoordsAndWeights(snapdata)
-            self.GenerateMaps(snapdata)
+            if self._has_gas(snapdata):
+                self.GenerateMaps(snapdata)
+            else:
+                self.GenerateBlankMaps()
         self.MakeImages(snapdata)
         if self.params.get("_return_figure"):
             return getattr(self, "_returned_fig", None)
@@ -1082,34 +1153,41 @@ class SinkVisSigmaGas(SinkVis):
                 2 * self.params["rmax"],
                 res=self.params["res"],
                 parallel=self.parallel,
+                **self.splat_kwargs,
             ).T.clip(1e-100)
             # self.maps["sigma_gas"] = self.maps["sigma_gas"]
             self._save_map("sigma_gas")
 
     def MakeImages(self, snapdata):
+        # a snapshot with no gas gets a blank field for the stars to sit on: the map is all
+        # zeros, so its color scale would be pure noise and its colorbar meaningless
+        no_gas = not self._has_gas(snapdata)
         if self.params["limits"] is None:
             # Mass-weighted 1st/99th percentiles for surface density
-            sigma_flat = np.sort(self.maps["sigma_gas"].ravel())
-            cw = sigma_flat.cumsum() / sigma_flat.sum()
-            self.params["limits"] = np.interp([0.01, 0.99], cw, sigma_flat)
+            self.params["limits"] = self._mass_weighted_limits(self.maps["sigma_gas"])
 
         vmin, vmax = self.params["limits"]
-        if vmax > vmin:
-            f = (np.log10(self.maps["sigma_gas"]) - np.log10(vmin)) / (np.log10(vmax) - np.log10(vmin))
-        else:
-            f = np.zeros_like(self.maps["sigma_gas"])
+        # empty pixels are exactly zero on a blank map -> -inf -> clipped to the bottom of the scale
+        with np.errstate(divide="ignore"):
+            if vmax > vmin:
+                f = (np.log10(self.maps["sigma_gas"]) - np.log10(vmin)) / (np.log10(vmax) - np.log10(vmin))
+            else:
+                f = np.zeros_like(self.maps["sigma_gas"])
 
         import matplotlib
         from matplotlib import pyplot as plt
 
         if self.params["backend"] == "PIL":
             from PIL import Image
-            # NaN pixels (no gas) pass through the colormap as the transparent
-            # bad color; the cast warnings that triggers are expected
-            with np.errstate(invalid="ignore", over="ignore"):
-                rgba = plt.get_cmap(self.params["cmap"])(np.flipud(f))
-                self._pil_image = Image.fromarray((rgba * 255).astype(np.uint8), "RGBA")
-            if not self.params["no_colorbar"]:
+            if no_gas:  # a blank field reads better than the bottom of the colormap
+                self._pil_image = Image.new("RGBA", (f.shape[1], f.shape[0]), (0, 0, 0, 255))
+            else:
+                # NaN pixels (no gas) pass through the colormap as the transparent
+                # bad color; the cast warnings that triggers are expected
+                with np.errstate(invalid="ignore", over="ignore"):
+                    rgba = plt.get_cmap(self.params["cmap"])(np.flipud(f))
+                    self._pil_image = Image.fromarray((rgba * 255).astype(np.uint8), "RGBA")
+            if not self.params["no_colorbar"] and not no_gas:
                 self._add_colorbar_to_image(
                     vmin, vmax,
                     label=self._surface_density_unit_label(snapdata["Header"]),
@@ -1130,19 +1208,23 @@ class SinkVisSigmaGas(SinkVis):
             # artifacts.  imshow resamples the array properly.  extent is also
             # the cell *edges*, so the map no longer sits half a cell off the
             # axis coordinates the way center-shaded pcolormesh does.
-            p = self.ax.imshow(
-                self.maps["sigma_gas"],
-                extent=[-rmax, rmax, -rmax, rmax],
-                origin="lower",
-                interpolation="antialiased",
-                norm=matplotlib.colors.LogNorm(vmin=self.params["limits"][0], vmax=self.params["limits"][1]),
-                cmap=self.params["cmap"],
-            )
+            if no_gas:
+                self.ax.set_xlim(-rmax, rmax)
+                self.ax.set_ylim(-rmax, rmax)
+                self.ax.set_facecolor("black")
+            else:
+                p = self.ax.imshow(
+                    self.maps["sigma_gas"],
+                    extent=[-rmax, rmax, -rmax, rmax],
+                    origin="lower",
+                    interpolation="antialiased",
+                    norm=matplotlib.colors.LogNorm(vmin=self.params["limits"][0], vmax=self.params["limits"][1]),
+                    cmap=self.params["cmap"],
+                )
+                divider = make_axes_locatable(self.ax)
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                self.fig.colorbar(p, label="$" + self._surface_density_unit_label(snapdata["Header"]) + "$", cax=cax)
             self.ax.set_aspect("equal")
-
-            divider = make_axes_locatable(self.ax)
-            cax = divider.append_axes("right", size="5%", pad=0.05)
-            self.fig.colorbar(p, label="$" + self._surface_density_unit_label(snapdata["Header"]) + "$", cax=cax)
             if self.params["camera_distance"] == np.inf:
                 self.ax.set_xlabel(f"X ({lu})")
                 self.ax.set_ylabel(f"Y ({lu})")
@@ -1210,7 +1292,7 @@ class SinkVisCoolMap(SinkVis):
             except ImportError:
                 pass  # older meshoid: fall back to one splat per map
 
-        splat_args = dict(res=self.params["res"], parallel=self.parallel)
+        splat_args = dict(res=self.params["res"], parallel=self.parallel, **self.splat_kwargs)
         if GridSurfaceDensityMulti is not None:
             stacked = GridSurfaceDensityMulti(
                 np.column_stack([self.mass, self.mass * v[:, 2], self.mass * v[:, 2] ** 2]),
@@ -1271,9 +1353,7 @@ class SinkVisCoolMap(SinkVis):
     def MakeImages(self, snapdata):
         if self.params["limits"] is None:
             # Mass-weighted 1st/99th percentiles for surface density
-            sigma_flat = np.sort(self.maps["sigma_gas"].ravel())
-            cw = sigma_flat.cumsum() / sigma_flat.sum()
-            self.params["limits"] = np.interp([0.01, 0.99], cw, sigma_flat)
+            self.params["limits"] = self._mass_weighted_limits(self.maps["sigma_gas"])
         if self.params["v_limits"] is None:
             # Energy-weighted percentiles: pixels with more kinetic energy count more.
             # Empty pixels are NaN in sigma_1D and would poison the cumsum.
@@ -1339,6 +1419,11 @@ class SinkVisNarrowbandComposite(SinkVis):
             return
         self.AssignDefaultParams()
 
+    def blank_map_shape(self, name):
+        if name == "SHO_RGB":
+            return self.params["res"], self.params["res"], 3
+        return super().blank_map_shape(name)
+
     def DetermineRequiredSnapdata(self):
         super().DetermineRequiredSnapdata()
         if self.render_maps:
@@ -1361,6 +1446,9 @@ class SinkVisNarrowbandComposite(SinkVis):
             self.params["filename"] = (
                 self.params["outputfolder"] + "/" + "NarrowbandComposite_" + self.params["filename_suffix"]
             )
+        # like CoolMap, this renders a finished RGB array rather than a colormapped scalar, so
+        # there is no matplotlib axes for the star markers to be drawn on
+        self.params["backend"] = "PIL"
 
     #            self.params["filename_incomplete"] = self.params["filename"].replace(".png",".incomplete.png")
 
@@ -1476,6 +1564,8 @@ class SinkVisNarrowbandComposite(SinkVis):
                 np.percentile(ha_map[:, :, 0], 99),
                 np.percentile(ha_map[:, :, 1], 99),
             ]
+            # a channel with no signal at all would otherwise normalize 0/0 to NaN
+            norm = [n if n > 0 else 1.0 for n in norm]
             print("Using SHO_RGB normalizations %g %g %g" % (norm[0], norm[1], norm[2]))
         else:  # use the same normlization constant for each channel
             norm = [self.params["SHO_RGB_norm"], self.params["SHO_RGB_norm"], self.params["SHO_RGB_norm"]]
@@ -2066,6 +2156,9 @@ class SinkVisCustomField(SinkVis):
         # Add any fields referenced in the expression
         for name in _extract_field_names(self._field_expr):
             self.RequiredSnapdata.append("PartType0/" + name)
+        if self._render_mode == "Sigma1D":
+            # dispersion of the LOS velocity, whatever the expression says
+            self.RequiredSnapdata.append("PartType0/Velocities")
 
     def _colorbar_label(self, header=None):
         """Return a LaTeX string for the colorbar title."""
@@ -2147,29 +2240,43 @@ class SinkVisCustomField(SinkVis):
         # Render Meshoid always uses the culled, transformed particle set
         M = Meshoid(self.pos, self.mass, self.hsml)
 
+        from meshoid import GridSurfaceDensity
+
+        # every Meshoid.* grid method floors the kernel radius at two pixels;
+        # do the same here so bypassing them changes nothing but the backend
+        hsml = np.clip(self.hsml, 4 * rmax / res, None)
+
+        def splat(field):
+            """Σ field_i W_ij over the grid of sightlines."""
+            return GridSurfaceDensity(
+                field, self.pos, hsml, np.zeros(3), 2 * rmax,
+                res=res, parallel=self.parallel, **self.splat_kwargs,
+            ).T
+
+        weights = []  # Σ W_ij, the denominator shared by every projected average
+
+        def projected_average(field):
+            """<field> along sightlines.  Meshoid.ProjectedAverage does this in one
+            traversal but has no GPU path and no CPU threading; the ratio of two
+            depositions is identical to roundoff and faster on both backends."""
+            if not weights:
+                weights.append(splat(np.ones_like(self.mass)))
+            with np.errstate(invalid="ignore", divide="ignore"):
+                return splat(field) / weights[0]
+
         if self._render_mode == "SurfaceDensity":
             # Surface density: f is an extensive/conserved quantity (e.g. Masses)
-            result = M.SurfaceDensity(
-                f, center=np.zeros(3), size=2 * rmax, res=res,
-            ).T
+            result = splat(f)
         elif self._render_mode == "Projection":
             # Projection: f is a volume density / intensive quantity (e.g. Density)
             # computes the line integral ∫ f dz
-            result = M.Projection(
-                f, center=np.zeros(3), size=2 * rmax, res=res,
-            ).T
+            result = splat(f * M.vol)
         elif self._render_mode == "ProjectedAverage":
-            result = M.ProjectedAverage(
-                f, center=np.zeros(3), size=2 * rmax, res=res,
-            ).T
+            result = projected_average(f)
         elif self._render_mode == "WeightedVariance":
-            # σ(f) = sqrt(<f²> - <f>²)  mass-weighted
-            mean_f = M.ProjectedAverage(
-                f, center=np.zeros(3), size=2 * rmax, res=res,
-            ).T
-            mean_f2 = M.ProjectedAverage(
-                f ** 2, center=np.zeros(3), size=2 * rmax, res=res,
-            ).T
+            # σ(f) = sqrt(<f²> - <f>²)
+            mean_f = projected_average(f)
+            mean_f2 = projected_average(f ** 2)
             result = np.sqrt(np.maximum(mean_f2 - mean_f ** 2, 0))
         elif self._render_mode == "Sigma1D":
             # Line-of-sight velocity dispersion: sqrt(<v_z²> - <v_z>²)
@@ -2180,12 +2287,8 @@ class SinkVisCustomField(SinkVis):
                 v_los = v_los[self._keep_mask]
             self.DoCoordinateTransform(v_los, contravariant=True)
             vz = v_los[:, 2]
-            mean_vz = M.ProjectedAverage(
-                vz, center=np.zeros(3), size=2 * rmax, res=res,
-            ).T
-            mean_vz2 = M.ProjectedAverage(
-                vz ** 2, center=np.zeros(3), size=2 * rmax, res=res,
-            ).T
+            mean_vz = projected_average(vz)
+            mean_vz2 = projected_average(vz ** 2)
             result = np.sqrt(np.maximum(mean_vz2 - mean_vz ** 2, 0))
         elif self._render_mode == "Slice":
             # Supersample and downsample to anti-alias Voronoi edges
